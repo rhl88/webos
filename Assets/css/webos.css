@@ -1255,6 +1255,29 @@ button {
     font-size: 11px;
 }
 
+.install-menu-parents {
+    display: grid;
+    gap: 12px;
+    min-height: 46px;
+    padding: 14px;
+    border: 1px solid #dbe5ee;
+    border-radius: 8px;
+    background: #f8fafc;
+}
+
+.install-menu-status {
+    display: flex;
+    align-items: center;
+    min-height: 38px;
+    gap: 10px;
+    color: #607086;
+    font-size: 13px;
+}
+
+.install-menu-status.is-error {
+    color: #c53a46;
+}
+
 .menu-parent-field {
     display: flex;
     align-items: center;
@@ -1262,9 +1285,18 @@ button {
 }
 
 .menu-parent-field span {
-    flex: 0 0 auto;
+    display: inline-flex;
+    flex: 0 0 150px;
+    align-items: center;
+    gap: 7px;
     color: #465870;
     font-size: 13px;
+}
+
+.menu-parent-field span i {
+    width: 16px;
+    color: #377d99;
+    text-align: center;
 }
 
 .menu-parent-field select {
@@ -1275,6 +1307,13 @@ button {
     border-radius: 6px;
     outline: none;
     background: #fff;
+}
+
+.install-menu-hint {
+    margin: 0;
+    color: var(--webos-muted);
+    font-size: 11px;
+    line-height: 1.6;
 }
 
 .dialog-footer {

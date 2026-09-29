@@ -2,6 +2,7 @@
 
 namespace App\Apps\CmsproWebos\Controllers\Admin;
 
+use App\Apps\CmsproWebos\Services\AdminMenuCatalogService;
 use App\Apps\CmsproWebos\Services\WorkspaceService;
 use App\Http\Controllers\Controller;
 use App\Http\Responses\ApiResponse;
@@ -16,7 +17,8 @@ class WebosController extends Controller
 {
     public function __construct(
         protected WorkspaceService $workspaces,
-        protected MenuService $menus
+        protected MenuService $menus,
+        protected AdminMenuCatalogService $menuCatalog
     ) {
     }
 
@@ -113,7 +115,7 @@ class WebosController extends Controller
             ->get();
 
         return response()->json(ApiResponse::success([
-            'menus' => $menuResult['data'] ?? [],
+            'menus' => $this->menuCatalog->filterAdminMenus($menuResult['data'] ?? []),
             'applications' => $applications,
             'operation_logs' => $logs,
         ]));

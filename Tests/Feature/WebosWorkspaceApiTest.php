@@ -80,6 +80,20 @@ class WebosWorkspaceApiTest extends WebosTestCase
         $this->assertStringContainsString('startItem.dataset.menuId', $script);
     }
 
+    public function test_install_dialog_uses_terminal_aware_menu_mounting(): void
+    {
+        $script = file_get_contents(dirname(__DIR__, 2) . '/Assets/js/webos.js');
+        $view = file_get_contents(dirname(__DIR__, 2) . '/Views/Admin/desktop/index.blade.php');
+
+        $this->assertIsString($script);
+        $this->assertIsString($view);
+        $this->assertStringContainsString('/menu-terminals', $script);
+        $this->assertStringContainsString('/prepare', $script);
+        $this->assertStringContainsString('terminal_type=', $script);
+        $this->assertStringContainsString('parent_menu_ids', $script);
+        $this->assertStringContainsString('id="install-menu-parents"', $view);
+    }
+
     public function test_workspace_api_rejects_external_paths(): void
     {
         $this->actingAdmin();

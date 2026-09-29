@@ -25,6 +25,8 @@
         windows: new Map(),
         zIndex: 20,
         installTarget: null,
+        installTerminals: [],
+        installRequestId: 0,
         marketApps: new Map(),
         updateApps: [],
         appCenterTab: 'market',
@@ -57,7 +59,7 @@
         lockTime: document.getElementById('lock-time'),
         installDialog: document.getElementById('install-dialog'),
         installSummary: document.getElementById('install-app-summary'),
-        installParent: document.getElementById('install-menu-parent'),
+        installParents: document.getElementById('install-menu-parents'),
         confirmInstall: document.getElementById('confirm-install'),
         toastRegion: document.getElementById('webos-toast-region')
     };
@@ -823,14 +825,71 @@
         return '<div class="panel-empty"><i class="fa ' + safeIcon(icon) + '"></i>' + escapeHtml(text) + '</div>';
     }
 
+    var INSTALL_TERMINALS = ['admin', 'user', 'home'];
+    var INSTALL_TERMINAL_LABELS = { admin: '后台', user: '用户端', home: '前端' };
+    var INSTALL_TERMINAL_ICONS = { admin: 'fa-cogs', user: 'fa-user-circle-o', home: 'fa-home' };
+
+    function renderInstallMenuStatus(icon, message, isError) {
+        elements.installParents.innerHTML = '<div class="install-menu-status ' + (isError ? 'is-error' : '') + '">'
+            + '<i class="fa ' + safeIcon(icon) + '"></i><span>' + escapeHtml(message) + '</span></div>';
+    }
+
+    function renderInstallMenuFields(terminals, menuTrees) {
+        state.installTerminals = terminals;
+        if (!terminals.length) {
+            renderInstallMenuStatus('fa-info-circle', '此应用未声明后台、用户端或前端菜单，将直接安装应用文件。', false);
+            return;
+        }
+
+        elements.installParents.innerHTML = terminals.map(function (terminal) {
+            var label = INSTALL_TERMINAL_LABELS[terminal] || terminal;
+            var options = '<option value="">安装为独立顶级菜单</option>' + (menuTrees[terminal] || []).map(function (menu) {
+                return '<option value="' + Number(menu.id || 0) + '">' + escapeHtml(menu.name || '未命名菜单') + '</option>';
+            }).join('');
+            return '<label class="menu-parent-field"><span><i class="fa '
+                + safeIcon(INSTALL_TERMINAL_ICONS[terminal]) + '"></i>' + escapeHtml(label) + '菜单挂载位置</span>'
+                + '<select data-install-terminal="' + escapeHtml(terminal) + '">' + options + '</select></label>';
+        }).join('') + '<p class="install-menu-hint">不选择则安装为独立顶级菜单，仅显示应用清单中实际声明的终端。</p>';
+    }
+
+    function loadInstallMenuFields(target, source, requestId) {
+        var terminalUrl = source === 'local'
+            ? '/api/admin/apps/' + encodeURIComponent(target.app_id) + '/menu-terminals'
+            : '/api/admin/market/install/' + encodeURIComponent(target.app_id) + '/prepare';
+        var terminalMethod = source === 'local' ? 'GET' : 'POST';
+
+        return api(terminalUrl, { method: terminalMethod }).then(function (available) {
+            return INSTALL_TERMINALS.filter(function (terminal) { return available && available[terminal]; });
+        }).catch(function () {
+            toast('菜单终端识别失败，已按后台菜单继续', 'error');
+            return ['admin'];
+        }).then(function (terminals) {
+            var requests = terminals.map(function (terminal) {
+                return api('/api/admin/menus/tree?terminal_type=' + encodeURIComponent(terminal)).catch(function () { return []; });
+            });
+            return Promise.all(requests).then(function (trees) {
+                if (requestId !== state.installRequestId) {
+                    return;
+                }
+                var menuTrees = {};
+                terminals.forEach(function (terminal, index) { menuTrees[terminal] = trees[index] || []; });
+                renderInstallMenuFields(terminals, menuTrees);
+                elements.confirmInstall.disabled = false;
+            });
+        });
+    }
+
     function openInstallDialog(app, source) {
         state.installTarget = Object.assign({}, app, { _source: source });
+        state.installTerminals = [];
+        state.installRequestId += 1;
+        var requestId = state.installRequestId;
         elements.installSummary.innerHTML = appIconMarkup(app) + '<div><strong>' + escapeHtml(app.name || app.app_id) + '</strong><span>'
             + escapeHtml(app.description || '安装后可在 WebOS 中打开此应用') + '</span><span>版本 ' + escapeHtml(app.version || app.latest_version || '-') + '</span></div>';
-        elements.installParent.innerHTML = '<option value="0">顶级菜单</option>' + (state.catalog.menus || []).map(function (menu) {
-            return '<option value="' + Number(menu.id || 0) + '">' + escapeHtml(menu.name || '未命名菜单') + '</option>';
-        }).join('');
+        renderInstallMenuStatus('fa-circle-o-notch fa-spin', '正在识别应用菜单…', false);
+        elements.confirmInstall.disabled = true;
         elements.installDialog.hidden = false;
+        loadInstallMenuFields(state.installTarget, source, requestId);
     }
 
     function confirmInstall() {
@@ -839,14 +898,20 @@
             return;
         }
         var mode = document.querySelector('input[name="install_entry"]:checked').value;
-        var parentId = Number(elements.installParent.value || 0);
         var source = target._source;
         var url = source === 'local'
             ? '/api/admin/apps/' + encodeURIComponent(target.app_id) + '/local-install'
             : '/api/admin/market/install/' + encodeURIComponent(target.app_id);
         elements.confirmInstall.disabled = true;
         elements.confirmInstall.innerHTML = '<i class="fa fa-circle-o-notch fa-spin"></i>安装中';
-        var body = parentId > 0 ? { parent_menu_ids: { admin: parentId } } : {};
+        var parentMenuIds = {};
+        state.installTerminals.forEach(function (terminal) {
+            var select = elements.installParents.querySelector('[data-install-terminal="' + terminal + '"]');
+            if (select && select.value) {
+                parentMenuIds[terminal] = Number(select.value);
+            }
+        });
+        var body = { parent_menu_ids: parentMenuIds };
         api(url, { method: 'POST', body: body }).then(function () {
             elements.installDialog.hidden = true;
             toast('应用安装成功');
@@ -857,7 +922,7 @@
                 if (entry) {
                     addDesktopEntry(entry);
                 } else {
-                    toast('应用已安装，但未声明可用菜单入口');
+                    toast('应用已安装，但未声明可用的后台菜单入口');
                 }
             }
             renderAppCenter('installed');

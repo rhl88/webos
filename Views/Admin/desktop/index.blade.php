@@ -133,10 +133,12 @@
                         <span><strong>两者都创建</strong><small>同时创建系统菜单和桌面快捷入口</small></span>
                     </label>
                 </fieldset>
-                <label class="menu-parent-field">
-                    <span>菜单挂载位置</span>
-                    <select id="install-menu-parent"></select>
-                </label>
+                <section id="install-menu-parents" class="install-menu-parents" aria-live="polite">
+                    <div class="install-menu-status">
+                        <i class="fa fa-circle-o-notch fa-spin"></i>
+                        <span>正在识别应用菜单…</span>
+                    </div>
+                </section>
             </div>
             <footer class="dialog-footer">
                 <button class="webos-button secondary" type="button" data-action="close-install">取消</button>

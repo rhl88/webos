@@ -1,11 +1,11 @@
 # CmsPro WebOS 管理桌面 · 扩展指南
 
-> 文档版本：1.1.0 | 更新日期：2026-09-29
-> 适用应用：CmsproWebos v1.1.0+
+> 文档版本：1.2.0 | 更新日期：2026-09-29
+> 适用应用：CmsproWebos v1.2.0+
 
 ## 一、概述
 
-其他应用无需依赖 WebOS 专用接口即可进入桌面：只要在 `manifest.json` 中声明启用且对管理员可见的后台菜单，WebOS 会通过系统菜单服务自动发现该入口，并使用菜单目录中的 `app_id` 将同一应用的菜单聚合到一个独立窗口。
+其他应用无需依赖 WebOS 专用接口即可进入桌面：只要在 `manifest.json` 中声明启用且对管理员可见的后台菜单，WebOS 会通过系统菜单服务自动发现该入口，并使用菜单目录中的 `app_id` 将同一应用的菜单聚合到一个独立窗口。WebOS 开始菜单只消费 `admin` 菜单；`user` 与 `home` 菜单可在安装时配置挂载位置，但不会进入 WebOS 桌面目录。
 
 ## 二、菜单接入
 
@@ -36,6 +36,7 @@
 接入要求：
 
 - 叶子菜单必须提供以 `/` 开头的站内路径。
+- `menus`、`user_menus`、`home_menus` 分别对应后台、用户端、前端；安装弹窗只为非空菜单数组显示对应的顶级挂载选择器。
 - 同一应用的菜单必须关联同一个 `app_id`；子菜单可继承父菜单的 `app_id`，这是开始菜单聚合和窗口菜单隔离的依据。
 - 图标使用 Font Awesome 4.7 或系统 Layui 图标类名，不使用 emoji。
 - 推荐 `open_type` 使用 `_iframe`。WebOS 对安全的站内路径统一使用应用独立窗口承载，不依赖后台全局侧栏。
@@ -68,7 +69,7 @@ $workspace = app(WorkspaceService::class)->getForAdmin($adminUserId);
 |---|---|---|
 | GET | `/admin/cmspro/webos/api/workspace` | 读取当前管理员工作区 |
 | PUT | `/admin/cmspro/webos/api/workspace` | 保存当前管理员工作区 |
-| GET | `/admin/cmspro/webos/api/catalog` | 读取有权菜单、已安装应用和最近操作记录 |
+| GET | `/admin/cmspro/webos/api/catalog` | 读取有权的后台 `admin` 菜单、已安装应用和最近操作记录 |
 
 接口使用后台 Session 认证和 CSRF 保护，返回统一的 `code`、`message`、`data`、`timestamp` 结构。
 
@@ -111,5 +112,6 @@ $workspace = app(WorkspaceService::class)->getForAdmin($adminUserId);
 
 | 版本 | 日期 | 更新人 | 说明 |
 |---|---|---|---|
+| 1.2.0 | 2026-09-29 | CmsPro | 开始菜单限定后台终端；补充多终端菜单自动识别与挂载规则 |
 | 1.1.0 | 2026-09-29 | CmsPro | 增加应用级窗口聚合、菜单隔离、开始菜单分组及任务栏位置偏好说明 |
 | 1.0.0 | 2026-09-28 | CmsPro | 初始版本，提供菜单发现、工作区服务和桌面管理接口 |
