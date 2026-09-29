@@ -296,6 +296,16 @@ class WebosWorkspaceApiTest extends WebosTestCase
         $this->assertStringContainsString('overflow-y: auto;', $stylesheet);
     }
 
+    public function test_clicking_blank_desktop_closes_open_panels(): void
+    {
+        $script = file_get_contents(dirname(__DIR__, 2) . '/Assets/js/webos.js');
+
+        $this->assertIsString($script);
+        $this->assertStringContainsString('function isPanelToggle(target)', $script);
+        $this->assertStringContainsString('button.contains(target)', $script);
+        $this->assertStringContainsString("if (!event.target.closest('.webos-panel') && !isPanelToggle(event.target)) {", $script);
+    }
+
     public function test_start_menu_pin_uses_application_name(): void
     {
         $script = file_get_contents(dirname(__DIR__, 2) . '/Assets/js/webos.js');

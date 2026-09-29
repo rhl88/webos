@@ -2050,6 +2050,12 @@
         });
     }
 
+    function isPanelToggle(target) {
+        return [elements.startButton, elements.notificationButton, elements.accountButton].some(function (button) {
+            return button && button.contains(target);
+        });
+    }
+
     function applyTaskbarPosition() {
         var allowed = ['top', 'bottom', 'left', 'right'];
         var position = state.workspace.preferences.taskbar_position || 'bottom';
@@ -2209,6 +2215,10 @@
                         window.location.href = root.dataset.loginUrl || '/admin/login';
                     }).catch(function (error) { toast(error.message, 'error'); });
                 }
+            }
+
+            if (!event.target.closest('.webos-panel') && !isPanelToggle(event.target)) {
+                closePanels();
             }
 
             var groupButton = event.target.closest('[data-group-id]');
