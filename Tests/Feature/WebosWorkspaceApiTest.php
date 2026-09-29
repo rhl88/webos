@@ -3,6 +3,7 @@
 namespace App\Apps\CmsproWebos\Tests\Feature;
 
 use App\Apps\CmsproWebos\Tests\WebosTestCase;
+use App\Models\AppModel;
 
 class WebosWorkspaceApiTest extends WebosTestCase
 {
@@ -111,6 +112,37 @@ class WebosWorkspaceApiTest extends WebosTestCase
         $this->assertStringContainsString('data-action="lock-desktop"', $view);
         $this->assertStringContainsString('data-action="logout"', $view);
         $this->assertStringContainsString('data-open-webos-settings', $view);
+    }
+
+    public function test_catalog_exposes_app_root_icon_url_and_manifest_fallback(): void
+    {
+        $this->actingAdmin();
+        AppModel::create([
+            'app_id' => 'cmspro.webos',
+            'name' => 'WebOS 管理桌面',
+            'version' => '1.3.1',
+            'icon' => 'fa fa-stale',
+            'path' => 'app/Apps/CmsproWebos',
+            'status' => 1,
+            'manifest' => ['icon' => 'fa fa-stale'],
+        ]);
+
+        $this->getJson('/admin/cmspro/webos/api/catalog')
+            ->assertOk()
+            ->assertJsonPath('data.applications.0.icon_url', url('/api/app/cmspro.webos/icon'))
+            ->assertJsonPath('data.applications.0.manifest_icon', 'fa fa-desktop');
+    }
+
+    public function test_application_cards_fall_back_to_manifest_icon(): void
+    {
+        $script = file_get_contents(dirname(__DIR__, 2) . '/Assets/js/webos.js');
+
+        $this->assertIsString($script);
+        $this->assertStringContainsString('data-app-icon-primary', $script);
+        $this->assertStringContainsString('data-app-icon-fallback', $script);
+        $this->assertStringContainsString('data-app-icon-fallback hidden data-src', $script);
+        $this->assertStringContainsString('fallback.src = fallback.dataset.src;', $script);
+        $this->assertStringContainsString('app.manifest_icon || app.icon', $script);
     }
 
     public function test_install_dialog_uses_terminal_aware_menu_mounting(): void

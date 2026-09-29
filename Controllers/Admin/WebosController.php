@@ -3,6 +3,7 @@
 namespace App\Apps\CmsproWebos\Controllers\Admin;
 
 use App\Apps\CmsproWebos\Services\AdminMenuCatalogService;
+use App\Apps\CmsproWebos\Services\ApplicationIconService;
 use App\Apps\CmsproWebos\Services\WorkspaceService;
 use App\Http\Controllers\Controller;
 use App\Http\Responses\ApiResponse;
@@ -18,7 +19,8 @@ class WebosController extends Controller
     public function __construct(
         protected WorkspaceService $workspaces,
         protected MenuService $menus,
-        protected AdminMenuCatalogService $menuCatalog
+        protected AdminMenuCatalogService $menuCatalog,
+        protected ApplicationIconService $applicationIcons
     ) {
     }
 
@@ -93,7 +95,7 @@ class WebosController extends Controller
         $applications = AppModel::query()
             ->installed()
             ->orderBy('name')
-            ->get(['app_id', 'name', 'description', 'version', 'author', 'icon', 'status'])
+            ->get(['app_id', 'name', 'description', 'version', 'author', 'icon', 'status', 'path', 'manifest'])
             ->map(function (AppModel $app): array {
                 return [
                     'app_id' => $app->app_id,
@@ -103,6 +105,10 @@ class WebosController extends Controller
                     'author' => $app->author,
                     'icon' => $app->icon,
                     'icon_url' => url('/api/app/' . $app->app_id . '/icon'),
+                    'manifest_icon' => $this->applicationIcons->resolveManifestIcon(
+                        $app->resolvePath(),
+                        $app->manifest ?? []
+                    ),
                     'status' => $app->status->value,
                     'status_label' => $app->status->label(),
                 ];

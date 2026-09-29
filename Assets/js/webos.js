@@ -932,12 +932,25 @@
         });
     }
 
-    function appIconMarkup(app) {
-        var iconUrl = app.icon_url || app.icon;
-        if (typeof iconUrl === 'string' && (/^\//.test(iconUrl) || /^https?:\/\//.test(iconUrl))) {
-            return '<span class="app-icon"><img src="' + escapeHtml(iconUrl) + '" alt="" onerror="this.style.display=\'none\';this.parentNode.innerHTML=\'<i class=&quot;fa fa-cube&quot;></i>\'"></span>';
+    function isImageIcon(icon) {
+        return typeof icon === 'string' && (/^\//.test(icon) || /^https?:\/\//.test(icon));
+    }
+
+    function appIconFallbackMarkup(app) {
+        var fallback = app.manifest_icon || app.icon;
+        if (isImageIcon(fallback)) {
+            return '<img data-app-icon-fallback hidden data-src="' + escapeHtml(fallback) + '" alt="">'
+                + '<i data-app-icon-final hidden class="fa fa-cube"></i>';
         }
-        return '<span class="app-icon"><i class="' + safeIcon(app.icon || 'fa fa-cube') + '"></i></span>';
+        return '<i data-app-icon-fallback hidden class="' + safeIcon(fallback || 'fa fa-cube') + '"></i>';
+    }
+
+    function appIconMarkup(app) {
+        if (isImageIcon(app.icon_url)) {
+            return '<span class="app-icon"><img data-app-icon-primary src="' + escapeHtml(app.icon_url) + '" alt="">'
+                + appIconFallbackMarkup(app) + '</span>';
+        }
+        return '<span class="app-icon"><i class="' + safeIcon(app.manifest_icon || app.icon || 'fa fa-cube') + '"></i></span>';
     }
 
     function renderApplicationCards(apps, mode) {
@@ -1447,6 +1460,33 @@
                 item.style.display = name.indexOf(query) >= 0 ? '' : 'none';
             });
         });
+
+        elements.windowLayer.addEventListener('error', function (event) {
+            var image = event.target;
+            if (!(image instanceof HTMLImageElement)) {
+                return;
+            }
+
+            if (image.matches('[data-app-icon-primary]')) {
+                image.hidden = true;
+                var fallback = image.parentNode.querySelector('[data-app-icon-fallback]');
+                if (fallback) {
+                    if (fallback instanceof HTMLImageElement && fallback.dataset.src) {
+                        fallback.src = fallback.dataset.src;
+                    }
+                    fallback.hidden = false;
+                }
+                return;
+            }
+
+            if (image.matches('[data-app-icon-fallback]')) {
+                image.hidden = true;
+                var finalIcon = image.parentNode.querySelector('[data-app-icon-final]');
+                if (finalIcon) {
+                    finalIcon.hidden = false;
+                }
+            }
+        }, true);
 
         document.addEventListener('keydown', function (event) {
             var startItem = event.target.closest('.start-app-item[data-menu-id]');
