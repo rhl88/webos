@@ -1171,6 +1171,12 @@
         });
 
         document.addEventListener('keydown', function (event) {
+            var startItem = event.target.closest('.start-app-item[data-menu-id]');
+            if (startItem && event.target === startItem && (event.key === 'Enter' || event.key === ' ')) {
+                event.preventDefault();
+                openEntry(findEntry(startItem.dataset.menuId));
+                return;
+            }
             if (event.key === 'Escape') {
                 closePanels();
                 elements.installDialog.hidden = true;

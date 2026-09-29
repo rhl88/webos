@@ -71,6 +71,15 @@ class WebosWorkspaceApiTest extends WebosTestCase
             ->assertJsonPath('code', 40201);
     }
 
+    public function test_start_menu_application_cards_support_keyboard_activation(): void
+    {
+        $script = file_get_contents(dirname(__DIR__, 2) . '/Assets/js/webos.js');
+
+        $this->assertIsString($script);
+        $this->assertStringContainsString("event.key === 'Enter' || event.key === ' '", $script);
+        $this->assertStringContainsString('startItem.dataset.menuId', $script);
+    }
+
     public function test_workspace_api_rejects_external_paths(): void
     {
         $this->actingAdmin();
