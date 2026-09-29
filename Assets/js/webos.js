@@ -33,6 +33,8 @@
         appCenterTab: 'market',
         actionApp: null,
         startItems: [],
+        calendarView: null,
+        calendarSelected: '',
         desktopSnapshot: []
     };
 
@@ -55,8 +57,14 @@
         notificationList: document.getElementById('notification-list'),
         accountButton: document.getElementById('account-button'),
         accountPanel: document.getElementById('account-panel'),
+        clockButton: document.getElementById('clock-button'),
         clockDate: document.getElementById('clock-date'),
+        clockWeekday: document.getElementById('clock-weekday'),
         clockTime: document.getElementById('clock-time'),
+        calendarPanel: document.getElementById('calendar-panel'),
+        calendarTitle: document.getElementById('calendar-title'),
+        calendarSubtitle: document.getElementById('calendar-subtitle'),
+        calendarGrid: document.getElementById('calendar-grid'),
         lockScreen: document.getElementById('lock-screen'),
         lockDate: document.getElementById('lock-date'),
         lockTime: document.getElementById('lock-time'),
@@ -2128,7 +2136,7 @@
     }
 
     function closePanels(except) {
-        [['start', elements.startPanel, elements.startButton], ['notifications', elements.notificationPanel, elements.notificationButton], ['account', elements.accountPanel, elements.accountButton]].forEach(function (panel) {
+        [['start', elements.startPanel, elements.startButton], ['notifications', elements.notificationPanel, elements.notificationButton], ['account', elements.accountPanel, elements.accountButton], ['calendar', elements.calendarPanel, elements.clockButton]].forEach(function (panel) {
             if (panel[0] !== except) {
                 panel[1].hidden = true;
                 panel[2].classList.remove('is-active');
@@ -2138,9 +2146,95 @@
     }
 
     function isPanelToggle(target) {
-        return [elements.startButton, elements.notificationButton, elements.accountButton].some(function (button) {
+        return [elements.startButton, elements.notificationButton, elements.accountButton, elements.clockButton].some(function (button) {
             return button && button.contains(target);
         });
+    }
+
+    function padNumber(value) {
+        return String(value).padStart(2, '0');
+    }
+
+    function formatDateKey(date) {
+        return date.getFullYear() + '-' + padNumber(date.getMonth() + 1) + '-' + padNumber(date.getDate());
+    }
+
+    function parseDateKey(key) {
+        var parts = String(key).split('-').map(Number);
+        if (parts.length !== 3 || parts.some(function (value) { return isNaN(value); })) {
+            return null;
+        }
+
+        return new Date(parts[0], parts[1] - 1, parts[2]);
+    }
+
+    function describeDate(date) {
+        return date.getFullYear() + '年' + (date.getMonth() + 1) + '月' + date.getDate() + '日 '
+            + date.toLocaleDateString('zh-CN', { weekday: 'long' });
+    }
+
+    function calendarDayMarkup(date, view, todayKey, selectedKey) {
+        var key = formatDateKey(date);
+        var classes = ['calendar-day'];
+        if (date.getMonth() !== view.getMonth()) {
+            classes.push('is-outside');
+        }
+        if (key === todayKey) {
+            classes.push('is-today');
+        }
+        if (key === selectedKey) {
+            classes.push('is-selected');
+        }
+
+        return '<button class="' + classes.join(' ') + '" type="button" data-calendar-date="' + key + '">'
+            + date.getDate() + '</button>';
+    }
+
+    function calendarDaysMarkup(view, todayKey, selectedKey) {
+        var first = new Date(view.getFullYear(), view.getMonth(), 1);
+        var offset = (first.getDay() + 6) % 7;
+        var cells = '';
+
+        for (var index = 0; index < 42; index += 1) {
+            var date = new Date(first.getFullYear(), first.getMonth(), first.getDate() - offset + index);
+            cells += calendarDayMarkup(date, view, todayKey, selectedKey);
+        }
+
+        return cells;
+    }
+
+    function renderCalendar() {
+        var today = new Date();
+        var view = state.calendarView || new Date(today.getFullYear(), today.getMonth(), 1);
+        state.calendarView = view;
+        var selected = state.calendarSelected ? parseDateKey(state.calendarSelected) : null;
+
+        elements.calendarTitle.textContent = view.getFullYear() + '年' + (view.getMonth() + 1) + '月';
+        elements.calendarSubtitle.textContent = selected ? '已选 ' + describeDate(selected) : '今天 ' + describeDate(today);
+        elements.calendarGrid.innerHTML = calendarDaysMarkup(view, formatDateKey(today), state.calendarSelected);
+    }
+
+    function openCalendar() {
+        var today = new Date();
+        state.calendarView = new Date(today.getFullYear(), today.getMonth(), 1);
+        state.calendarSelected = '';
+        renderCalendar();
+    }
+
+    function shiftCalendarMonth(offset) {
+        var view = state.calendarView || new Date();
+        state.calendarView = new Date(view.getFullYear(), view.getMonth() + offset, 1);
+        renderCalendar();
+    }
+
+    function selectCalendarDate(key) {
+        var date = parseDateKey(key);
+        if (!date) {
+            return;
+        }
+        state.calendarSelected = key;
+        state.calendarView = new Date(date.getFullYear(), date.getMonth(), 1);
+        renderCalendar();
     }
 
     function applyTaskbarPosition() {
@@ -2200,6 +2294,9 @@
             renderStartMenu();
             window.setTimeout(function () { elements.startSearch.focus(); }, 20);
         }
+        if (opening && name === 'calendar') {
+            openCalendar();
+        }
     }
 
     function updateClock() {
@@ -2210,8 +2307,9 @@
             options.second = '2-digit';
         }
         var time = now.toLocaleTimeString('zh-CN', options);
-        var date = now.toLocaleDateString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit', weekday: 'short' });
+        var date = now.toLocaleDateString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit' });
         elements.clockDate.textContent = date;
+        elements.clockWeekday.textContent = now.toLocaleDateString('zh-CN', { weekday: 'short' });
         elements.clockTime.textContent = time;
         elements.lockDate.textContent = now.toLocaleDateString('zh-CN', { year: 'numeric', month: 'long', day: 'numeric', weekday: 'long' });
         elements.lockTime.textContent = time;
@@ -2258,6 +2356,7 @@
         elements.startButton.addEventListener('click', function () { togglePanel('start', elements.startPanel, elements.startButton); });
         elements.notificationButton.addEventListener('click', function () { togglePanel('notifications', elements.notificationPanel, elements.notificationButton); });
         elements.accountButton.addEventListener('click', function () { togglePanel('account', elements.accountPanel, elements.accountButton); });
+        elements.clockButton.addEventListener('click', function () { togglePanel('calendar', elements.calendarPanel, elements.clockButton); });
         elements.startSearch.addEventListener('input', renderStartMenu);
 
         document.getElementById('notification-read-all').addEventListener('click', function () {
@@ -2302,6 +2401,7 @@
             if (action) {
                 var name = action.dataset.action;
                 if (name === 'close-start') { closePanels(); }
+                if (name === 'close-calendar') { closePanels(); }
                 if (name === 'close-install') { elements.installDialog.hidden = true; }
                 if (name === 'close-action') { closeActionDialog(); }
                 if (name === 'lock-desktop') { closePanels(); elements.lockScreen.hidden = false; updateClock(); }
@@ -2319,6 +2419,14 @@
 
             var groupButton = event.target.closest('[data-group-id]');
             if (groupButton) { state.activeGroup = groupButton.dataset.groupId; renderStartMenu(); }
+
+            var calendarNav = event.target.closest('[data-calendar-nav]');
+            if (calendarNav) { shiftCalendarMonth(calendarNav.dataset.calendarNav === 'prev' ? -1 : 1); }
+
+            if (event.target.closest('[data-calendar-today]')) { openCalendar(); }
+
+            var calendarDay = event.target.closest('[data-calendar-date]');
+            if (calendarDay) { selectCalendarDate(calendarDay.dataset.calendarDate); }
 
             var pinButton = event.target.closest('[data-pin-id]');
             if (pinButton) {

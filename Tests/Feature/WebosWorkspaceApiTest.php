@@ -300,6 +300,43 @@ class WebosWorkspaceApiTest extends WebosTestCase
         $this->assertStringContainsString('overflow-y: auto;', $stylesheet);
     }
 
+    public function test_clock_opens_calendar_and_renders_three_part_time(): void
+    {
+        $script = file_get_contents(dirname(__DIR__, 2) . '/Assets/js/webos.js');
+        $stylesheet = file_get_contents(dirname(__DIR__, 2) . '/Assets/css/webos.css');
+        $view = file_get_contents(dirname(__DIR__, 2) . '/Views/Admin/desktop/index.blade.php');
+
+        $this->assertIsString($script);
+        $this->assertIsString($stylesheet);
+        $this->assertIsString($view);
+        $this->assertStringContainsString('id="calendar-panel"', $view);
+        $this->assertStringContainsString('id="calendar-grid"', $view);
+        $this->assertStringContainsString('id="clock-weekday"', $view);
+        $this->assertStringContainsString('data-calendar-nav="prev"', $view);
+        $this->assertStringContainsString('data-calendar-today', $view);
+        $this->assertStringContainsString('function renderCalendar()', $script);
+        $this->assertStringContainsString('function openCalendar()', $script);
+        $this->assertStringContainsString('function shiftCalendarMonth(offset)', $script);
+        $this->assertStringContainsString('function selectCalendarDate(key)', $script);
+        $this->assertStringContainsString("togglePanel('calendar', elements.calendarPanel, elements.clockButton)", $script);
+        $this->assertStringContainsString('calendarDayMarkup(date, view, todayKey, selectedKey)', $script);
+        $this->assertStringContainsString("elements.clockWeekday.textContent = now.toLocaleDateString('zh-CN', { weekday: 'short' })", $script);
+        $this->assertStringContainsString('.calendar-panel {', $stylesheet);
+        $this->assertStringContainsString('.calendar-day.is-selected', $stylesheet);
+    }
+
+    public function test_taskbar_clock_adapts_to_taskbar_position(): void
+    {
+        $stylesheet = file_get_contents(dirname(__DIR__, 2) . '/Assets/css/webos.css');
+
+        $this->assertIsString($stylesheet);
+        $this->assertStringContainsString('.clock-meta {', $stylesheet);
+        $this->assertStringContainsString('.webos-desktop[data-taskbar-position="left"] .clock-meta,', $stylesheet);
+        $this->assertStringContainsString('.webos-desktop[data-taskbar-position="right"] .clock-meta {', $stylesheet);
+        $this->assertStringContainsString('font-size: 9px;', $stylesheet);
+        $this->assertStringContainsString('letter-spacing: -0.2px;', $stylesheet);
+    }
+
     public function test_desktop_icon_context_menu_offers_open_remove_and_uninstall(): void
     {
         $script = file_get_contents(dirname(__DIR__, 2) . '/Assets/js/webos.js');

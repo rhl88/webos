@@ -78,6 +78,27 @@
         <a class="panel-footer-link" href="/admin/notifications" target="_blank" rel="noopener">查看全部通知</a>
     </section>
 
+    <section id="calendar-panel" class="webos-panel calendar-panel" aria-label="日历" hidden>
+        <header class="panel-header">
+            <div>
+                <strong id="calendar-title">--</strong>
+                <span id="calendar-subtitle">--</span>
+            </div>
+            <button class="icon-button" type="button" data-action="close-calendar" aria-label="关闭日历">
+                <i class="fa fa-times" aria-hidden="true"></i>
+            </button>
+        </header>
+        <div class="calendar-toolbar">
+            <button class="icon-button" type="button" data-calendar-nav="prev" aria-label="上个月"><i class="fa fa-chevron-left"></i></button>
+            <button class="text-button" type="button" data-calendar-today>回到今天</button>
+            <button class="icon-button" type="button" data-calendar-nav="next" aria-label="下个月"><i class="fa fa-chevron-right"></i></button>
+        </div>
+        <div class="calendar-weekdays" aria-hidden="true">
+            <span>一</span><span>二</span><span>三</span><span>四</span><span>五</span><span>六</span><span>日</span>
+        </div>
+        <div class="calendar-grid" id="calendar-grid"></div>
+    </section>
+
     <section id="account-panel" class="webos-panel account-panel" aria-label="账号菜单" hidden>
         <div class="account-card">
             <span class="account-avatar" aria-hidden="true">
@@ -205,9 +226,12 @@
             <span>{{ $admin->name ?: $admin->username }}</span>
         </button>
         <span class="taskbar-divider" aria-hidden="true"></span>
-        <button id="clock-button" class="clock-button" type="button" aria-label="当前日期与时间">
+        <button id="clock-button" class="clock-button" type="button" aria-label="当前日期与时间" aria-haspopup="dialog" aria-expanded="false">
             <span id="clock-date">--</span>
-            <span id="clock-time">--:--</span>
+            <span class="clock-meta">
+                <span id="clock-weekday">--</span>
+                <span id="clock-time">--:--</span>
+            </span>
         </button>
         <button id="show-desktop-button" class="show-desktop-button" type="button" aria-label="显示桌面"></button>
     </footer>
