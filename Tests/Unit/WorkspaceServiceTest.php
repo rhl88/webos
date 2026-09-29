@@ -52,6 +52,8 @@ class WorkspaceServiceTest extends WebosTestCase
                 'clock_format' => '12h',
                 'show_seconds' => true,
                 'taskbar_position' => 'right',
+                'window_width' => 90,
+                'window_height' => 30,
                 'unknown_setting' => 'ignored',
             ],
         ]);
@@ -63,8 +65,29 @@ class WorkspaceServiceTest extends WebosTestCase
         $this->assertSame('12h', $workspace->preferences['clock_format']);
         $this->assertTrue($workspace->preferences['show_seconds']);
         $this->assertSame('right', $workspace->preferences['taskbar_position']);
+        $this->assertSame(90, $workspace->preferences['window_width']);
+        $this->assertSame(40, $workspace->preferences['window_height']);
         $this->assertArrayNotHasKey('unknown_setting', $workspace->preferences);
         $this->assertSame(1, WebosWorkspace::query()->count());
+    }
+
+    public function test_it_sanitizes_window_size_preferences(): void
+    {
+        $admin = $this->actingAdmin();
+        $workspace = app(WorkspaceService::class)->getForAdmin($admin->id);
+
+        $this->assertSame(78, $workspace->preferences['window_width']);
+        $this->assertSame(80, $workspace->preferences['window_height']);
+
+        $invalid = app(WorkspaceService::class)->saveForAdmin($admin->id, [
+            'preferences' => [
+                'window_width' => 'large',
+                'window_height' => 130,
+            ],
+        ]);
+
+        $this->assertSame(78, $invalid->preferences['window_width']);
+        $this->assertSame(100, $invalid->preferences['window_height']);
     }
 
     public function test_it_falls_back_to_bottom_for_an_invalid_taskbar_position(): void

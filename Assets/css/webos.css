@@ -174,10 +174,10 @@ button {
     position: absolute;
     display: flex;
     flex-direction: column;
-    width: min(1120px, calc(100vw - 140px));
-    height: min(720px, calc(100vh - 140px));
-    min-width: 620px;
-    min-height: 420px;
+    width: min(var(--webos-window-width, 78%), calc(100vw - 40px));
+    height: min(var(--webos-window-height, 80%), calc(100vh - var(--taskbar-height) - 40px));
+    min-width: 420px;
+    min-height: 320px;
     overflow: hidden;
     border: 1px solid rgba(209, 222, 234, 0.98);
     border-radius: var(--webos-radius);
@@ -1633,6 +1633,30 @@ button {
     background: #eaf8f6;
 }
 
+.settings-range {
+    display: block;
+    margin-top: 12px;
+}
+
+.settings-range > span {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    color: #53647b;
+    font-size: 12px;
+}
+
+.settings-range > span b {
+    color: var(--webos-primary-dark);
+    font-size: 13px;
+}
+
+.settings-range input[type="range"] {
+    width: 100%;
+    margin-top: 8px;
+    accent-color: var(--webos-primary);
+}
+
 .settings-toggle {
     display: flex;
     align-items: center;
@@ -2096,12 +2120,6 @@ button {
 }
 
 @media (max-width: 1180px) {
-    .app-window {
-        width: calc(100vw - 80px);
-        height: calc(100vh - 124px);
-        min-width: 720px;
-    }
-
     .account-button > span:last-child {
         display: none;
     }

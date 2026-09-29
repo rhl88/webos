@@ -301,6 +301,45 @@ class WebosWorkspaceApiTest extends WebosTestCase
         $this->assertStringContainsString('overflow-y: auto;', $stylesheet);
     }
 
+    public function test_os_settings_controls_default_window_size(): void
+    {
+        $script = file_get_contents(dirname(__DIR__, 2) . '/Assets/js/webos.js');
+        $stylesheet = file_get_contents(dirname(__DIR__, 2) . '/Assets/css/webos.css');
+
+        $this->assertIsString($script);
+        $this->assertIsString($stylesheet);
+        $this->assertStringContainsString('function settingsRangeMarkup(name, title, value)', $script);
+        $this->assertStringContainsString("settingsRangeMarkup('window_width', '默认宽度'", $script);
+        $this->assertStringContainsString("settingsRangeMarkup('window_height', '默认高度'", $script);
+        $this->assertStringContainsString('data-set-window-size="', $script);
+        $this->assertStringContainsString('function defaultWindowSize()', $script);
+        $this->assertStringContainsString('function clampWindowRatio(value, fallback)', $script);
+        $this->assertStringContainsString('function setWindowSizePreference(name, value)', $script);
+        $this->assertStringContainsString("root.style.setProperty('--webos-window-width'", $script);
+        $this->assertStringContainsString("root.style.setProperty('--webos-window-height'", $script);
+        $this->assertStringContainsString('var size = defaultWindowSize();', $script);
+        $this->assertStringContainsString('width: min(var(--webos-window-width, 78%)', $stylesheet);
+        $this->assertStringContainsString('height: min(var(--webos-window-height, 80%)', $stylesheet);
+        $this->assertStringContainsString('.settings-range input[type="range"]', $stylesheet);
+    }
+
+    public function test_workspace_api_accepts_window_size_preferences(): void
+    {
+        $this->actingAdmin();
+
+        $this->putJson('/admin/cmspro/webos/api/workspace', [
+            'preferences' => ['window_width' => 64, 'window_height' => 92],
+        ])->assertOk()
+            ->assertJsonPath('code', 0)
+            ->assertJsonPath('data.preferences.window_width', 64)
+            ->assertJsonPath('data.preferences.window_height', 92);
+
+        $this->putJson('/admin/cmspro/webos/api/workspace', [
+            'preferences' => ['window_width' => 20],
+        ])->assertUnprocessable()
+            ->assertJsonPath('code', 40201);
+    }
+
     public function test_account_menu_opens_profile_and_password_dialog(): void
     {
         $script = file_get_contents(dirname(__DIR__, 2) . '/Assets/js/webos.js');

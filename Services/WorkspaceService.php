@@ -16,6 +16,8 @@ class WorkspaceService
         'clock_format' => '24h',
         'show_seconds' => false,
         'motion' => true,
+        'window_width' => 78,
+        'window_height' => 80,
         'usage_stats' => [],
     ];
 
@@ -115,9 +117,29 @@ class WorkspaceService
         $preferences['clock_format'] = $preferences['clock_format'] === '12h' ? '12h' : '24h';
         $preferences['show_seconds'] = (bool) $preferences['show_seconds'];
         $preferences['motion'] = (bool) $preferences['motion'];
+        $preferences['window_width'] = $this->sanitizePercent(
+            $preferences['window_width'],
+            self::DEFAULT_PREFERENCES['window_width']
+        );
+        $preferences['window_height'] = $this->sanitizePercent(
+            $preferences['window_height'],
+            self::DEFAULT_PREFERENCES['window_height']
+        );
         $preferences['usage_stats'] = $this->sanitizeUsageStats($preferences['usage_stats']);
 
         return $preferences;
+    }
+
+    /**
+     * 窗口默认尺寸按可用桌面区域的百分比存储，限制在 40% - 100% 之间。
+     */
+    protected function sanitizePercent(mixed $value, int $fallback): int
+    {
+        if (! is_numeric($value)) {
+            return $fallback;
+        }
+
+        return (int) min(100, max(40, (int) round((float) $value)));
     }
 
     /** @return array<string,array{count:int,last_opened_at:string}> */

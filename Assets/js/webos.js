@@ -17,6 +17,8 @@
                 clock_format: '24h',
                 show_seconds: false,
                 motion: true,
+                window_width: 78,
+                window_height: 80,
                 usage_stats: {}
             }
         },
@@ -829,6 +831,12 @@
             + '<i class="fa ' + icon + '"></i><span>' + label + '</span></button>';
     }
 
+    function settingsRangeMarkup(name, title, value) {
+        return '<label class="settings-range"><span>' + title + '<b>' + value + '%</b></span>'
+            + '<input type="range" min="40" max="100" step="1" value="' + value + '"'
+            + ' data-set-window-size="' + name + '" aria-label="' + title + '"></label>';
+    }
+
     function renderWebosSettings() {
         var shell = document.querySelector('[data-webos-settings]');
         if (!shell) {
@@ -858,11 +866,40 @@
             + settingsChoice('set-clock-format', '12h', 'fa-clock-o', '12 小时', preferences.clock_format === '12h')
             + '</div><button class="settings-toggle" type="button" data-toggle-webos-setting="show_seconds" aria-pressed="'
             + (preferences.show_seconds ? 'true' : 'false') + '"><span><strong>显示秒数</strong><small>在任务栏时钟中显示秒</small></span><i></i></button></section>'
+            + '<section class="settings-card"><div class="settings-card-title"><i class="fa fa-window-restore"></i><div>'
+            + '<strong>窗口默认尺寸</strong><small>新建窗口按可用桌面区域的百分比显示</small></div></div>'
+            + settingsRangeMarkup('window_width', '默认宽度', clampWindowRatio(preferences.window_width, 78))
+            + settingsRangeMarkup('window_height', '默认高度', clampWindowRatio(preferences.window_height, 80))
+            + '</section>'
             + '<section class="settings-card"><div class="settings-card-title"><i class="fa fa-magic"></i><div>'
             + '<strong>交互体验</strong><small>控制窗口与面板的过渡效果</small></div></div>'
             + '<button class="settings-toggle" type="button" data-toggle-webos-setting="motion" aria-pressed="'
             + (preferences.motion ? 'true' : 'false') + '"><span><strong>界面动效</strong><small>开启柔和的窗口和菜单动画</small></span><i></i></button></section>'
             + '</div>';
+    }
+
+    var MIN_WINDOW_WIDTH = 420;
+    var MIN_WINDOW_HEIGHT = 320;
+
+    function clampWindowRatio(value, fallback) {
+        var ratio = Number(value);
+        if (!isFinite(ratio)) {
+            return fallback;
+        }
+
+        return Math.min(100, Math.max(40, Math.round(ratio)));
+    }
+
+    function defaultWindowSize() {
+        var preferences = state.workspace.preferences || {};
+        var rect = elements.windowLayer.getBoundingClientRect();
+        var widthRatio = clampWindowRatio(preferences.window_width, 78);
+        var heightRatio = clampWindowRatio(preferences.window_height, 80);
+
+        return {
+            width: Math.max(MIN_WINDOW_WIDTH, Math.round(rect.width * widthRatio / 100)),
+            height: Math.max(MIN_WINDOW_HEIGHT, Math.round(rect.height * heightRatio / 100))
+        };
     }
 
     function openEntry(entry) {
@@ -887,12 +924,12 @@
         wrapper.innerHTML = windowMarkup(entry, key);
         var windowElement = wrapper.firstElementChild;
         var offset = state.windows.size % 5;
-        var width = Math.min(1120, window.innerWidth - 140);
-        var height = Math.min(720, window.innerHeight - 140);
-        windowElement.style.left = Math.max(24, (window.innerWidth - width) / 2 + offset * 18) + 'px';
-        windowElement.style.top = Math.max(20, (window.innerHeight - 74 - height) / 2 + offset * 14) + 'px';
-        windowElement.style.width = width + 'px';
-        windowElement.style.height = height + 'px';
+        var layerRect = elements.windowLayer.getBoundingClientRect();
+        var size = defaultWindowSize();
+        windowElement.style.left = Math.max(24, (layerRect.width - size.width) / 2 + offset * 18) + 'px';
+        windowElement.style.top = Math.max(20, (layerRect.height - size.height) / 2 + offset * 14) + 'px';
+        windowElement.style.width = size.width + 'px';
+        windowElement.style.height = size.height + 'px';
         elements.windowLayer.appendChild(windowElement);
         state.windows.set(key, { entry: entry, element: windowElement, minimized: false, maximized: false });
         focusWindow(key);
@@ -1044,8 +1081,8 @@
             var startHeight = element.offsetHeight;
             resize.setPointerCapture(event.pointerId);
             function move(moveEvent) {
-                element.style.width = Math.max(620, Math.min(window.innerWidth - element.offsetLeft, startWidth + moveEvent.clientX - startX)) + 'px';
-                element.style.height = Math.max(420, Math.min(window.innerHeight - 74 - element.offsetTop, startHeight + moveEvent.clientY - startY)) + 'px';
+                element.style.width = Math.max(MIN_WINDOW_WIDTH, Math.min(window.innerWidth - element.offsetLeft, startWidth + moveEvent.clientX - startX)) + 'px';
+                element.style.height = Math.max(MIN_WINDOW_HEIGHT, Math.min(window.innerHeight - 74 - element.offsetTop, startHeight + moveEvent.clientY - startY)) + 'px';
             }
             function end() {
                 resize.removeEventListener('pointermove', move);
@@ -2334,6 +2371,8 @@
         var preferences = state.workspace.preferences;
         root.dataset.wallpaper = preferences.wallpaper || 'webos-default';
         root.dataset.motion = preferences.motion === false ? 'off' : 'on';
+        root.style.setProperty('--webos-window-width', clampWindowRatio(preferences.window_width, 78) + '%');
+        root.style.setProperty('--webos-window-height', clampWindowRatio(preferences.window_height, 80) + '%');
         applyTaskbarPosition();
         updateClock();
     }
@@ -2357,6 +2396,20 @@
         state.workspace.preferences[name] = value;
         applyWorkspacePreferences();
         savePreference(message);
+    }
+
+    function updateWindowSizeLabel(slider) {
+        var value = slider.parentNode.querySelector('b');
+        if (value) {
+            value.textContent = slider.value + '%';
+        }
+    }
+
+    function setWindowSizePreference(name, value) {
+        if (name !== 'window_width' && name !== 'window_height') {
+            return;
+        }
+        setWebosPreference(name, clampWindowRatio(value, name === 'window_width' ? 78 : 80), '窗口默认尺寸已更新');
     }
 
     function togglePanel(name, panel, button) {
@@ -2436,6 +2489,18 @@
         elements.accountButton.addEventListener('click', function () { togglePanel('account', elements.accountPanel, elements.accountButton); });
         elements.clockButton.addEventListener('click', function () { togglePanel('calendar', elements.calendarPanel, elements.clockButton); });
         elements.startSearch.addEventListener('input', renderStartMenu);
+        elements.windowLayer.addEventListener('input', function (event) {
+            var slider = event.target.closest('[data-set-window-size]');
+            if (slider) {
+                updateWindowSizeLabel(slider);
+            }
+        });
+        elements.windowLayer.addEventListener('change', function (event) {
+            var slider = event.target.closest('[data-set-window-size]');
+            if (slider) {
+                setWindowSizePreference(slider.dataset.setWindowSize, Number(slider.value));
+            }
+        });
 
         document.getElementById('notification-read-all').addEventListener('click', function () {
             api('/api/admin/notifications/read-all', { method: 'POST' }).then(function () {
@@ -2745,6 +2810,8 @@
                 clock_format: '24h',
                 show_seconds: false,
                 motion: true,
+                window_width: 78,
+                window_height: 80,
                 usage_stats: {}
             }, state.workspace.preferences || {});
             state.catalog = responses[1] || state.catalog;

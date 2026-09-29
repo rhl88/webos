@@ -90,6 +90,8 @@ class WebosController extends Controller
             'preferences.clock_format' => ['sometimes', 'in:12h,24h'],
             'preferences.show_seconds' => ['sometimes', 'boolean'],
             'preferences.motion' => ['sometimes', 'boolean'],
+            'preferences.window_width' => ['sometimes', 'integer', 'between:40,100'],
+            'preferences.window_height' => ['sometimes', 'integer', 'between:40,100'],
             'preferences.usage_stats' => ['sometimes', 'array', 'max:80'],
         ]);
 
