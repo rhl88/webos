@@ -299,7 +299,7 @@ button {
 }
 
 .window-sidebar {
-    flex: 0 0 196px;
+    flex: 0 0 146px;
     padding: 18px 10px;
     overflow-y: auto;
     border-right: 1px solid var(--webos-line);
@@ -2035,10 +2035,6 @@ button {
         width: calc(100vw - 80px);
         height: calc(100vh - 124px);
         min-width: 720px;
-    }
-
-    .window-sidebar {
-        flex-basis: 176px;
     }
 
     .account-button > span:last-child {

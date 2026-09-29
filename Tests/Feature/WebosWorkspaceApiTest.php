@@ -161,6 +161,8 @@ class WebosWorkspaceApiTest extends WebosTestCase
         $this->assertStringContainsString('function toggleWindowSidebar', $script);
         $this->assertStringContainsString('is-sidebar-collapsed', $script);
         $this->assertStringContainsString('.app-window.is-sidebar-collapsed .window-sidebar', $stylesheet);
+        $this->assertStringContainsString('flex: 0 0 146px;', $stylesheet);
+        $this->assertStringNotContainsString('flex-basis: 176px;', $stylesheet);
     }
 
     public function test_window_brand_uses_application_icon_and_keeps_system_logo(): void
