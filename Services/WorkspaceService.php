@@ -16,6 +16,7 @@ class WorkspaceService
         'clock_format' => '24h',
         'show_seconds' => false,
         'motion' => true,
+        'usage_stats' => [],
     ];
 
     public function getForAdmin(int $adminUserId): WebosWorkspace
@@ -112,7 +113,39 @@ class WorkspaceService
         $preferences['clock_format'] = $preferences['clock_format'] === '12h' ? '12h' : '24h';
         $preferences['show_seconds'] = (bool) $preferences['show_seconds'];
         $preferences['motion'] = (bool) $preferences['motion'];
+        $preferences['usage_stats'] = $this->sanitizeUsageStats($preferences['usage_stats']);
 
         return $preferences;
+    }
+
+    /** @return array<string,array{count:int,last_opened_at:string}> */
+    protected function sanitizeUsageStats(mixed $statistics): array
+    {
+        if (! is_array($statistics)) {
+            return [];
+        }
+
+        $sanitized = [];
+        foreach (array_slice($statistics, 0, 80, true) as $key => $statistic) {
+            if (
+                ! is_string($key)
+                || ! preg_match('/^[A-Za-z0-9:._-]{1,100}$/', $key)
+                || ! is_array($statistic)
+            ) {
+                continue;
+            }
+
+            $lastOpenedAt = (string) ($statistic['last_opened_at'] ?? '');
+            if (! preg_match('/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/', $lastOpenedAt)) {
+                continue;
+            }
+
+            $sanitized[$key] = [
+                'count' => min(999999, max(1, (int) ($statistic['count'] ?? 0))),
+                'last_opened_at' => $lastOpenedAt,
+            ];
+        }
+
+        return $sanitized;
     }
 }

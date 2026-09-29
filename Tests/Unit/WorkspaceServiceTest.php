@@ -66,6 +66,33 @@ class WorkspaceServiceTest extends WebosTestCase
         $this->assertSame('bottom', $workspace->preferences['taskbar_position']);
     }
 
+    public function test_it_sanitizes_usage_statistics_for_the_common_menu(): void
+    {
+        $admin = $this->actingAdmin();
+
+        $workspace = app(WorkspaceService::class)->saveForAdmin($admin->id, [
+            'preferences' => [
+                'usage_stats' => [
+                    'app:cmspro.demo' => [
+                        'count' => 7,
+                        'last_opened_at' => '2026-09-29 10:20:30',
+                    ],
+                    '无效 键' => [
+                        'count' => 3,
+                        'last_opened_at' => 'not-a-date',
+                    ],
+                ],
+            ],
+        ]);
+
+        $this->assertSame(7, $workspace->preferences['usage_stats']['app:cmspro.demo']['count']);
+        $this->assertSame(
+            '2026-09-29 10:20:30',
+            $workspace->preferences['usage_stats']['app:cmspro.demo']['last_opened_at']
+        );
+        $this->assertArrayNotHasKey('无效 键', $workspace->preferences['usage_stats']);
+    }
+
     public function test_it_rejects_external_desktop_paths(): void
     {
         $admin = $this->actingAdmin();

@@ -58,6 +58,11 @@
                 <div id="start-app-grid" class="start-app-grid"></div>
             </div>
         </div>
+        <footer class="start-system-actions" aria-label="系统操作">
+            <button type="button" data-action="lock-desktop"><i class="fa fa-lock"></i>锁定</button>
+            <button type="button" data-action="logout"><i class="fa fa-sign-out"></i>退出登录</button>
+            <button type="button" class="os-settings" data-open-webos-settings><i class="fa fa-cog"></i>OS 设置</button>
+        </footer>
     </section>
 
     <section id="notification-panel" class="webos-panel notification-panel" aria-label="通知中心" hidden>

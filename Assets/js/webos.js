@@ -16,7 +16,8 @@
                 taskbar_position: 'bottom',
                 clock_format: '24h',
                 show_seconds: false,
-                motion: true
+                motion: true,
+                usage_stats: {}
             }
         },
         catalog: { menus: [], applications: [], operation_logs: [] },
@@ -126,8 +127,9 @@
     function flattenMenus(tree) {
         var output = [];
 
-        function walk(items, group, inheritedAppId) {
+        function walk(items, group, inheritedAppId, folder) {
             (items || []).forEach(function (item) {
+                var isRoot = !group;
                 var nextGroup = group || {
                     id: String(item.id || item.code || item.name),
                     title: item.name || '应用',
@@ -135,8 +137,18 @@
                 };
                 var nextAppId = item.app_id || inheritedAppId || '';
                 var children = Array.isArray(item.children) ? item.children : [];
+                var nextFolder = folder;
+                if (!nextAppId && !nextFolder && !isRoot) {
+                    nextFolder = children.length ? {
+                        id: String(item.id || item.code || item.name),
+                        title: item.name || nextGroup.title,
+                        icon: safeIcon(item.icon || 'fa fa-folder')
+                    } : nextGroup;
+                } else if (!nextAppId && !nextFolder && !children.length) {
+                    nextFolder = nextGroup;
+                }
                 if (children.length) {
-                    walk(children, nextGroup, nextAppId);
+                    walk(children, nextGroup, nextAppId, nextFolder);
                     return;
                 }
                 if (!safePath(item.path)) {
@@ -152,12 +164,15 @@
                     open_type: item.open_type || '_iframe',
                     group_id: nextGroup.id,
                     group_title: nextGroup.title,
-                    group_icon: nextGroup.icon
+                    group_icon: nextGroup.icon,
+                    folder_id: nextAppId ? '' : String(nextFolder.id),
+                    folder_title: nextAppId ? '' : nextFolder.title,
+                    folder_icon: nextAppId ? '' : nextFolder.icon
                 });
             });
         }
 
-        walk(tree || [], null, '');
+        walk(tree || [], null, '', null);
         return output;
     }
 
@@ -171,6 +186,19 @@
             group_title: 'WebOS',
             group_icon: 'fa fa-desktop',
             special: 'market'
+        };
+    }
+
+    function webosSettingsEntry() {
+        return {
+            id: 'webos-settings',
+            title: 'OS 设置',
+            path: '/admin/cmspro/webos?app=settings',
+            icon: 'fa fa-cog',
+            group_id: 'webos',
+            group_title: 'WebOS',
+            group_icon: 'fa fa-desktop',
+            special: 'settings'
         };
     }
 
@@ -268,7 +296,7 @@
         }).join('');
     }
 
-    function groupsFromMenus() {
+    function menuGroups() {
         var groups = new Map();
         state.flatMenus.forEach(function (item) {
             if (!groups.has(item.group_id)) {
@@ -287,34 +315,84 @@
             icon: 'fa fa-desktop',
             entries: [applicationCenterEntry()]
         });
-        return Array.from(groups.values()).map(function (group) {
-            var applications = new Map();
-            group.entries.forEach(function (entry) {
-                var key = entry.app_id ? 'app:' + entry.app_id : 'menu:' + entry.id;
-                if (!applications.has(key)) {
-                    applications.set(key, []);
-                }
-                applications.get(key).push(entry);
+        return Array.from(groups.values());
+    }
+
+    function startItemsForGroup(group) {
+        var applications = new Map();
+        group.entries.forEach(function (entry) {
+            var key = entry.special ? 'special:' + entry.id
+                : (entry.app_id ? 'app:' + entry.app_id : 'folder:' + entry.folder_id);
+            if (!applications.has(key)) {
+                applications.set(key, []);
+            }
+            applications.get(key).push(entry);
+        });
+
+        return Array.from(applications.entries()).map(function (pair) {
+            var entries = pair[1];
+            var representative = entries[0];
+            var application = representative.app_id ? state.catalog.applications.find(function (item) {
+                return item.app_id === representative.app_id;
+            }) : null;
+            var applicationIcon = application && typeof application.icon === 'string' && application.icon.indexOf('/') < 0
+                ? application.icon : representative.icon;
+            var item = Object.assign({}, representative, {
+                start_key: pair[0],
+                start_kind: representative.app_id ? 'application' : 'folder',
+                start_title: application ? application.name : representative.folder_title,
+                start_icon: application ? safeIcon(applicationIcon) : 'fa fa-folder',
+                start_subtitle: entries.length + (application ? ' 个菜单' : ' 个子菜单'),
+                start_search: [application ? application.name : representative.folder_title, entries.map(function (entry) {
+                    return entry.title;
+                }).join(' ')].join(' ')
             });
-            group.items = Array.from(applications.entries()).map(function (pair) {
-                var key = pair[0];
-                var entries = pair[1];
-                var representative = entries[0];
-                var application = representative.app_id ? state.catalog.applications.find(function (item) {
-                    return item.app_id === representative.app_id;
-                }) : null;
-                var applicationIcon = application && typeof application.icon === 'string' && application.icon.indexOf('/') < 0
-                    ? application.icon : representative.icon;
-                return Object.assign({}, representative, {
-                    start_key: key,
-                    start_title: application ? application.name : representative.title,
-                    start_icon: safeIcon(applicationIcon),
-                    start_subtitle: entries.length > 1 ? entries.length + ' 个菜单' : representative.group_title,
-                    start_search: [application ? application.name : '', entries.map(function (item) { return item.title; }).join(' ')].join(' ')
+            if (representative.special) {
+                item.start_kind = 'application';
+                item.start_title = representative.title;
+                item.start_icon = representative.icon;
+                item.start_subtitle = 'WebOS 系统应用';
+            }
+            return item;
+        });
+    }
+
+    function commonGroup(groups) {
+        var statistics = state.workspace.preferences.usage_stats;
+        if (!statistics || Array.isArray(statistics)) {
+            statistics = {};
+        }
+        var items = groups.reduce(function (all, group) { return all.concat(group.items); }, []);
+        items = items.filter(function (item) { return statistics[item.start_key]; });
+        items.sort(function (left, right) {
+            var leftStat = statistics[left.start_key];
+            var rightStat = statistics[right.start_key];
+            return rightStat.count - leftStat.count
+                || rightStat.last_opened_at.localeCompare(leftStat.last_opened_at);
+        });
+        return {
+            id: 'common',
+            title: '常用',
+            icon: 'fa fa-star',
+            entries: [],
+            items: items.slice(0, 6).map(function (item) {
+                return Object.assign({}, item, {
+                    start_subtitle: '使用 ' + statistics[item.start_key].count + ' 次'
                 });
-            });
+            })
+        };
+    }
+
+    function groupsFromMenus() {
+        var groups = menuGroups().map(function (group) {
+            group.items = startItemsForGroup(group);
             return group;
         });
+        return [commonGroup(groups)].concat(groups);
+    }
+
+    function isFolderStartItem(entry) {
+        return entry.start_kind === 'folder';
     }
 
     function renderStartMenu() {
@@ -341,25 +419,69 @@
         entries = Array.from(unique.values());
 
         elements.startGroupTitle.textContent = query ? '搜索结果' : (current ? current.title : '应用');
-        elements.startGroupCount.textContent = entries.length + ' 个应用';
+        elements.startGroupCount.textContent = entries.length + ' 个项目';
         elements.startGrid.innerHTML = entries.length ? entries.map(function (item) {
             var isPinned = state.workspace.desktop_items.some(function (entry) { return entry.id === item.id; });
-            return '<div class="start-app-item" tabindex="0" role="button" data-menu-id="' + escapeHtml(item.id) + '">'
+            var pinButton = isFolderStartItem(item) ? '' : '<button class="pin-button" type="button" data-pin-id="'
+                + escapeHtml(item.id) + '" title="' + (isPinned ? '从桌面移除' : '添加到桌面')
+                + '"><i class="fa ' + (isPinned ? 'fa-thumb-tack' : 'fa-plus') + '"></i></button>';
+            return '<div class="start-app-item ' + (isFolderStartItem(item) ? 'is-folder' : '')
+                + '" tabindex="0" role="button" data-menu-id="' + escapeHtml(item.id) + '" data-start-kind="'
+                + escapeHtml(item.start_kind) + '">'
                 + '<span class="start-app-item-icon"><i class="' + safeIcon(item.start_icon) + '"></i></span>'
                 + '<span class="start-app-item-text"><strong>' + escapeHtml(item.start_title) + '</strong><small>'
                 + escapeHtml(item.start_subtitle || '应用') + '</small></span>'
-                + '<button class="pin-button" type="button" data-pin-id="' + escapeHtml(item.id) + '" title="'
-                + (isPinned ? '从桌面移除' : '添加到桌面') + '"><i class="fa ' + (isPinned ? 'fa-thumb-tack' : 'fa-plus') + '"></i></button>'
+                + pinButton
                 + '</div>';
-        }).join('') : '<div class="panel-empty"><i class="fa fa-search"></i>没有匹配的入口</div>';
+        }).join('') : '<div class="panel-empty"><i class="fa '
+            + (!query && current && current.id === 'common' ? 'fa-star-o' : 'fa-search') + '"></i>'
+            + (!query && current && current.id === 'common' ? '打开应用后，常用入口会显示在这里' : '没有匹配的入口') + '</div>';
     }
 
     function findEntry(id) {
         if (id === 'webos-app-center') {
             return applicationCenterEntry();
         }
+        if (id === 'webos-settings') {
+            return webosSettingsEntry();
+        }
         return state.flatMenus.find(function (item) { return item.id === id; })
             || state.workspace.desktop_items.find(function (item) { return item.id === id; });
+    }
+
+    function formatLocalDateTime(date) {
+        function pad(value) { return String(value).padStart(2, '0'); }
+        return date.getFullYear() + '-' + pad(date.getMonth() + 1) + '-' + pad(date.getDate()) + ' '
+            + pad(date.getHours()) + ':' + pad(date.getMinutes()) + ':' + pad(date.getSeconds());
+    }
+
+    function usageKey(entry) {
+        if (entry.special) {
+            return 'special:' + entry.id;
+        }
+        if (entry.app_id) {
+            return 'app:' + entry.app_id;
+        }
+        return entry.folder_id ? 'folder:' + entry.folder_id : 'menu:' + entry.id;
+    }
+
+    function recordEntryUsage(entry) {
+        if (!entry || entry.id === 'webos-settings') {
+            return;
+        }
+        var key = usageKey(entry);
+        var statistics = state.workspace.preferences.usage_stats;
+        if (!statistics || Array.isArray(statistics)) {
+            statistics = {};
+        }
+        var current = statistics[key] || { count: 0, last_opened_at: '' };
+        statistics[key] = {
+            count: Math.min(999999, Number(current.count || 0) + 1),
+            last_opened_at: formatLocalDateTime(new Date())
+        };
+        state.workspace.preferences.usage_stats = statistics;
+        renderStartMenu();
+        saveWorkspace(false).catch(function () {});
     }
 
     function addDesktopEntry(entry) {
@@ -402,7 +524,10 @@
         if (entry.id === 'webos-app-center') {
             return 'webos-app-center';
         }
-        var identity = entry.app_id ? 'app-' + entry.app_id : 'group-' + (entry.group_id || entry.id || entry.path);
+        if (entry.id === 'webos-settings') {
+            return 'webos-settings';
+        }
+        var identity = entry.app_id ? 'app-' + entry.app_id : 'folder-' + (entry.folder_id || entry.id || entry.path);
         return String(identity).replace(/[^A-Za-z0-9_-]/g, '-');
     }
 
@@ -410,7 +535,8 @@
         if (entry.app_id) {
             return state.flatMenus.filter(function (item) { return item.app_id === entry.app_id; });
         }
-        return state.flatMenus.filter(function (item) { return item.group_id === entry.group_id; });
+        var target = entry;
+        return state.flatMenus.filter(function (entry) { return entry.folder_id === target.folder_id; });
     }
 
     function windowIdentity(entry) {
@@ -418,7 +544,7 @@
             return item.app_id === entry.app_id;
         }) : null;
         return {
-            title: application ? application.name : (entry.group_title || entry.title),
+            title: application ? application.name : (entry.folder_title || entry.group_title || entry.title),
             subtitle: entry.title,
             icon: application && typeof application.icon === 'string' && application.icon.indexOf('/') < 0
                 ? application.icon : entry.icon
@@ -426,8 +552,9 @@
     }
 
     function windowMarkup(entry, key) {
-        var special = entry.special === 'market' || entry.id === 'webos-app-center';
-        var siblings = special ? [
+        var isMarket = entry.special === 'market' || entry.id === 'webos-app-center';
+        var isSettings = entry.special === 'settings' || entry.id === 'webos-settings';
+        var siblings = isMarket ? [
             { id: 'market', title: '应用市场', icon: 'fa fa-shopping-bag' },
             { id: 'installed', title: '已安装', icon: 'fa fa-cube' },
             { id: 'uninstalled', title: '未安装', icon: 'fa fa-download' },
@@ -436,15 +563,22 @@
             { id: 'entries', title: '入口管理', icon: 'fa fa-th' }
         ] : siblingEntries(entry);
         var sidebar = siblings.map(function (item) {
-            var active = special ? item.id === state.appCenterTab : item.id === entry.id;
-            var attrs = special ? 'data-special-tab="' + item.id + '"' : 'data-window-menu-id="' + escapeHtml(item.id) + '"';
+            var active = isMarket ? item.id === state.appCenterTab : item.id === entry.id;
+            var attrs = isMarket ? 'data-special-tab="' + item.id + '"' : 'data-window-menu-id="' + escapeHtml(item.id) + '"';
             return '<button class="window-nav-button ' + (active ? 'is-active' : '') + '" type="button" ' + attrs + '>'
                 + '<i class="' + safeIcon(item.icon) + '"></i><span>' + escapeHtml(item.title) + '</span></button>';
         }).join('');
-        var content = special
+        var content = isMarket
             ? '<div class="app-center-shell" data-app-center></div>'
-            : '<iframe src="' + escapeHtml(entry.path) + '" title="' + escapeHtml(entry.title) + '"></iframe>';
-        var identity = special ? { title: '应用中心', subtitle: 'WebOS' } : windowIdentity(entry);
+            : (isSettings ? '<div class="webos-settings-shell" data-webos-settings></div>'
+                : '<iframe src="' + escapeHtml(entry.path) + '" title="' + escapeHtml(entry.title) + '"></iframe>');
+        var identity = isMarket ? { title: '应用中心', subtitle: 'WebOS' }
+            : (isSettings ? { title: 'OS 设置', subtitle: 'WebOS 系统偏好' } : windowIdentity(entry));
+        var windowBody = isSettings
+            ? '<div class="window-body settings-window-body"><section class="window-content">' + content + '</section></div>'
+            : '<div class="window-body"><aside class="window-sidebar"><span class="window-sidebar-title">'
+                + (isMarket || entry.app_id ? '应用菜单' : '子菜单') + '</span>' + sidebar
+                + '</aside><section class="window-content">' + content + '</section></div>';
 
         return '<article class="app-window" data-window-key="' + key + '">'
             + '<header class="window-titlebar" data-window-drag>'
@@ -455,9 +589,50 @@
             + '<button class="window-control" type="button" data-window-action="maximize" aria-label="最大化"><i class="fa fa-square-o"></i></button>'
             + '<button class="window-control close" type="button" data-window-action="close" aria-label="关闭"><i class="fa fa-times"></i></button>'
             + '</div></header>'
-            + '<div class="window-body"><aside class="window-sidebar"><span class="window-sidebar-title">应用菜单</span>'
-            + sidebar + '</aside><section class="window-content">' + content + '</section></div>'
+            + windowBody
             + '<div class="window-resize-handle" data-window-resize></div></article>';
+    }
+
+    function settingsChoice(attribute, value, icon, label, active) {
+        return '<button class="settings-choice ' + (active ? 'is-active' : '') + '" type="button" data-'
+            + attribute + '="' + value + '" aria-pressed="' + (active ? 'true' : 'false') + '">'
+            + '<i class="fa ' + icon + '"></i><span>' + label + '</span></button>';
+    }
+
+    function renderWebosSettings() {
+        var shell = document.querySelector('[data-webos-settings]');
+        if (!shell) {
+            return;
+        }
+        var preferences = state.workspace.preferences;
+        var positions = [
+            ['top', 'fa-arrow-up', '顶部'], ['bottom', 'fa-arrow-down', '底部'],
+            ['left', 'fa-arrow-left', '左侧'], ['right', 'fa-arrow-right', '右侧']
+        ];
+        shell.innerHTML = '<header class="settings-hero"><span><i class="fa fa-sliders"></i></span><div>'
+            + '<h2>WebOS 个性化设置</h2><p>调整任务栏、桌面外观与时间显示，设置会自动保存到当前管理员工作区。</p></div></header>'
+            + '<div class="settings-grid">'
+            + '<section class="settings-card"><div class="settings-card-title"><i class="fa fa-window-maximize"></i><div>'
+            + '<strong>任务栏位置</strong><small>选择状态栏停靠方向</small></div></div><div class="settings-choice-grid">'
+            + positions.map(function (item) {
+                return settingsChoice('set-taskbar-position', item[0], item[1], item[2], preferences.taskbar_position === item[0]);
+            }).join('') + '</div></section>'
+            + '<section class="settings-card"><div class="settings-card-title"><i class="fa fa-picture-o"></i><div>'
+            + '<strong>桌面外观</strong><small>切换壁纸显示风格</small></div></div><div class="settings-choice-grid is-two">'
+            + settingsChoice('set-webos-wallpaper', 'webos-default', 'fa-sun-o', '默认明亮', preferences.wallpaper === 'webos-default')
+            + settingsChoice('set-webos-wallpaper', 'deep-blue', 'fa-moon-o', '深蓝沉浸', preferences.wallpaper === 'deep-blue')
+            + '</div></section>'
+            + '<section class="settings-card"><div class="settings-card-title"><i class="fa fa-clock-o"></i><div>'
+            + '<strong>时间显示</strong><small>设置时钟格式与精度</small></div></div><div class="settings-choice-grid is-two">'
+            + settingsChoice('set-clock-format', '24h', 'fa-clock-o', '24 小时', preferences.clock_format === '24h')
+            + settingsChoice('set-clock-format', '12h', 'fa-clock-o', '12 小时', preferences.clock_format === '12h')
+            + '</div><button class="settings-toggle" type="button" data-toggle-webos-setting="show_seconds" aria-pressed="'
+            + (preferences.show_seconds ? 'true' : 'false') + '"><span><strong>显示秒数</strong><small>在任务栏时钟中显示秒</small></span><i></i></button></section>'
+            + '<section class="settings-card"><div class="settings-card-title"><i class="fa fa-magic"></i><div>'
+            + '<strong>交互体验</strong><small>控制窗口与面板的过渡效果</small></div></div>'
+            + '<button class="settings-toggle" type="button" data-toggle-webos-setting="motion" aria-pressed="'
+            + (preferences.motion ? 'true' : 'false') + '"><span><strong>界面动效</strong><small>开启柔和的窗口和菜单动画</small></span><i></i></button></section>'
+            + '</div>';
     }
 
     function openEntry(entry) {
@@ -469,6 +644,7 @@
             return;
         }
 
+        recordEntryUsage(entry);
         closePanels();
         var key = windowKey(entry);
         if (state.windows.has(key)) {
@@ -496,10 +672,13 @@
         if (entry.id === 'webos-app-center') {
             renderAppCenter(state.appCenterTab);
         }
+        if (entry.id === 'webos-settings') {
+            renderWebosSettings();
+        }
     }
 
     function activateWindowEntry(windowState, entry) {
-        if (!windowState || entry.id === 'webos-app-center') {
+        if (!windowState || entry.id === 'webos-app-center' || entry.id === 'webos-settings') {
             return;
         }
         var identity = windowIdentity(entry);
@@ -1007,14 +1186,33 @@
         });
     }
 
+    function applyWorkspacePreferences() {
+        var preferences = state.workspace.preferences;
+        root.dataset.wallpaper = preferences.wallpaper || 'webos-default';
+        root.dataset.motion = preferences.motion === false ? 'off' : 'on';
+        applyTaskbarPosition();
+        updateClock();
+    }
+
+    function savePreference(message) {
+        renderWebosSettings();
+        saveWorkspace(false).then(function () { toast(message); });
+    }
+
     function setTaskbarPosition(position) {
         if (['top', 'bottom', 'left', 'right'].indexOf(position) < 0) {
             return;
         }
         state.workspace.preferences.taskbar_position = position;
-        applyTaskbarPosition();
+        applyWorkspacePreferences();
         closePanels();
-        saveWorkspace(false).then(function () { toast('任务栏位置已更新'); });
+        savePreference('任务栏位置已更新');
+    }
+
+    function setWebosPreference(name, value, message) {
+        state.workspace.preferences[name] = value;
+        applyWorkspacePreferences();
+        savePreference(message);
     }
 
     function togglePanel(name, panel, button) {
@@ -1178,6 +1376,9 @@
             var specialOpen = event.target.closest('[data-open-special]');
             if (specialOpen) { state.appCenterTab = specialOpen.dataset.openSpecial; openEntry(applicationCenterEntry()); renderAppCenter(state.appCenterTab); }
 
+            var settingsOpen = event.target.closest('[data-open-webos-settings]');
+            if (settingsOpen) { openEntry(webosSettingsEntry()); }
+
             var install = event.target.closest('[data-install-id]');
             if (install) {
                 var app = state.marketApps.get(install.dataset.installId);
@@ -1207,6 +1408,18 @@
 
             var taskbarPosition = event.target.closest('[data-set-taskbar-position]');
             if (taskbarPosition) { setTaskbarPosition(taskbarPosition.dataset.setTaskbarPosition); }
+
+            var wallpaper = event.target.closest('[data-set-webos-wallpaper]');
+            if (wallpaper) { setWebosPreference('wallpaper', wallpaper.dataset.setWebosWallpaper, '桌面外观已更新'); }
+
+            var clockFormat = event.target.closest('[data-set-clock-format]');
+            if (clockFormat) { setWebosPreference('clock_format', clockFormat.dataset.setClockFormat, '时间格式已更新'); }
+
+            var settingToggle = event.target.closest('[data-toggle-webos-setting]');
+            if (settingToggle) {
+                var settingName = settingToggle.dataset.toggleWebosSetting;
+                setWebosPreference(settingName, !state.workspace.preferences[settingName], 'WebOS 设置已更新');
+            }
 
             var accountPath = event.target.closest('[data-account-path]');
             if (accountPath) {
@@ -1260,11 +1473,21 @@
             api(root.dataset.catalogUrl)
         ]).then(function (responses) {
             state.workspace = responses[0] || state.workspace;
-            state.workspace.preferences = Object.assign({}, state.workspace.preferences || {});
+            state.workspace.preferences = Object.assign({
+                wallpaper: 'webos-default',
+                taskbar_alignment: 'left',
+                taskbar_position: 'bottom',
+                clock_format: '24h',
+                show_seconds: false,
+                motion: true,
+                usage_stats: {}
+            }, state.workspace.preferences || {});
             state.catalog = responses[1] || state.catalog;
+            if (Array.isArray(state.workspace.preferences.usage_stats)) {
+                state.workspace.preferences.usage_stats = {};
+            }
             state.flatMenus = flattenMenus(state.catalog.menus);
-            root.dataset.wallpaper = state.workspace.preferences.wallpaper || 'webos-default';
-            applyTaskbarPosition();
+            applyWorkspacePreferences();
             return bootstrapDesktopItems();
         }).then(function () {
             renderDesktop();

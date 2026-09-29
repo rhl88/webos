@@ -76,6 +76,7 @@ class WebosController extends Controller
             'preferences.clock_format' => ['sometimes', 'in:12h,24h'],
             'preferences.show_seconds' => ['sometimes', 'boolean'],
             'preferences.motion' => ['sometimes', 'boolean'],
+            'preferences.usage_stats' => ['sometimes', 'array', 'max:80'],
         ]);
 
         $workspace = $this->workspaces->saveForAdmin(

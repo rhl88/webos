@@ -51,6 +51,12 @@ class WebosWorkspaceApiTest extends WebosTestCase
                 'clock_format' => '24h',
                 'show_seconds' => false,
                 'motion' => true,
+                'usage_stats' => [
+                    'folder:13' => [
+                        'count' => 4,
+                        'last_opened_at' => '2026-09-29 09:18:00',
+                    ],
+                ],
             ],
         ];
 
@@ -58,7 +64,8 @@ class WebosWorkspaceApiTest extends WebosTestCase
             ->assertOk()
             ->assertJsonPath('code', 0)
             ->assertJsonPath('data.desktop_items.0.title', '用户管理')
-            ->assertJsonPath('data.preferences.taskbar_position', 'left');
+            ->assertJsonPath('data.preferences.taskbar_position', 'left')
+            ->assertJsonPath('data.preferences.usage_stats.folder:13.count', 4);
     }
 
     public function test_workspace_api_rejects_an_unknown_taskbar_position(): void
@@ -78,6 +85,32 @@ class WebosWorkspaceApiTest extends WebosTestCase
         $this->assertIsString($script);
         $this->assertStringContainsString("event.key === 'Enter' || event.key === ' '", $script);
         $this->assertStringContainsString('startItem.dataset.menuId', $script);
+    }
+
+    public function test_start_menu_groups_internal_menus_as_folders(): void
+    {
+        $script = file_get_contents(dirname(__DIR__, 2) . '/Assets/js/webos.js');
+
+        $this->assertIsString($script);
+        $this->assertStringContainsString('folder_id:', $script);
+        $this->assertStringContainsString("start_kind: representative.app_id ? 'application' : 'folder'", $script);
+        $this->assertStringContainsString("entry.folder_id === target.folder_id", $script);
+        $this->assertStringContainsString("entry.start_kind === 'folder'", $script);
+    }
+
+    public function test_start_menu_exposes_system_actions_and_common_entries(): void
+    {
+        $script = file_get_contents(dirname(__DIR__, 2) . '/Assets/js/webos.js');
+        $view = file_get_contents(dirname(__DIR__, 2) . '/Views/Admin/desktop/index.blade.php');
+
+        $this->assertIsString($script);
+        $this->assertIsString($view);
+        $this->assertStringContainsString('recordEntryUsage', $script);
+        $this->assertStringContainsString('Array.isArray(state.workspace.preferences.usage_stats)', $script);
+        $this->assertStringContainsString("id: 'common'", $script);
+        $this->assertStringContainsString('data-action="lock-desktop"', $view);
+        $this->assertStringContainsString('data-action="logout"', $view);
+        $this->assertStringContainsString('data-open-webos-settings', $view);
     }
 
     public function test_install_dialog_uses_terminal_aware_menu_mounting(): void
