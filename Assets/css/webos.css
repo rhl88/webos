@@ -264,6 +264,10 @@ button {
     background: #e05252;
 }
 
+.window-control.sidebar-toggle {
+    color: #087f75;
+}
+
 .window-body {
     display: flex;
     flex: 1 1 auto;
@@ -277,6 +281,10 @@ button {
     overflow-y: auto;
     border-right: 1px solid var(--webos-line);
     background: #f7f9fb;
+}
+
+.app-window.is-sidebar-collapsed .window-sidebar {
+    display: none;
 }
 
 .window-sidebar-title {

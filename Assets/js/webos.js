@@ -551,6 +551,15 @@
         };
     }
 
+    function windowSidebarToggleMarkup(key, collapsed) {
+        var label = collapsed ? '展开左侧菜单' : '收起左侧菜单';
+
+        return '<button class="window-control sidebar-toggle" type="button" data-window-action="toggle-sidebar"'
+            + ' aria-controls="window-sidebar-' + key + '" aria-expanded="' + (!collapsed) + '"'
+            + ' aria-label="' + label + '" title="' + label + '">'
+            + '<i class="fa ' + (collapsed ? 'fa-indent' : 'fa-outdent') + '"></i></button>';
+    }
+
     function windowMarkup(entry, key) {
         var isMarket = entry.special === 'market' || entry.id === 'webos-app-center';
         var isSettings = entry.special === 'settings' || entry.id === 'webos-settings';
@@ -574,17 +583,22 @@
                 : '<iframe src="' + escapeHtml(entry.path) + '" title="' + escapeHtml(entry.title) + '"></iframe>');
         var identity = isMarket ? { title: '应用中心', subtitle: 'WebOS' }
             : (isSettings ? { title: 'OS 设置', subtitle: 'WebOS 系统偏好' } : windowIdentity(entry));
+        var sidebarCollapsed = !isSettings && siblings.length <= 1;
+        var sidebarToggle = isSettings ? '' : windowSidebarToggleMarkup(key, sidebarCollapsed);
         var windowBody = isSettings
             ? '<div class="window-body settings-window-body"><section class="window-content">' + content + '</section></div>'
-            : '<div class="window-body"><aside class="window-sidebar"><span class="window-sidebar-title">'
+            : '<div class="window-body"><aside class="window-sidebar" id="window-sidebar-' + key + '">'
+                + '<span class="window-sidebar-title">'
                 + (isMarket || entry.app_id ? '应用菜单' : '子菜单') + '</span>' + sidebar
                 + '</aside><section class="window-content">' + content + '</section></div>';
 
-        return '<article class="app-window" data-window-key="' + key + '">'
+        return '<article class="app-window' + (sidebarCollapsed ? ' is-sidebar-collapsed' : '')
+            + '" data-window-key="' + key + '">'
             + '<header class="window-titlebar" data-window-drag>'
             + '<div class="window-brand"><img src="/Images/logo-80x80.png" alt=""><strong>'
             + escapeHtml(identity.title) + '<small>' + escapeHtml(identity.subtitle) + '</small></strong></div>'
             + '<div class="window-controls">'
+            + sidebarToggle
             + '<button class="window-control" type="button" data-window-action="minimize" aria-label="最小化"><i class="fa fa-minus"></i></button>'
             + '<button class="window-control" type="button" data-window-action="maximize" aria-label="最大化"><i class="fa fa-square-o"></i></button>'
             + '<button class="window-control close" type="button" data-window-action="close" aria-label="关闭"><i class="fa fa-times"></i></button>'
@@ -735,6 +749,19 @@
         target.maximized = !target.maximized;
         target.element.classList.toggle('is-maximized', target.maximized);
         focusWindow(key);
+    }
+
+    function toggleWindowSidebar(windowElement, button) {
+        var collapsed = windowElement.classList.toggle('is-sidebar-collapsed');
+        var label = collapsed ? '展开左侧菜单' : '收起左侧菜单';
+        var icon = button.querySelector('i');
+
+        button.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
+        button.setAttribute('aria-label', label);
+        button.title = label;
+        if (icon) {
+            icon.className = 'fa ' + (collapsed ? 'fa-indent' : 'fa-outdent');
+        }
     }
 
     function closeWindow(key) {
@@ -1367,6 +1394,9 @@
             if (windowAction) {
                 var windowElement = windowAction.closest('[data-window-key]');
                 var key = windowElement.dataset.windowKey;
+                if (windowAction.dataset.windowAction === 'toggle-sidebar') {
+                    toggleWindowSidebar(windowElement, windowAction);
+                }
                 if (windowAction.dataset.windowAction === 'minimize') { minimizeWindow(key); }
                 if (windowAction.dataset.windowAction === 'maximize') { maximizeWindow(key); }
                 if (windowAction.dataset.windowAction === 'close') { closeWindow(key); }

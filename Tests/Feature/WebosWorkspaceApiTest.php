@@ -120,7 +120,7 @@ class WebosWorkspaceApiTest extends WebosTestCase
         AppModel::create([
             'app_id' => 'cmspro.webos',
             'name' => 'WebOS 管理桌面',
-            'version' => '1.3.1',
+            'version' => '1.3.2',
             'icon' => 'fa fa-stale',
             'path' => 'app/Apps/CmsproWebos',
             'status' => 1,
@@ -143,6 +143,20 @@ class WebosWorkspaceApiTest extends WebosTestCase
         $this->assertStringContainsString('data-app-icon-fallback hidden data-src', $script);
         $this->assertStringContainsString('fallback.src = fallback.dataset.src;', $script);
         $this->assertStringContainsString('app.manifest_icon || app.icon', $script);
+    }
+
+    public function test_application_window_sidebar_can_collapse_and_hides_single_menu(): void
+    {
+        $script = file_get_contents(dirname(__DIR__, 2) . '/Assets/js/webos.js');
+        $stylesheet = file_get_contents(dirname(__DIR__, 2) . '/Assets/css/webos.css');
+
+        $this->assertIsString($script);
+        $this->assertIsString($stylesheet);
+        $this->assertStringContainsString('siblings.length <= 1', $script);
+        $this->assertStringContainsString('data-window-action="toggle-sidebar"', $script);
+        $this->assertStringContainsString('function toggleWindowSidebar', $script);
+        $this->assertStringContainsString('is-sidebar-collapsed', $script);
+        $this->assertStringContainsString('.app-window.is-sidebar-collapsed .window-sidebar', $stylesheet);
     }
 
     public function test_install_dialog_uses_terminal_aware_menu_mounting(): void
