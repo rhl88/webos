@@ -21,7 +21,8 @@ class WebosWorkspaceApiTest extends WebosTestCase
             ->assertOk()
             ->assertSee('CMSPRO WebOS')
             ->assertSee('webos-desktop')
-            ->assertSee('任务栏位置')
+            ->assertSee('个人设置')
+            ->assertSee('修改密码')
             ->assertSee('data-taskbar-position="bottom"', false);
     }
 
@@ -298,6 +299,44 @@ class WebosWorkspaceApiTest extends WebosTestCase
         $this->assertStringContainsString('max-height: calc(100vh - 60px);', $stylesheet);
         $this->assertStringContainsString('.action-dialog-card .dialog-body {', $stylesheet);
         $this->assertStringContainsString('overflow-y: auto;', $stylesheet);
+    }
+
+    public function test_account_menu_opens_profile_and_password_dialog(): void
+    {
+        $script = file_get_contents(dirname(__DIR__, 2) . '/Assets/js/webos.js');
+        $stylesheet = file_get_contents(dirname(__DIR__, 2) . '/Assets/css/webos.css');
+        $view = file_get_contents(dirname(__DIR__, 2) . '/Views/Admin/desktop/index.blade.php');
+
+        $this->assertIsString($script);
+        $this->assertIsString($stylesheet);
+        $this->assertIsString($view);
+        $this->assertStringContainsString('data-account-path="/admin/account"', $view);
+        $this->assertStringContainsString('data-action="open-password-dialog"', $view);
+        $this->assertStringContainsString('data-action="lock-desktop"', $view);
+        $this->assertStringContainsString('data-action="logout"', $view);
+        $this->assertStringContainsString('function openPasswordDialog()', $script);
+        $this->assertStringContainsString('function submitPasswordChange()', $script);
+        $this->assertStringContainsString('class="password-form"', $script);
+        $this->assertStringContainsString("event.target.classList.contains('password-form')", $script);
+        $this->assertStringContainsString("'/api/admin/auth/password'", $script);
+        $this->assertStringContainsString('old_password: values.old', $script);
+        $this->assertStringContainsString('新密码长度需为 6-20 位', $script);
+        $this->assertStringContainsString('两次输入的新密码不一致', $script);
+        $this->assertStringContainsString('.dialog-field + .dialog-field', $stylesheet);
+    }
+
+    public function test_account_menu_drops_taskbar_position_switch(): void
+    {
+        $view = file_get_contents(dirname(__DIR__, 2) . '/Views/Admin/desktop/index.blade.php');
+        $stylesheet = file_get_contents(dirname(__DIR__, 2) . '/Assets/css/webos.css');
+        $script = file_get_contents(dirname(__DIR__, 2) . '/Assets/js/webos.js');
+
+        $this->assertIsString($view);
+        $this->assertIsString($stylesheet);
+        $this->assertIsString($script);
+        $this->assertStringNotContainsString('taskbar-position-setting', $view);
+        $this->assertStringNotContainsString('taskbar-position-options', $stylesheet);
+        $this->assertStringContainsString("settingsChoice('set-taskbar-position'", $script);
     }
 
     public function test_clock_opens_calendar_and_renders_three_part_time(): void

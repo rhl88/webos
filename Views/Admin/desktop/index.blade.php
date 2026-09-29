@@ -113,17 +113,9 @@
                 <span>{{ $admin->username }}</span>
             </div>
         </div>
-        <div class="taskbar-position-setting">
-            <span>任务栏位置</span>
-            <div class="taskbar-position-options" role="group" aria-label="任务栏位置">
-                <button type="button" data-set-taskbar-position="top" title="置于顶部" aria-label="任务栏置于顶部"><i class="fa fa-arrow-up"></i></button>
-                <button type="button" data-set-taskbar-position="bottom" title="置于底部" aria-label="任务栏置于底部"><i class="fa fa-arrow-down"></i></button>
-                <button type="button" data-set-taskbar-position="left" title="置于左侧" aria-label="任务栏置于左侧"><i class="fa fa-arrow-left"></i></button>
-                <button type="button" data-set-taskbar-position="right" title="置于右侧" aria-label="任务栏置于右侧"><i class="fa fa-arrow-right"></i></button>
-            </div>
-        </div>
         <nav class="account-actions">
-            <button type="button" data-account-path="/admin/config"><i class="fa fa-cog"></i>个人设置</button>
+            <button type="button" data-account-path="/admin/account"><i class="fa fa-user-circle-o"></i>个人设置</button>
+            <button type="button" data-action="open-password-dialog"><i class="fa fa-key"></i>修改密码</button>
             <button type="button" data-action="lock-desktop"><i class="fa fa-lock"></i>锁定桌面</button>
             <button type="button" class="danger" data-action="logout"><i class="fa fa-sign-out"></i>退出登录</button>
         </nav>

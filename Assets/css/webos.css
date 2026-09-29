@@ -1234,40 +1234,6 @@ button {
     font-size: 15px;
 }
 
-.taskbar-position-setting {
-    padding: 14px 16px;
-    border-bottom: 1px solid var(--webos-line);
-}
-
-.taskbar-position-setting > span {
-    display: block;
-    margin-bottom: 9px;
-    color: var(--webos-muted);
-    font-size: 12px;
-}
-
-.taskbar-position-options {
-    display: grid;
-    grid-template-columns: repeat(4, 1fr);
-    gap: 7px;
-}
-
-.taskbar-position-options button {
-    height: 34px;
-    border: 1px solid #d7e1ea;
-    border-radius: 6px;
-    color: #566982;
-    background: #f7f9fb;
-    cursor: pointer;
-}
-
-.taskbar-position-options button:hover,
-.taskbar-position-options button.is-active {
-    border-color: #82d6ce;
-    color: var(--webos-primary-dark);
-    background: #e8f7f5;
-}
-
 .account-card span {
     margin-top: 5px;
     color: var(--webos-muted);
@@ -2543,6 +2509,10 @@ button {
 
 .dialog-field input:focus {
     border-color: var(--webos-primary);
+}
+
+.dialog-field + .dialog-field {
+    margin-top: 12px;
 }
 
 /* 应用备份 */

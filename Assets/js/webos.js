@@ -1585,6 +1585,81 @@
         return '<button class="webos-button secondary" type="button" data-action="close-action">取消</button>';
     }
 
+    function openPasswordDialog() {
+        openActionDialog({
+            kicker: '账号安全',
+            title: '修改密码',
+            body: '<form class="password-form" novalidate>'
+                + '<p class="dialog-hint">新密码需为 6-20 位，且不能与原密码相同；下次登录请使用新密码。</p>'
+                + '<label class="dialog-field"><span>原密码</span><input type="password" data-password-field="old"'
+                + ' autocomplete="current-password" placeholder="请输入当前密码"></label>'
+                + '<label class="dialog-field"><span>新密码</span><input type="password" data-password-field="new"'
+                + ' autocomplete="new-password" placeholder="6-20 位新密码"></label>'
+                + '<label class="dialog-field"><span>确认新密码</span><input type="password" data-password-field="confirm"'
+                + ' autocomplete="new-password" placeholder="请再次输入新密码"></label></form>',
+            footer: actionDialogCancelButton()
+                + '<button class="webos-button primary" type="button" data-password-submit><i class="fa fa-key"></i>确认修改</button>'
+        });
+        var first = elements.actionDialogBody.querySelector('[data-password-field="old"]');
+        if (first) {
+            window.setTimeout(function () { first.focus(); }, 30);
+        }
+    }
+
+    function passwordDialogValues() {
+        var values = {};
+        elements.actionDialogBody.querySelectorAll('[data-password-field]').forEach(function (input) {
+            values[input.dataset.passwordField] = input.value;
+        });
+        return values;
+    }
+
+    function validatePasswordValues(values) {
+        if (!values.old) {
+            return '请输入原密码';
+        }
+        if (!values.new || values.new.length < 6 || values.new.length > 20) {
+            return '新密码长度需为 6-20 位';
+        }
+        if (values.new === values.old) {
+            return '新密码不能与原密码相同';
+        }
+        if (values.new !== values.confirm) {
+            return '两次输入的新密码不一致';
+        }
+        return '';
+    }
+
+    function submitPasswordChange() {
+        var values = passwordDialogValues();
+        var message = validatePasswordValues(values);
+        if (message) {
+            toast(message, 'error');
+            return;
+        }
+        var submit = elements.actionDialogFooter.querySelector('[data-password-submit]');
+        if (submit) {
+            submit.disabled = true;
+        }
+        api('/api/admin/auth/password', {
+            method: 'PUT',
+            body: {
+                old_password: values.old,
+                new_password: values.new,
+                confirm_password: values.confirm
+            }
+        }).then(function () {
+            closeActionDialog();
+            toast('密码修改成功');
+        }).catch(function (error) {
+            toast(error.message, 'error');
+        }).finally(function () {
+            if (submit) {
+                submit.disabled = false;
+            }
+        });
+    }
+
     function appDisplayName(app) {
         return app ? (app.name || app.app_id) : '应用';
     }
@@ -2027,6 +2102,9 @@
             return;
         }
 
+        var passwordSubmit = event.target.closest('[data-password-submit]');
+        if (passwordSubmit) { submitPasswordChange(); return; }
+
         var upload = event.target.closest('[data-app-upload]');
         if (upload) { openAppUploadDialog(); return; }
 
@@ -2402,6 +2480,7 @@
                 var name = action.dataset.action;
                 if (name === 'close-start') { closePanels(); }
                 if (name === 'close-calendar') { closePanels(); }
+                if (name === 'open-password-dialog') { closePanels(); openPasswordDialog(); }
                 if (name === 'close-install') { elements.installDialog.hidden = true; }
                 if (name === 'close-action') { closeActionDialog(); }
                 if (name === 'lock-desktop') { closePanels(); elements.lockScreen.hidden = false; updateClock(); }
@@ -2569,6 +2648,14 @@
             center.querySelectorAll('[data-app-state]').forEach(function (item) {
                 item.style.display = value === '' || item.dataset.appState === value ? '' : 'none';
             });
+        });
+
+        elements.actionDialogBody.addEventListener('submit', function (event) {
+            if (!event.target.classList.contains('password-form')) {
+                return;
+            }
+            event.preventDefault();
+            submitPasswordChange();
         });
 
         elements.actionDialogBody.addEventListener('input', function (event) {
