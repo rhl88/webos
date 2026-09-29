@@ -259,10 +259,53 @@ class WebosWorkspaceApiTest extends WebosTestCase
         $this->assertStringContainsString('class="app-install-list"', $script);
         $this->assertStringContainsString('data-app-status-filter', $script);
         $this->assertStringContainsString('data-toggle-app-status', $script);
-        $this->assertStringContainsString('data-manage-entry-id', $script);
-        $this->assertStringContainsString('entry-tag', $stylesheet);
+        $this->assertStringContainsString('<span>应用信息</span><span>状态</span><span>操作</span>', $script);
         $this->assertStringContainsString('id="action-dialog"', $view);
         $this->assertStringContainsString('id="app-package-input"', $view);
+    }
+
+    public function test_installed_list_drops_entry_column_and_status_text(): void
+    {
+        $script = file_get_contents(dirname(__DIR__, 2) . '/Assets/js/webos.js');
+
+        $this->assertIsString($script);
+        $this->assertStringNotContainsString('入口位置', $script);
+        $this->assertStringNotContainsString('function appEntryTagsMarkup', $script);
+        $this->assertStringContainsString('"><i></i></button>', $script);
+        $this->assertStringContainsString('aria-label="\' + escapeHtml(text)', $script);
+    }
+
+    public function test_status_filter_is_limited_to_installed_tab(): void
+    {
+        $script = file_get_contents(dirname(__DIR__, 2) . '/Assets/js/webos.js');
+
+        $this->assertIsString($script);
+        $this->assertStringContainsString("var options = [['', '全部状态'], ['1', '已启用'], ['2', '已禁用']];", $script);
+        $this->assertStringContainsString("if (tab !== 'installed') {", $script);
+        $this->assertStringContainsString("'<button class=\"webos-button secondary compact\" type=\"button\" data-app-upload>", $script);
+    }
+
+    public function test_action_dialog_keeps_header_visible_and_scrolls_body(): void
+    {
+        $stylesheet = file_get_contents(dirname(__DIR__, 2) . '/Assets/css/webos.css');
+
+        $this->assertIsString($stylesheet);
+        $this->assertStringContainsString('.action-dialog-card {', $stylesheet);
+        $this->assertStringContainsString('max-height: calc(100vh - 60px);', $stylesheet);
+        $this->assertStringContainsString('.action-dialog-card .dialog-body {', $stylesheet);
+        $this->assertStringContainsString('overflow-y: auto;', $stylesheet);
+    }
+
+    public function test_start_menu_pin_uses_application_name(): void
+    {
+        $script = file_get_contents(dirname(__DIR__, 2) . '/Assets/js/webos.js');
+
+        $this->assertIsString($script);
+        $this->assertStringContainsString('function findStartItem(id)', $script);
+        $this->assertStringContainsString('state.startItems = entries;', $script);
+        $this->assertStringContainsString('function desktopEntryFromStart(startItem)', $script);
+        $this->assertStringContainsString("entry.title = startItem.start_title;", $script);
+        $this->assertStringContainsString('toggleDesktopEntry(pinButton.dataset.pinId, findStartItem(pinButton.dataset.pinId))', $script);
     }
 
     public function test_installed_app_operations_reuse_system_app_apis(): void
@@ -280,10 +323,15 @@ class WebosWorkspaceApiTest extends WebosTestCase
         $this->assertStringContainsString("'/enable'", $script);
         $this->assertStringContainsString("'/disable'", $script);
         $this->assertStringContainsString('data-app-action="', $script);
-        $this->assertStringContainsString("['manual-upgrade', 'fa-upload', '手动升级']", $script);
+        $this->assertStringContainsString('data-app-action="manual-upgrade" data-app-id="', $script);
+        $this->assertStringContainsString('data-app-action="export" data-app-id="', $script);
+        $this->assertStringContainsString('>手动</button>', $script);
+        $this->assertStringContainsString('>导出</button>', $script);
+        $this->assertStringContainsString("['manage-entry', 'fa-th', '管理入口']", $script);
+        $this->assertStringContainsString("if (action === 'manage-entry')", $script);
+        $this->assertStringNotContainsString("'手动升级'", $script);
         $this->assertStringContainsString("['backup', 'fa-archive', '备份']", $script);
         $this->assertStringContainsString("['docs', 'fa-book', '文档']", $script);
-        $this->assertStringContainsString("['export', 'fa-download', '导出']", $script);
         $this->assertStringContainsString("['settings', 'fa-cog', '设置']", $script);
         $this->assertStringContainsString("['uninstall', 'fa-trash-o', '卸载', 'danger']", $script);
         $this->assertStringContainsString('请先禁用应用', $script);

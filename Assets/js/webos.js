@@ -32,6 +32,7 @@
         updateApps: [],
         appCenterTab: 'market',
         actionApp: null,
+        startItems: [],
         desktopSnapshot: []
     };
 
@@ -505,6 +506,7 @@
         var unique = new Map();
         entries.forEach(function (item) { unique.set(item.start_key, item); });
         entries = Array.from(unique.values());
+        state.startItems = entries;
 
         elements.startGroupTitle.textContent = query ? '搜索结果' : (current ? current.title : '应用');
         elements.startGroupCount.textContent = entries.length + ' 个项目';
@@ -601,12 +603,27 @@
         saveWorkspace(false).then(function () { toast('已从桌面移除'); });
     }
 
-    function toggleDesktopEntry(id) {
+    function findStartItem(id) {
+        return (state.startItems || []).find(function (item) { return item.id === id; });
+    }
+
+    function desktopEntryFromStart(startItem) {
+        if (!startItem) {
+            return null;
+        }
+        var entry = Object.assign({}, startItem);
+        if (startItem.start_kind === 'application' && startItem.start_title) {
+            entry.title = startItem.start_title;
+        }
+        return entry;
+    }
+
+    function toggleDesktopEntry(id, startItem) {
         var pinned = state.workspace.desktop_items.some(function (item) { return item.id === id; });
         if (pinned) {
             removeDesktopEntry(id);
         } else {
-            addDesktopEntry(findEntry(id));
+            addDesktopEntry(desktopEntryFromStart(startItem) || findEntry(id));
         }
     }
 
@@ -946,7 +963,7 @@
 
     var APP_CENTER_TABS = {
         market: ['应用市场', '发现和安装更多应用，扩展系统能力'],
-        installed: ['已安装应用', '管理应用状态与入口位置'],
+        installed: ['已安装应用', '管理应用状态与应用操作'],
         uninstalled: ['未安装应用', '查看本地已发现但尚未安装的应用'],
         updates: ['应用更新', '检查可用版本并查看更新说明'],
         records: ['安装记录', '查看应用安装、启用、升级与卸载记录'],
@@ -984,17 +1001,16 @@
     }
 
     function appCenterExtrasMarkup(tab) {
-        if (tab !== 'installed' && tab !== 'uninstalled') {
+        if (tab !== 'installed') {
             return '';
         }
 
-        return appStatusFilterMarkup() + (tab === 'installed'
-            ? '<button class="webos-button secondary compact" type="button" data-app-upload><i class="fa fa-upload"></i>上传安装</button>'
-            : '');
+        return appStatusFilterMarkup()
+            + '<button class="webos-button secondary compact" type="button" data-app-upload><i class="fa fa-upload"></i>上传安装</button>';
     }
 
     function appStatusFilterMarkup() {
-        var options = [['', '全部状态'], ['1', '已启用'], ['2', '已禁用'], ['0', '已安装']];
+        var options = [['', '全部状态'], ['1', '已启用'], ['2', '已禁用']];
 
         return '<label class="app-center-filter"><i class="fa fa-filter"></i><select data-app-status-filter>'
             + options.map(function (option) {
@@ -1209,28 +1225,21 @@
         status.innerHTML = '<i class="fa fa-check-circle"></i>共 ' + (apps || []).length + ' 个应用 · ' + enabled + ' 个已启用';
     }
 
-    function appEntryTagsMarkup(app) {
-        var hasMenu = state.flatMenus.some(function (entry) { return entry.app_id === app.app_id; });
-        var onDesktop = state.workspace.desktop_items.some(function (item) {
-            var entry = findEntry(item.id);
-            return entry && entry.app_id === app.app_id;
-        });
-        var tags = (hasMenu ? '<span class="entry-tag">系统菜单</span>' : '')
-            + (onDesktop ? '<span class="entry-tag is-desktop">桌面</span>' : '');
-
-        return tags || '<span class="entry-tag is-empty">未创建入口</span>';
+    function appHasMenu(appId) {
+        return state.flatMenus.some(function (entry) { return entry.app_id === appId; });
     }
 
     function installedRowMarkup(app) {
         var appId = app.app_id || '';
         var enabled = Number(app.status) === 1;
-        var hasMenu = state.flatMenus.some(function (entry) { return entry.app_id === appId; });
+        var hasMenu = appHasMenu(appId);
         var actions = '<button class="small-action primary" type="button" data-open-app-id="' + escapeHtml(appId) + '"'
-            + (hasMenu ? '' : ' disabled') + '>打开</button>';
-        if (hasMenu) {
-            actions += '<button class="small-action" type="button" data-manage-entry-id="' + escapeHtml(appId) + '">管理入口</button>';
-        }
-        actions += '<button class="small-action more" type="button" data-app-more="' + escapeHtml(appId)
+            + (hasMenu ? '' : ' disabled') + '>打开</button>'
+            + '<button class="small-action" type="button" data-app-action="manual-upgrade" data-app-id="'
+            + escapeHtml(appId) + '">手动</button>'
+            + '<button class="small-action" type="button" data-app-action="export" data-app-id="'
+            + escapeHtml(appId) + '">导出</button>'
+            + '<button class="small-action more" type="button" data-app-more="' + escapeHtml(appId)
             + '" aria-expanded="false" aria-label="更多操作" title="更多操作"><i class="fa fa-ellipsis-h"></i></button>';
 
         return '<article class="install-row" data-app-id="' + escapeHtml(appId) + '" data-app-state="' + escapeHtml(String(app.status))
@@ -1239,7 +1248,6 @@
             + escapeHtml(app.name || appId) + '</strong><span>' + escapeHtml(app.description || '暂无应用说明') + '</span><small>版本 '
             + escapeHtml(app.version || '-') + (app.is_system ? ' · 系统应用' : '') + '</small></div></div>'
             + '<div class="install-row-cell">' + statusSwitchMarkup(appId, enabled, app.status_label) + '</div>'
-            + '<div class="install-row-cell">' + appEntryTagsMarkup(app) + '</div>'
             + '<div class="install-row-actions">' + actions + '</div></article>';
     }
 
@@ -1247,7 +1255,8 @@
         var text = enabled ? '已启用' : (label || '已禁用');
 
         return '<button class="status-switch" type="button" data-toggle-app-status="' + escapeHtml(appId)
-            + '" aria-pressed="' + (enabled ? 'true' : 'false') + '"><i></i><span>' + escapeHtml(text) + '</span></button>';
+            + '" aria-pressed="' + (enabled ? 'true' : 'false') + '" aria-label="' + escapeHtml(text)
+            + '" title="' + escapeHtml(text) + '"><i></i></button>';
     }
 
     function renderInstalledList(apps) {
@@ -1256,7 +1265,7 @@
         }
 
         return '<div class="app-install-list">'
-            + '<div class="install-row install-row-head"><span>应用信息</span><span>状态</span><span>入口位置</span><span>操作</span></div>'
+            + '<div class="install-row install-row-head"><span>应用信息</span><span>状态</span><span>操作</span></div>'
             + apps.map(installedRowMarkup).join('') + '</div>';
     }
 
@@ -1266,12 +1275,11 @@
     }
 
     function appRowMenuItems(app) {
-        var items = [
-            ['backup', 'fa-archive', '备份'],
-            ['docs', 'fa-book', '文档'],
-            ['manual-upgrade', 'fa-upload', '手动升级'],
-            ['export', 'fa-download', '导出']
-        ];
+        var items = [];
+        if (appHasMenu(app.app_id)) {
+            items.push(['manage-entry', 'fa-th', '管理入口']);
+        }
+        items.push(['backup', 'fa-archive', '备份'], ['docs', 'fa-book', '文档']);
         if (app.has_config) {
             items.push(['settings', 'fa-cog', '设置']);
         }
@@ -1908,6 +1916,7 @@
         if (!app) {
             return;
         }
+        if (action === 'manage-entry') { openEntryDialog(app); }
         if (action === 'backup') { openBackupDialog(app); }
         if (action === 'docs') { openDocsDialog(app); }
         if (action === 'manual-upgrade') { openManualUpgradeDialog(app); }
@@ -1920,13 +1929,6 @@
         var statusToggle = event.target.closest('[data-toggle-app-status]');
         if (statusToggle) {
             toggleAppStatus(statusToggle.dataset.toggleAppStatus, statusToggle.getAttribute('aria-pressed') !== 'true');
-            return;
-        }
-
-        var manageEntry = event.target.closest('[data-manage-entry-id]');
-        if (manageEntry) {
-            var manageApp = findCatalogApp(manageEntry.dataset.manageEntryId);
-            if (manageApp) { openEntryDialog(manageApp); }
             return;
         }
 
@@ -2213,7 +2215,10 @@
             if (groupButton) { state.activeGroup = groupButton.dataset.groupId; renderStartMenu(); }
 
             var pinButton = event.target.closest('[data-pin-id]');
-            if (pinButton) { event.stopPropagation(); toggleDesktopEntry(pinButton.dataset.pinId); }
+            if (pinButton) {
+                event.stopPropagation();
+                toggleDesktopEntry(pinButton.dataset.pinId, findStartItem(pinButton.dataset.pinId));
+            }
 
             var menuButton = event.target.closest('[data-menu-id]');
             if (menuButton && !event.target.closest('[data-pin-id]')) { openEntry(findEntry(menuButton.dataset.menuId)); }

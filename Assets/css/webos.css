@@ -2161,7 +2161,7 @@ button {
 .install-row {
     position: relative;
     display: grid;
-    grid-template-columns: minmax(0, 1fr) 130px 148px 252px;
+    grid-template-columns: minmax(0, 1fr) 92px 252px;
     align-items: center;
     min-height: 76px;
     padding: 10px 14px;
@@ -2264,28 +2264,6 @@ button {
     transform: translateX(17px);
 }
 
-.entry-tag {
-    display: inline-flex;
-    align-items: center;
-    min-height: 23px;
-    margin-right: 6px;
-    padding: 0 9px;
-    border-radius: 12px;
-    color: #48607a;
-    background: #eef3f7;
-    font-size: 11px;
-}
-
-.entry-tag.is-desktop {
-    color: #a16c10;
-    background: #fff6de;
-}
-
-.entry-tag.is-empty {
-    color: #8b97a6;
-    background: #f4f6f8;
-}
-
 .small-action.more {
     min-width: 36px;
     padding: 0 9px;
@@ -2347,7 +2325,16 @@ button {
 
 /* 应用操作弹窗 */
 .action-dialog-card {
+    display: flex;
+    flex-direction: column;
     width: min(720px, calc(100vw - 60px));
+    max-height: calc(100vh - 60px);
+}
+
+.action-dialog-card .dialog-body {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
 }
 
 .dialog-hint {
@@ -2656,6 +2643,6 @@ button {
 
 @media (max-width: 1180px) {
     .install-row {
-        grid-template-columns: minmax(0, 1fr) 120px 128px 236px;
+        grid-template-columns: minmax(0, 1fr) 84px 236px;
     }
 }
