@@ -12,6 +12,7 @@ class WorkspaceService
     public const DEFAULT_PREFERENCES = [
         'wallpaper' => 'webos-default',
         'taskbar_alignment' => 'left',
+        'taskbar_position' => 'bottom',
         'clock_format' => '24h',
         'show_seconds' => false,
         'motion' => true,
@@ -103,6 +104,11 @@ class WorkspaceService
         $preferences['taskbar_alignment'] = in_array($preferences['taskbar_alignment'], ['left', 'center'], true)
             ? $preferences['taskbar_alignment']
             : self::DEFAULT_PREFERENCES['taskbar_alignment'];
+        $preferences['taskbar_position'] = in_array(
+            $preferences['taskbar_position'],
+            ['top', 'bottom', 'left', 'right'],
+            true
+        ) ? $preferences['taskbar_position'] : self::DEFAULT_PREFERENCES['taskbar_position'];
         $preferences['clock_format'] = $preferences['clock_format'] === '12h' ? '12h' : '24h';
         $preferences['show_seconds'] = (bool) $preferences['show_seconds'];
         $preferences['motion'] = (bool) $preferences['motion'];

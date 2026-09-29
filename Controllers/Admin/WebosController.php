@@ -70,6 +70,7 @@ class WebosController extends Controller
             'preferences' => ['sometimes', 'array'],
             'preferences.wallpaper' => ['sometimes', 'in:webos-default,deep-blue'],
             'preferences.taskbar_alignment' => ['sometimes', 'in:left,center'],
+            'preferences.taskbar_position' => ['sometimes', 'in:top,bottom,left,right'],
             'preferences.clock_format' => ['sometimes', 'in:12h,24h'],
             'preferences.show_seconds' => ['sometimes', 'boolean'],
             'preferences.motion' => ['sometimes', 'boolean'],

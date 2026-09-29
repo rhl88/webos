@@ -13,6 +13,7 @@
             preferences: {
                 wallpaper: 'webos-default',
                 taskbar_alignment: 'left',
+                taskbar_position: 'bottom',
                 clock_format: '24h',
                 show_seconds: false,
                 motion: true
@@ -20,7 +21,7 @@
         },
         catalog: { menus: [], applications: [], operation_logs: [] },
         flatMenus: [],
-        activeGroup: 'all',
+        activeGroup: '',
         windows: new Map(),
         zIndex: 20,
         installTarget: null,
@@ -123,16 +124,17 @@
     function flattenMenus(tree) {
         var output = [];
 
-        function walk(items, group) {
+        function walk(items, group, inheritedAppId) {
             (items || []).forEach(function (item) {
                 var nextGroup = group || {
                     id: String(item.id || item.code || item.name),
                     title: item.name || '应用',
                     icon: safeIcon(item.icon)
                 };
+                var nextAppId = item.app_id || inheritedAppId || '';
                 var children = Array.isArray(item.children) ? item.children : [];
                 if (children.length) {
-                    walk(children, nextGroup);
+                    walk(children, nextGroup, nextAppId);
                     return;
                 }
                 if (!safePath(item.path)) {
@@ -141,7 +143,7 @@
                 output.push({
                     id: 'menu-' + item.id,
                     menu_id: Number(item.id || 0),
-                    app_id: item.app_id || '',
+                    app_id: nextAppId,
                     title: item.name || '未命名菜单',
                     path: item.path,
                     icon: safeIcon(item.icon),
@@ -153,7 +155,7 @@
             });
         }
 
-        walk(tree || [], null);
+        walk(tree || [], null, '');
         return output;
     }
 
@@ -272,52 +274,78 @@
                     id: item.group_id,
                     title: item.group_title,
                     icon: item.group_icon,
-                    items: []
+                    entries: []
                 });
             }
-            groups.get(item.group_id).items.push(item);
+            groups.get(item.group_id).entries.push(item);
         });
         groups.set('webos', {
             id: 'webos',
             title: 'WebOS',
             icon: 'fa fa-desktop',
-            items: [applicationCenterEntry()]
+            entries: [applicationCenterEntry()]
         });
-        return Array.from(groups.values());
+        return Array.from(groups.values()).map(function (group) {
+            var applications = new Map();
+            group.entries.forEach(function (entry) {
+                var key = entry.app_id ? 'app:' + entry.app_id : 'menu:' + entry.id;
+                if (!applications.has(key)) {
+                    applications.set(key, []);
+                }
+                applications.get(key).push(entry);
+            });
+            group.items = Array.from(applications.entries()).map(function (pair) {
+                var key = pair[0];
+                var entries = pair[1];
+                var representative = entries[0];
+                var application = representative.app_id ? state.catalog.applications.find(function (item) {
+                    return item.app_id === representative.app_id;
+                }) : null;
+                var applicationIcon = application && typeof application.icon === 'string' && application.icon.indexOf('/') < 0
+                    ? application.icon : representative.icon;
+                return Object.assign({}, representative, {
+                    start_key: key,
+                    start_title: application ? application.name : representative.title,
+                    start_icon: safeIcon(applicationIcon),
+                    start_subtitle: entries.length > 1 ? entries.length + ' 个菜单' : representative.group_title,
+                    start_search: [application ? application.name : '', entries.map(function (item) { return item.title; }).join(' ')].join(' ')
+                });
+            });
+            return group;
+        });
     }
 
     function renderStartMenu() {
         var groups = groupsFromMenus();
         var query = elements.startSearch.value.trim().toLowerCase();
-        elements.startCategories.innerHTML = '<button class="start-category-button ' + (state.activeGroup === 'all' ? 'is-active' : '')
-            + '" type="button" data-group-id="all"><i class="fa fa-th-large"></i>全部应用</button>'
-            + groups.map(function (group) {
-                return '<button class="start-category-button ' + (state.activeGroup === group.id ? 'is-active' : '')
-                    + '" type="button" data-group-id="' + escapeHtml(group.id) + '"><i class="' + safeIcon(group.icon)
-                    + '"></i>' + escapeHtml(group.title) + '</button>';
-            }).join('');
+        if (!groups.some(function (group) { return group.id === state.activeGroup; })) {
+            state.activeGroup = groups.length ? groups[0].id : '';
+        }
+        elements.startCategories.innerHTML = groups.map(function (group) {
+            return '<button class="start-category-button ' + (state.activeGroup === group.id ? 'is-active' : '')
+                + '" type="button" data-group-id="' + escapeHtml(group.id) + '"><i class="' + safeIcon(group.icon)
+                + '"></i>' + escapeHtml(group.title) + '</button>';
+        }).join('');
 
         var current = groups.find(function (group) { return group.id === state.activeGroup; });
-        var entries = state.activeGroup === 'all'
-            ? groups.reduce(function (all, group) { return all.concat(group.items); }, [])
-            : (current ? current.items : []);
+        var entries = current ? current.items : [];
         if (query) {
             entries = groups.reduce(function (all, group) { return all.concat(group.items); }, []).filter(function (item) {
-                return (item.title + ' ' + item.group_title).toLowerCase().indexOf(query) >= 0;
+                return item.start_search.toLowerCase().indexOf(query) >= 0;
             });
         }
         var unique = new Map();
-        entries.forEach(function (item) { unique.set(item.id, item); });
+        entries.forEach(function (item) { unique.set(item.start_key, item); });
         entries = Array.from(unique.values());
 
-        elements.startGroupTitle.textContent = query ? '搜索结果' : (current ? current.title : '全部应用');
-        elements.startGroupCount.textContent = entries.length + ' 个入口';
+        elements.startGroupTitle.textContent = query ? '搜索结果' : (current ? current.title : '应用');
+        elements.startGroupCount.textContent = entries.length + ' 个应用';
         elements.startGrid.innerHTML = entries.length ? entries.map(function (item) {
             var isPinned = state.workspace.desktop_items.some(function (entry) { return entry.id === item.id; });
             return '<div class="start-app-item" tabindex="0" role="button" data-menu-id="' + escapeHtml(item.id) + '">'
-                + '<span class="start-app-item-icon"><i class="' + safeIcon(item.icon) + '"></i></span>'
-                + '<span class="start-app-item-text"><strong>' + escapeHtml(item.title) + '</strong><small>'
-                + escapeHtml(item.group_title || '应用') + '</small></span>'
+                + '<span class="start-app-item-icon"><i class="' + safeIcon(item.start_icon) + '"></i></span>'
+                + '<span class="start-app-item-text"><strong>' + escapeHtml(item.start_title) + '</strong><small>'
+                + escapeHtml(item.start_subtitle || '应用') + '</small></span>'
                 + '<button class="pin-button" type="button" data-pin-id="' + escapeHtml(item.id) + '" title="'
                 + (isPinned ? '从桌面移除' : '添加到桌面') + '"><i class="fa ' + (isPinned ? 'fa-thumb-tack' : 'fa-plus') + '"></i></button>'
                 + '</div>';
@@ -369,11 +397,30 @@
     }
 
     function windowKey(entry) {
-        return String(entry.id || entry.path).replace(/[^A-Za-z0-9_-]/g, '-');
+        if (entry.id === 'webos-app-center') {
+            return 'webos-app-center';
+        }
+        var identity = entry.app_id ? 'app-' + entry.app_id : 'group-' + (entry.group_id || entry.id || entry.path);
+        return String(identity).replace(/[^A-Za-z0-9_-]/g, '-');
     }
 
     function siblingEntries(entry) {
+        if (entry.app_id) {
+            return state.flatMenus.filter(function (item) { return item.app_id === entry.app_id; });
+        }
         return state.flatMenus.filter(function (item) { return item.group_id === entry.group_id; });
+    }
+
+    function windowIdentity(entry) {
+        var application = entry.app_id ? state.catalog.applications.find(function (item) {
+            return item.app_id === entry.app_id;
+        }) : null;
+        return {
+            title: application ? application.name : (entry.group_title || entry.title),
+            subtitle: entry.title,
+            icon: application && typeof application.icon === 'string' && application.icon.indexOf('/') < 0
+                ? application.icon : entry.icon
+        };
     }
 
     function windowMarkup(entry, key) {
@@ -381,6 +428,7 @@
         var siblings = special ? [
             { id: 'market', title: '应用市场', icon: 'fa fa-shopping-bag' },
             { id: 'installed', title: '已安装', icon: 'fa fa-cube' },
+            { id: 'uninstalled', title: '未安装', icon: 'fa fa-download' },
             { id: 'updates', title: '应用更新', icon: 'fa fa-refresh' },
             { id: 'records', title: '安装记录', icon: 'fa fa-file-text-o' },
             { id: 'entries', title: '入口管理', icon: 'fa fa-th' }
@@ -394,11 +442,12 @@
         var content = special
             ? '<div class="app-center-shell" data-app-center></div>'
             : '<iframe src="' + escapeHtml(entry.path) + '" title="' + escapeHtml(entry.title) + '"></iframe>';
+        var identity = special ? { title: '应用中心', subtitle: 'WebOS' } : windowIdentity(entry);
 
         return '<article class="app-window" data-window-key="' + key + '">'
             + '<header class="window-titlebar" data-window-drag>'
             + '<div class="window-brand"><img src="/Images/logo-80x80.png" alt=""><strong>'
-            + escapeHtml(entry.title) + '<small>' + escapeHtml(entry.group_title || 'CMSPRO') + '</small></strong></div>'
+            + escapeHtml(identity.title) + '<small>' + escapeHtml(identity.subtitle) + '</small></strong></div>'
             + '<div class="window-controls">'
             + '<button class="window-control" type="button" data-window-action="minimize" aria-label="最小化"><i class="fa fa-minus"></i></button>'
             + '<button class="window-control" type="button" data-window-action="maximize" aria-label="最大化"><i class="fa fa-square-o"></i></button>'
@@ -413,10 +462,6 @@
         if (!entry) {
             return;
         }
-        if (entry.open_type === '_blank' && entry.id !== 'webos-app-center') {
-            window.open(entry.path, '_blank', 'noopener');
-            return;
-        }
         if (!safePath(entry.path)) {
             toast('仅支持打开站内应用入口', 'error');
             return;
@@ -425,6 +470,7 @@
         closePanels();
         var key = windowKey(entry);
         if (state.windows.has(key)) {
+            activateWindowEntry(state.windows.get(key), entry);
             restoreWindow(key);
             return;
         }
@@ -448,6 +494,24 @@
         if (entry.id === 'webos-app-center') {
             renderAppCenter(state.appCenterTab);
         }
+    }
+
+    function activateWindowEntry(windowState, entry) {
+        if (!windowState || entry.id === 'webos-app-center') {
+            return;
+        }
+        var identity = windowIdentity(entry);
+        var frame = windowState.element.querySelector('iframe');
+        if (frame && frame.getAttribute('src') !== entry.path) {
+            frame.src = entry.path;
+        }
+        windowState.entry = entry;
+        windowState.element.querySelectorAll('[data-window-menu-id]').forEach(function (button) {
+            button.classList.toggle('is-active', button.dataset.windowMenuId === entry.id);
+        });
+        windowState.element.querySelector('.window-brand strong').innerHTML = escapeHtml(identity.title)
+            + '<small>' + escapeHtml(identity.subtitle) + '</small>';
+        renderTaskbarWindows();
     }
 
     function focusWindow(key) {
@@ -506,9 +570,12 @@
         elements.taskbarWindows.innerHTML = Array.from(state.windows.entries()).map(function (pair) {
             var key = pair[0];
             var windowState = pair[1];
+            var identity = windowState.entry.id === 'webos-app-center'
+                ? { title: '应用中心', icon: windowState.entry.icon }
+                : windowIdentity(windowState.entry);
             return '<button class="taskbar-app-button is-running ' + (windowState.element.classList.contains('is-focused') && !windowState.minimized ? 'is-active' : '')
-                + '" type="button" data-task-window="' + escapeHtml(key) + '" title="' + escapeHtml(windowState.entry.title) + '">'
-                + '<span class="taskbar-app-icon"><i class="' + safeIcon(windowState.entry.icon) + '"></i></span></button>';
+                + '" type="button" data-task-window="' + escapeHtml(key) + '" title="' + escapeHtml(identity.title) + '">'
+                + '<span class="taskbar-app-icon"><i class="' + safeIcon(identity.icon) + '"></i></span></button>';
         }).join('');
     }
 
@@ -578,6 +645,7 @@
         var titles = {
             market: ['应用市场', '发现和安装更多应用，扩展系统能力'],
             installed: ['已安装应用', '管理应用状态，并将入口固定到桌面'],
+            uninstalled: ['未安装应用', '查看本地已发现但尚未安装的应用'],
             updates: ['应用更新', '检查可用版本并查看更新说明'],
             records: ['安装记录', '查看应用安装、启用、升级与卸载记录'],
             entries: ['入口管理', '管理桌面快捷方式与可用系统菜单']
@@ -618,6 +686,19 @@
         if (tab === 'installed') {
             status.innerHTML = '<i class="fa fa-check-circle"></i>共 ' + state.catalog.applications.length + ' 个已安装应用';
             content.innerHTML = renderApplicationCards(state.catalog.applications, 'installed');
+            return;
+        }
+        if (tab === 'uninstalled') {
+            api('/api/admin/apps/available').then(function (payload) {
+                var apps = (payload && payload.uninstalled_apps) || [];
+                setMarketApps(apps, 'local');
+                status.innerHTML = '<i class="fa fa-download"></i>共 ' + apps.length + ' 个未安装应用';
+                content.innerHTML = renderApplicationCards(apps, 'local');
+            }).catch(function (error) {
+                status.classList.add('is-error');
+                status.innerHTML = '<i class="fa fa-exclamation-circle"></i>' + escapeHtml(error.message);
+                content.innerHTML = emptyState('fa-download', '暂时无法读取未安装应用');
+            });
             return;
         }
         if (tab === 'records') {
@@ -846,6 +927,31 @@
         });
     }
 
+    function applyTaskbarPosition() {
+        var allowed = ['top', 'bottom', 'left', 'right'];
+        var position = state.workspace.preferences.taskbar_position || 'bottom';
+        if (allowed.indexOf(position) < 0) {
+            position = 'bottom';
+        }
+        state.workspace.preferences.taskbar_position = position;
+        root.dataset.taskbarPosition = position;
+        document.querySelectorAll('[data-set-taskbar-position]').forEach(function (button) {
+            var active = button.dataset.setTaskbarPosition === position;
+            button.classList.toggle('is-active', active);
+            button.setAttribute('aria-pressed', active ? 'true' : 'false');
+        });
+    }
+
+    function setTaskbarPosition(position) {
+        if (['top', 'bottom', 'left', 'right'].indexOf(position) < 0) {
+            return;
+        }
+        state.workspace.preferences.taskbar_position = position;
+        applyTaskbarPosition();
+        closePanels();
+        saveWorkspace(false).then(function () { toast('任务栏位置已更新'); });
+    }
+
     function togglePanel(name, panel, button) {
         var opening = panel.hidden;
         closePanels(name);
@@ -995,10 +1101,9 @@
                 var currentWindow = windowMenu.closest('[data-window-key]');
                 var entry = findEntry(windowMenu.dataset.windowMenuId);
                 if (entry && currentWindow) {
-                    currentWindow.querySelectorAll('[data-window-menu-id]').forEach(function (button) { button.classList.remove('is-active'); });
-                    windowMenu.classList.add('is-active');
-                    currentWindow.querySelector('iframe').src = entry.path;
-                    currentWindow.querySelector('.window-brand strong').innerHTML = escapeHtml(entry.title) + '<small>' + escapeHtml(entry.group_title) + '</small>';
+                    var currentState = state.windows.get(currentWindow.dataset.windowKey);
+                    activateWindowEntry(currentState, entry);
+                    focusWindow(currentWindow.dataset.windowKey);
                 }
             }
 
@@ -1034,6 +1139,9 @@
 
             var removeEntry = event.target.closest('[data-remove-entry-id]');
             if (removeEntry) { removeDesktopEntry(removeEntry.dataset.removeEntryId); renderAppCenter('entries'); }
+
+            var taskbarPosition = event.target.closest('[data-set-taskbar-position]');
+            if (taskbarPosition) { setTaskbarPosition(taskbarPosition.dataset.setTaskbarPosition); }
 
             var accountPath = event.target.closest('[data-account-path]');
             if (accountPath) {
@@ -1085,6 +1193,7 @@
             state.catalog = responses[1] || state.catalog;
             state.flatMenus = flattenMenus(state.catalog.menus);
             root.dataset.wallpaper = state.workspace.preferences.wallpaper || 'webos-default';
+            applyTaskbarPosition();
             return bootstrapDesktopItems();
         }).then(function () {
             renderDesktop();

@@ -19,7 +19,9 @@ class WebosWorkspaceApiTest extends WebosTestCase
         $this->get('/admin/cmspro/webos')
             ->assertOk()
             ->assertSee('CMSPRO WebOS')
-            ->assertSee('webos-desktop');
+            ->assertSee('webos-desktop')
+            ->assertSee('任务栏位置')
+            ->assertSee('data-taskbar-position="bottom"', false);
     }
 
     public function test_admin_can_read_and_save_workspace(): void
@@ -45,6 +47,7 @@ class WebosWorkspaceApiTest extends WebosTestCase
             'preferences' => [
                 'wallpaper' => 'webos-default',
                 'taskbar_alignment' => 'left',
+                'taskbar_position' => 'left',
                 'clock_format' => '24h',
                 'show_seconds' => false,
                 'motion' => true,
@@ -54,7 +57,18 @@ class WebosWorkspaceApiTest extends WebosTestCase
         $this->putJson('/admin/cmspro/webos/api/workspace', $payload)
             ->assertOk()
             ->assertJsonPath('code', 0)
-            ->assertJsonPath('data.desktop_items.0.title', '用户管理');
+            ->assertJsonPath('data.desktop_items.0.title', '用户管理')
+            ->assertJsonPath('data.preferences.taskbar_position', 'left');
+    }
+
+    public function test_workspace_api_rejects_an_unknown_taskbar_position(): void
+    {
+        $this->actingAdmin();
+
+        $this->putJson('/admin/cmspro/webos/api/workspace', [
+            'preferences' => ['taskbar_position' => 'diagonal'],
+        ])->assertUnprocessable()
+            ->assertJsonPath('code', 40201);
     }
 
     public function test_workspace_api_rejects_external_paths(): void

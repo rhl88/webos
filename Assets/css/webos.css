@@ -11,7 +11,8 @@
     --webos-taskbar: rgba(8, 38, 67, 0.90);
     --webos-shadow: 0 18px 56px rgba(9, 37, 68, 0.24);
     --webos-radius: 12px;
-    --taskbar-height: 74px;
+    --taskbar-height: 58px;
+    --taskbar-size: 58px;
 }
 
 * {
@@ -142,6 +143,30 @@ button {
     inset: 0 0 var(--taskbar-height) 0;
     z-index: 10;
     pointer-events: none;
+}
+
+.webos-desktop[data-taskbar-position="top"] .desktop-icons {
+    inset: calc(var(--taskbar-size) + 20px) 20px 20px 20px;
+}
+
+.webos-desktop[data-taskbar-position="left"] .desktop-icons {
+    inset: 20px 20px 20px calc(var(--taskbar-size) + 20px);
+}
+
+.webos-desktop[data-taskbar-position="right"] .desktop-icons {
+    inset: 20px calc(var(--taskbar-size) + 20px) 20px 20px;
+}
+
+.webos-desktop[data-taskbar-position="top"] .window-layer {
+    inset: var(--taskbar-size) 0 0;
+}
+
+.webos-desktop[data-taskbar-position="left"] .window-layer {
+    inset: 0 0 0 var(--taskbar-size);
+}
+
+.webos-desktop[data-taskbar-position="right"] .window-layer {
+    inset: 0 var(--taskbar-size) 0 0;
 }
 
 .app-window {
@@ -328,11 +353,42 @@ button {
     display: flex;
     align-items: center;
     height: var(--taskbar-height);
-    padding: 0 18px;
+    padding: 0 10px;
     border-top: 1px solid rgba(255, 255, 255, 0.18);
     background: var(--webos-taskbar);
     box-shadow: 0 -8px 24px rgba(0, 25, 52, 0.16);
     backdrop-filter: blur(20px);
+}
+
+.webos-desktop[data-taskbar-position="top"] .webos-taskbar {
+    top: 0;
+    bottom: auto;
+    border-top: 0;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.18);
+    box-shadow: 0 8px 24px rgba(0, 25, 52, 0.16);
+}
+
+.webos-desktop[data-taskbar-position="left"] .webos-taskbar,
+.webos-desktop[data-taskbar-position="right"] .webos-taskbar {
+    top: 0;
+    bottom: 0;
+    flex-direction: column;
+    width: var(--taskbar-size);
+    height: auto;
+    padding: 8px 0;
+    border-top: 0;
+}
+
+.webos-desktop[data-taskbar-position="left"] .webos-taskbar {
+    right: auto;
+    border-right: 1px solid rgba(255, 255, 255, 0.18);
+    box-shadow: 8px 0 24px rgba(0, 25, 52, 0.16);
+}
+
+.webos-desktop[data-taskbar-position="right"] .webos-taskbar {
+    left: auto;
+    border-left: 1px solid rgba(255, 255, 255, 0.18);
+    box-shadow: -8px 0 24px rgba(0, 25, 52, 0.16);
 }
 
 .taskbar-button,
@@ -349,8 +405,8 @@ button {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    width: 48px;
-    height: 48px;
+    width: 42px;
+    height: 42px;
     border-radius: 9px;
     font-size: 20px;
 }
@@ -363,7 +419,7 @@ button {
 }
 
 .brand-button {
-    margin-right: 10px;
+    margin-right: 8px;
     background: #fff;
     border-radius: 50%;
 }
@@ -375,8 +431,8 @@ button {
 }
 
 .brand-button img {
-    width: 39px;
-    height: 39px;
+    width: 34px;
+    height: 34px;
     object-fit: contain;
 }
 
@@ -396,8 +452,8 @@ button {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    width: 50px;
-    height: 52px;
+    width: 44px;
+    height: 46px;
     border: 0;
     border-radius: 7px;
     color: #fff;
@@ -422,8 +478,8 @@ button {
 }
 
 .taskbar-app-icon {
-    width: 36px;
-    height: 36px;
+    width: 32px;
+    height: 32px;
     border-radius: 8px;
     font-size: 17px;
 }
@@ -458,8 +514,8 @@ button {
 .account-button {
     display: flex;
     align-items: center;
-    height: 52px;
-    padding: 0 9px;
+    height: 44px;
+    padding: 0 7px;
     gap: 8px;
     border-radius: 7px;
     font-size: 13px;
@@ -469,8 +525,8 @@ button {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    width: 36px;
-    height: 36px;
+    width: 32px;
+    height: 32px;
     overflow: hidden;
     border: 2px solid rgba(255, 255, 255, 0.72);
     border-radius: 50%;
@@ -490,11 +546,64 @@ button {
     flex-direction: column;
     align-items: flex-end;
     min-width: 90px;
-    height: 52px;
-    padding: 7px 10px;
+    height: 44px;
+    padding: 4px 8px;
     border-radius: 7px;
     font-size: 12px;
     line-height: 19px;
+}
+
+.webos-desktop[data-taskbar-position="left"] .taskbar-pinned,
+.webos-desktop[data-taskbar-position="left"] .taskbar-windows,
+.webos-desktop[data-taskbar-position="right"] .taskbar-pinned,
+.webos-desktop[data-taskbar-position="right"] .taskbar-windows {
+    flex-direction: column;
+    padding: 0 0 6px;
+}
+
+.webos-desktop[data-taskbar-position="left"] .brand-button,
+.webos-desktop[data-taskbar-position="right"] .brand-button {
+    margin: 0 0 7px;
+}
+
+.webos-desktop[data-taskbar-position="left"] .taskbar-divider,
+.webos-desktop[data-taskbar-position="right"] .taskbar-divider {
+    width: 30px;
+    height: 1px;
+    margin: 6px 0;
+}
+
+.webos-desktop[data-taskbar-position="left"] .account-button,
+.webos-desktop[data-taskbar-position="right"] .account-button {
+    width: 44px;
+    padding: 0;
+    justify-content: center;
+}
+
+.webos-desktop[data-taskbar-position="left"] .account-button > span:last-child,
+.webos-desktop[data-taskbar-position="right"] .account-button > span:last-child,
+.webos-desktop[data-taskbar-position="left"] #clock-date,
+.webos-desktop[data-taskbar-position="right"] #clock-date {
+    display: none;
+}
+
+.webos-desktop[data-taskbar-position="left"] .clock-button,
+.webos-desktop[data-taskbar-position="right"] .clock-button {
+    align-items: center;
+    min-width: 52px;
+    height: 34px;
+    padding: 0 2px;
+    font-size: 11px;
+}
+
+.webos-desktop[data-taskbar-position="left"] .show-desktop-button,
+.webos-desktop[data-taskbar-position="right"] .show-desktop-button {
+    align-self: stretch;
+    width: auto;
+    height: 7px;
+    margin: 7px 0 0;
+    border-top: 1px solid rgba(255, 255, 255, 0.44);
+    border-left: 0;
 }
 
 .show-desktop-button {
@@ -530,6 +639,22 @@ button {
     left: 18px;
     width: min(720px, calc(100vw - 36px));
     height: min(600px, calc(100vh - var(--taskbar-height) - 38px));
+}
+
+.webos-desktop[data-taskbar-position="top"] .start-panel {
+    top: calc(var(--taskbar-size) + 12px);
+    bottom: auto;
+}
+
+.webos-desktop[data-taskbar-position="left"] .start-panel {
+    bottom: 18px;
+    left: calc(var(--taskbar-size) + 12px);
+}
+
+.webos-desktop[data-taskbar-position="right"] .start-panel {
+    right: calc(var(--taskbar-size) + 12px);
+    bottom: 18px;
+    left: auto;
 }
 
 .panel-header {
@@ -797,6 +922,22 @@ button {
     max-height: min(570px, calc(100vh - var(--taskbar-height) - 38px));
 }
 
+.webos-desktop[data-taskbar-position="top"] .notification-panel {
+    top: calc(var(--taskbar-size) + 12px);
+    bottom: auto;
+}
+
+.webos-desktop[data-taskbar-position="left"] .notification-panel {
+    right: auto;
+    bottom: 116px;
+    left: calc(var(--taskbar-size) + 12px);
+}
+
+.webos-desktop[data-taskbar-position="right"] .notification-panel {
+    right: calc(var(--taskbar-size) + 12px);
+    bottom: 116px;
+}
+
 .notification-list {
     max-height: 420px;
     overflow-y: auto;
@@ -876,6 +1017,22 @@ button {
     width: 280px;
 }
 
+.webos-desktop[data-taskbar-position="top"] .account-panel {
+    top: calc(var(--taskbar-size) + 12px);
+    bottom: auto;
+}
+
+.webos-desktop[data-taskbar-position="left"] .account-panel {
+    right: auto;
+    bottom: 18px;
+    left: calc(var(--taskbar-size) + 12px);
+}
+
+.webos-desktop[data-taskbar-position="right"] .account-panel {
+    right: calc(var(--taskbar-size) + 12px);
+    bottom: 18px;
+}
+
 .account-card {
     display: flex;
     align-items: center;
@@ -904,6 +1061,40 @@ button {
 
 .account-card strong {
     font-size: 15px;
+}
+
+.taskbar-position-setting {
+    padding: 14px 16px;
+    border-bottom: 1px solid var(--webos-line);
+}
+
+.taskbar-position-setting > span {
+    display: block;
+    margin-bottom: 9px;
+    color: var(--webos-muted);
+    font-size: 12px;
+}
+
+.taskbar-position-options {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 7px;
+}
+
+.taskbar-position-options button {
+    height: 34px;
+    border: 1px solid #d7e1ea;
+    border-radius: 6px;
+    color: #566982;
+    background: #f7f9fb;
+    cursor: pointer;
+}
+
+.taskbar-position-options button:hover,
+.taskbar-position-options button.is-active {
+    border-color: #82d6ce;
+    color: var(--webos-primary-dark);
+    background: #e8f7f5;
 }
 
 .account-card span {

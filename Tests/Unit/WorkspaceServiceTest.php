@@ -18,6 +18,7 @@ class WorkspaceServiceTest extends WebosTestCase
         $this->assertSame([], $workspace->desktop_items);
         $this->assertSame('webos-default', $workspace->preferences['wallpaper']);
         $this->assertSame('left', $workspace->preferences['taskbar_alignment']);
+        $this->assertSame('bottom', $workspace->preferences['taskbar_position']);
     }
 
     public function test_it_sanitizes_desktop_items_and_merges_preferences(): void
@@ -40,6 +41,7 @@ class WorkspaceServiceTest extends WebosTestCase
             'preferences' => [
                 'clock_format' => '12h',
                 'show_seconds' => true,
+                'taskbar_position' => 'right',
                 'unknown_setting' => 'ignored',
             ],
         ]);
@@ -48,8 +50,20 @@ class WorkspaceServiceTest extends WebosTestCase
         $this->assertSame(3, $workspace->desktop_items[0]['x']);
         $this->assertSame('12h', $workspace->preferences['clock_format']);
         $this->assertTrue($workspace->preferences['show_seconds']);
+        $this->assertSame('right', $workspace->preferences['taskbar_position']);
         $this->assertArrayNotHasKey('unknown_setting', $workspace->preferences);
         $this->assertSame(1, WebosWorkspace::query()->count());
+    }
+
+    public function test_it_falls_back_to_bottom_for_an_invalid_taskbar_position(): void
+    {
+        $admin = $this->actingAdmin();
+
+        $workspace = app(WorkspaceService::class)->saveForAdmin($admin->id, [
+            'preferences' => ['taskbar_position' => 'diagonal'],
+        ]);
+
+        $this->assertSame('bottom', $workspace->preferences['taskbar_position']);
     }
 
     public function test_it_rejects_external_desktop_paths(): void

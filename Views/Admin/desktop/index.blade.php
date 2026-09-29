@@ -21,6 +21,7 @@
     data-catalog-url="{{ url('/admin/cmspro/webos/api/catalog') }}"
     data-wallpaper-url="{{ asset('apps/cmspro.webos/images/webos-wallpaper.png') }}"
     data-login-url="{{ route('admin.login') }}"
+    data-taskbar-position="bottom"
 >
     <div class="webos-wallpaper" aria-hidden="true"></div>
 
@@ -83,6 +84,15 @@
             <div>
                 <strong>{{ $admin->name ?: $admin->username }}</strong>
                 <span>{{ $admin->username }}</span>
+            </div>
+        </div>
+        <div class="taskbar-position-setting">
+            <span>任务栏位置</span>
+            <div class="taskbar-position-options" role="group" aria-label="任务栏位置">
+                <button type="button" data-set-taskbar-position="top" title="置于顶部" aria-label="任务栏置于顶部"><i class="fa fa-arrow-up"></i></button>
+                <button type="button" data-set-taskbar-position="bottom" title="置于底部" aria-label="任务栏置于底部"><i class="fa fa-arrow-down"></i></button>
+                <button type="button" data-set-taskbar-position="left" title="置于左侧" aria-label="任务栏置于左侧"><i class="fa fa-arrow-left"></i></button>
+                <button type="button" data-set-taskbar-position="right" title="置于右侧" aria-label="任务栏置于右侧"><i class="fa fa-arrow-right"></i></button>
             </div>
         </div>
         <nav class="account-actions">
