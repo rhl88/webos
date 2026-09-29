@@ -21,6 +21,7 @@
     data-catalog-url="{{ url('/admin/cmspro/webos/api/catalog') }}"
     data-wallpaper-url="{{ asset('apps/cmspro.webos/images/webos-wallpaper.png') }}"
     data-login-url="{{ route('admin.login') }}"
+    data-market-base-url="{{ $marketBaseUrl }}"
     data-taskbar-position="bottom"
 >
     <div class="webos-wallpaper" aria-hidden="true"></div>
@@ -154,6 +155,23 @@
         </div>
     </section>
 
+    <section id="action-dialog" class="webos-dialog" role="dialog" aria-modal="true" aria-labelledby="action-dialog-title" hidden>
+        <div class="dialog-card action-dialog-card">
+            <header class="dialog-header">
+                <div>
+                    <span class="dialog-kicker" id="action-dialog-kicker">应用操作</span>
+                    <h2 id="action-dialog-title">应用操作</h2>
+                </div>
+                <button class="icon-button" type="button" data-action="close-action" aria-label="关闭操作窗口">
+                    <i class="fa fa-times"></i>
+                </button>
+            </header>
+            <div class="dialog-body" id="action-dialog-body"></div>
+            <footer class="dialog-footer" id="action-dialog-footer"></footer>
+        </div>
+    </section>
+    <input id="app-package-input" type="file" accept=".zip" hidden>
+
     <section id="lock-screen" class="lock-screen" hidden>
         <div class="lock-time" id="lock-time">00:00</div>
         <div class="lock-date" id="lock-date">2026年9月28日</div>
@@ -211,6 +229,7 @@
 window.CMSPRO_WEBOS = {{ Illuminate\Support\Js::from($webosRuntime) }};
 </script>
 <script src="{{ asset('CmsProUi/component/layui/layui.js') }}"></script>
+<script src="{{ asset('CmsProUi/component/marked/marked.min.js') }}"></script>
 <script src="{{ asset('apps/cmspro.webos/js/webos.js') }}"></script>
 </body>
 </html>

@@ -2075,3 +2075,587 @@ button {
     animation-iteration-count: 1 !important;
     transition-duration: 0.001ms !important;
 }
+
+/* 应用图标统一：桌面、任务栏、开始菜单复用应用根目录图标 */
+.webos-desktop .desktop-icon-badge.is-app-icon,
+.webos-desktop .taskbar-app-icon.is-app-icon,
+.webos-desktop .start-app-item-icon.is-app-icon {
+    overflow: hidden;
+    background: transparent;
+    box-shadow: none;
+}
+
+.webos-desktop .desktop-icon-badge.is-app-icon img,
+.webos-desktop .taskbar-app-icon.is-app-icon img,
+.webos-desktop .start-app-item-icon.is-app-icon img {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+}
+
+.is-app-icon [hidden] {
+    display: none !important;
+}
+
+/* 应用中心工具栏 */
+.app-center-tools {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 10px;
+}
+
+.app-center-tools .app-center-search {
+    flex: 0 1 300px;
+    width: 300px;
+}
+
+.app-center-filter {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+}
+
+.app-center-filter i {
+    position: absolute;
+    left: 12px;
+    color: #7a8aa0;
+    pointer-events: none;
+}
+
+.app-center-filter select {
+    height: 40px;
+    padding: 0 12px 0 32px;
+    border: 1px solid #ccd9e5;
+    border-radius: 7px;
+    color: #3d4f66;
+    background: #fff;
+    outline: none;
+    font-size: 13px;
+}
+
+.app-center-filter select:focus {
+    border-color: var(--webos-primary);
+}
+
+.webos-button.danger {
+    color: #fff;
+    background: #d9534f;
+}
+
+.webos-button.danger:hover {
+    background: #c4433f;
+}
+
+.webos-button:disabled {
+    cursor: not-allowed;
+}
+
+/* 已安装应用列表 */
+.app-install-list {
+    display: grid;
+    gap: 8px;
+}
+
+.install-row {
+    position: relative;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 130px 148px 252px;
+    align-items: center;
+    min-height: 76px;
+    padding: 10px 14px;
+    gap: 12px;
+    border: 1px solid #dce5ed;
+    border-radius: 9px;
+    background: #fff;
+}
+
+.install-row:hover {
+    border-color: #a8dcd7;
+    box-shadow: 0 8px 20px rgba(20, 66, 100, 0.07);
+}
+
+.install-row-head {
+    min-height: 40px;
+    padding-bottom: 8px;
+    border: 0;
+    border-bottom: 1px solid #e7edf2;
+    border-radius: 0;
+    color: #697990;
+    background: transparent;
+    font-size: 12px;
+    font-weight: 600;
+}
+
+.install-row-head:hover {
+    border-color: transparent transparent #e7edf2;
+    box-shadow: none;
+}
+
+.install-row-app {
+    display: flex;
+    align-items: center;
+    min-width: 0;
+    gap: 12px;
+}
+
+.install-row-app .app-icon {
+    flex: 0 0 46px;
+    width: 46px;
+    height: 46px;
+    font-size: 20px;
+}
+
+.install-row-cell {
+    min-width: 0;
+}
+
+.install-row-actions {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 7px;
+}
+
+.status-switch {
+    display: inline-flex;
+    align-items: center;
+    padding: 0;
+    gap: 8px;
+    border: 0;
+    color: #606f85;
+    background: transparent;
+    cursor: pointer;
+    font-size: 12px;
+}
+
+.status-switch > i {
+    position: relative;
+    width: 38px;
+    height: 21px;
+    border-radius: 11px;
+    background: #c5d0da;
+    transition: background 0.2s;
+}
+
+.status-switch > i::after {
+    position: absolute;
+    top: 3px;
+    left: 3px;
+    width: 15px;
+    height: 15px;
+    border-radius: 50%;
+    background: #fff;
+    box-shadow: 0 1px 3px rgba(16, 38, 62, 0.24);
+    transition: transform 0.2s;
+    content: "";
+}
+
+.status-switch[aria-pressed="true"] {
+    color: #0c8d80;
+}
+
+.status-switch[aria-pressed="true"] > i {
+    background: var(--webos-primary);
+}
+
+.status-switch[aria-pressed="true"] > i::after {
+    transform: translateX(17px);
+}
+
+.entry-tag {
+    display: inline-flex;
+    align-items: center;
+    min-height: 23px;
+    margin-right: 6px;
+    padding: 0 9px;
+    border-radius: 12px;
+    color: #48607a;
+    background: #eef3f7;
+    font-size: 11px;
+}
+
+.entry-tag.is-desktop {
+    color: #a16c10;
+    background: #fff6de;
+}
+
+.entry-tag.is-empty {
+    color: #8b97a6;
+    background: #f4f6f8;
+}
+
+.small-action.more {
+    min-width: 36px;
+    padding: 0 9px;
+}
+
+.small-action:disabled {
+    color: #9aa7b5;
+    border-color: #e2e8ee;
+    background: #f7f9fb;
+    cursor: not-allowed;
+}
+
+.row-menu {
+    position: absolute;
+    top: calc(100% - 6px);
+    right: 14px;
+    z-index: 12;
+    display: grid;
+    min-width: 138px;
+    padding: 6px;
+    gap: 2px;
+    border: 1px solid #d4dfe8;
+    border-radius: 8px;
+    background: #fff;
+    box-shadow: 0 14px 30px rgba(10, 34, 59, 0.16);
+}
+
+.row-menu-item {
+    display: flex;
+    align-items: center;
+    padding: 8px 10px;
+    gap: 9px;
+    border: 0;
+    border-radius: 6px;
+    color: #3f5169;
+    background: transparent;
+    cursor: pointer;
+    font-size: 13px;
+    text-align: left;
+}
+
+.row-menu-item:hover {
+    color: #087f75;
+    background: #eaf8f6;
+}
+
+.row-menu-item.is-danger {
+    color: #b23c42;
+}
+
+.row-menu-item.is-danger:hover {
+    background: #fdeff0;
+}
+
+.row-menu-item i {
+    width: 14px;
+    text-align: center;
+}
+
+/* 应用操作弹窗 */
+.action-dialog-card {
+    width: min(720px, calc(100vw - 60px));
+}
+
+.dialog-hint {
+    margin: 0 0 12px;
+    color: #697a91;
+    font-size: 13px;
+    line-height: 1.7;
+}
+
+.upload-field {
+    display: flex;
+    align-items: center;
+    min-height: 64px;
+    padding: 14px 16px;
+    gap: 11px;
+    border: 1px dashed #b7cbd9;
+    border-radius: 8px;
+    color: #48607a;
+    background: #f9fbfc;
+    cursor: pointer;
+    font-size: 13px;
+}
+
+.upload-field i {
+    color: var(--webos-primary-dark);
+    font-size: 20px;
+}
+
+.dialog-warning {
+    display: flex;
+    margin-bottom: 14px;
+    padding: 13px 15px;
+    gap: 11px;
+    border-radius: 8px;
+    color: #a1531a;
+    background: #fff6e9;
+    font-size: 13px;
+    line-height: 1.7;
+}
+
+.dialog-warning p {
+    margin: 0;
+}
+
+.dialog-field {
+    display: block;
+}
+
+.dialog-field > span {
+    display: block;
+    margin-bottom: 6px;
+    color: #5b6a80;
+    font-size: 13px;
+}
+
+.dialog-field input {
+    width: 100%;
+    height: 38px;
+    padding: 0 12px;
+    border: 1px solid #ccd9e5;
+    border-radius: 6px;
+    outline: none;
+}
+
+.dialog-field input:focus {
+    border-color: var(--webos-primary);
+}
+
+/* 应用备份 */
+.backup-list {
+    display: grid;
+    max-height: 320px;
+    overflow-y: auto;
+    gap: 8px;
+}
+
+.backup-row {
+    display: flex;
+    align-items: center;
+    padding: 10px 12px;
+    gap: 11px;
+    border: 1px solid #e2eaf0;
+    border-radius: 8px;
+    background: #fff;
+}
+
+.backup-row-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 34px;
+    height: 34px;
+    border-radius: 9px;
+    color: #0c8d80;
+    background: #e7f7f4;
+}
+
+.backup-row-info {
+    min-width: 0;
+    margin-right: auto;
+}
+
+.backup-row-info strong,
+.backup-row-info small {
+    display: block;
+}
+
+.backup-row-info strong {
+    font-size: 13px;
+}
+
+.backup-row-info small {
+    margin-top: 3px;
+    color: var(--webos-muted);
+    font-size: 11px;
+}
+
+/* 应用文档 */
+.doc-viewer {
+    display: grid;
+    grid-template-columns: 220px minmax(0, 1fr);
+    min-height: 340px;
+    max-height: 60vh;
+    border: 1px solid #e2eaf0;
+    border-radius: 8px;
+    overflow: hidden;
+}
+
+.doc-tree {
+    padding: 10px;
+    overflow-y: auto;
+    border-right: 1px solid #e8eef3;
+    background: #fafcfe;
+}
+
+.doc-tree-list {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.doc-tree-list .doc-tree-list {
+    padding-left: 12px;
+}
+
+.doc-tree-dir {
+    display: flex;
+    align-items: center;
+    padding: 6px 8px;
+    gap: 7px;
+    color: #5b6a80;
+    font-size: 12px;
+    font-weight: 600;
+}
+
+.doc-tree-dir i {
+    color: #f0a51b;
+}
+
+.doc-tree-file {
+    display: flex;
+    width: 100%;
+    align-items: center;
+    padding: 6px 8px;
+    gap: 7px;
+    border: 0;
+    border-radius: 5px;
+    color: #4a5a72;
+    background: transparent;
+    cursor: pointer;
+    font-size: 12px;
+    text-align: left;
+}
+
+.doc-tree-file i {
+    color: #198cf0;
+}
+
+.doc-tree-file:hover,
+.doc-tree-file.is-active {
+    color: #087f75;
+    background: #eaf8f6;
+}
+
+.doc-body {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    background: #fff;
+}
+
+.doc-body-header {
+    display: flex;
+    align-items: center;
+    padding: 10px 14px;
+    gap: 10px;
+    border-bottom: 1px solid #e8eef3;
+}
+
+.doc-body-header strong {
+    margin-right: auto;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.doc-markdown {
+    flex: 1 1 auto;
+    padding: 14px 18px 20px;
+    overflow-y: auto;
+    color: #33455c;
+    font-size: 13px;
+    line-height: 1.8;
+}
+
+.doc-markdown h1,
+.doc-markdown h2,
+.doc-markdown h3 {
+    margin: 16px 0 8px;
+    font-size: 15px;
+}
+
+.doc-markdown pre {
+    padding: 10px 12px;
+    overflow-x: auto;
+    border-radius: 6px;
+    background: #f5f8fa;
+    font-size: 12px;
+}
+
+.doc-markdown code {
+    padding: 1px 4px;
+    border-radius: 4px;
+    background: #f5f8fa;
+    font-size: 12px;
+}
+
+.doc-markdown table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+.doc-markdown th,
+.doc-markdown td {
+    padding: 6px 8px;
+    border: 1px solid #e2eaf0;
+    text-align: left;
+}
+
+/* 应用设置 */
+.config-groups {
+    display: grid;
+    max-height: 60vh;
+    overflow-y: auto;
+    gap: 16px;
+}
+
+.config-group {
+    display: grid;
+    gap: 12px;
+}
+
+.config-group h3 {
+    margin: 0;
+    padding-bottom: 8px;
+    border-bottom: 1px solid #edf1f4;
+    font-size: 14px;
+}
+
+.config-field {
+    display: block;
+}
+
+.config-field > span {
+    display: block;
+    margin-bottom: 6px;
+    color: #5b6a80;
+    font-size: 13px;
+}
+
+.config-field > small {
+    display: block;
+    margin-top: 6px;
+    color: var(--webos-muted);
+    font-size: 11px;
+}
+
+.config-field input,
+.config-field select,
+.config-field textarea {
+    width: 100%;
+    min-height: 36px;
+    padding: 6px 11px;
+    border: 1px solid #ccd9e5;
+    border-radius: 6px;
+    outline: none;
+    font-family: inherit;
+    font-size: 13px;
+}
+
+.config-field input:focus,
+.config-field select:focus,
+.config-field textarea:focus {
+    border-color: var(--webos-primary);
+}
+
+@media (max-width: 1180px) {
+    .install-row {
+        grid-template-columns: minmax(0, 1fr) 120px 128px 236px;
+    }
+}

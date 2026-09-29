@@ -40,7 +40,18 @@ class WebosController extends Controller
                 'csrfToken' => csrf_token(),
                 'baseUrl' => url('/'),
             ],
+            'marketBaseUrl' => $this->marketBaseUrl(),
         ]);
+    }
+
+    /**
+     * 应用市场资源前缀：与系统应用市场视图一致，使用协议相对地址。
+     */
+    protected function marketBaseUrl(): string
+    {
+        $url = (string) config('apps.market.api_url');
+
+        return rtrim((string) preg_replace('#^https?:#i', '', $url), '/');
     }
 
     public function workspace(Request $request): JsonResponse
@@ -100,6 +111,8 @@ class WebosController extends Controller
                 'status', 'is_system', 'path', 'manifest',
             ])
             ->map(function (AppModel $app): array {
+                $manifest = $app->manifest ?? [];
+
                 return [
                     'app_id' => $app->app_id,
                     'name' => $app->name,
@@ -110,8 +123,9 @@ class WebosController extends Controller
                     'icon_url' => url('/api/app/' . $app->app_id . '/icon'),
                     'manifest_icon' => $this->applicationIcons->resolveManifestIcon(
                         $app->resolvePath(),
-                        $app->manifest ?? []
+                        $manifest
                     ),
+                    'has_config' => ! empty($manifest['config_groups']),
                     'is_system' => $app->is_system,
                     'status' => $app->status->value,
                     'status_label' => $app->status->label(),

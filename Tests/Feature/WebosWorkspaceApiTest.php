@@ -188,6 +188,107 @@ class WebosWorkspaceApiTest extends WebosTestCase
         $this->assertStringContainsString('id="install-menu-parents"', $view);
     }
 
+    public function test_catalog_exposes_config_flag_and_market_base_url(): void
+    {
+        $this->actingAdmin();
+        config(['apps.market.api_url' => 'https://v5.cmspro.cn/']);
+        AppModel::create([
+            'app_id' => 'cmspro.webos',
+            'name' => 'WebOS 管理桌面',
+            'version' => '1.4.0',
+            'icon' => 'fa fa-stale',
+            'path' => 'app/Apps/CmsproWebos',
+            'status' => 1,
+            'is_system' => false,
+            'manifest' => [
+                'icon' => 'fa fa-desktop',
+                'config_groups' => [
+                    ['title' => '基础配置', 'name' => 'basic'],
+                ],
+            ],
+        ]);
+
+        $this->getJson('/admin/cmspro/webos/api/catalog')
+            ->assertOk()
+            ->assertJsonPath('data.applications.0.has_config', true);
+
+        $this->get('/admin/cmspro/webos')
+            ->assertOk()
+            ->assertSee('data-market-base-url="//v5.cmspro.cn"', false);
+    }
+
+    public function test_application_icons_are_reused_on_desktop_taskbar_and_start_menu(): void
+    {
+        $script = file_get_contents(dirname(__DIR__, 2) . '/Assets/js/webos.js');
+        $stylesheet = file_get_contents(dirname(__DIR__, 2) . '/Assets/css/webos.css');
+
+        $this->assertIsString($script);
+        $this->assertIsString($stylesheet);
+        $this->assertStringContainsString('function entryIconMarkup(entry, className)', $script);
+        $this->assertStringContainsString("entryIconMarkup(findEntry(item.id) || item, 'desktop-icon-badge')", $script);
+        $this->assertStringContainsString("entryIconMarkup(entry, 'taskbar-app-icon')", $script);
+        $this->assertStringContainsString("entryIconMarkup(windowState.entry, 'taskbar-app-icon')", $script);
+        $this->assertStringContainsString("entryIconMarkup(item, 'start-app-item-icon')", $script);
+        $this->assertStringContainsString('is-app-icon', $stylesheet);
+    }
+
+    public function test_market_cards_use_remote_icon_and_install_state(): void
+    {
+        $script = file_get_contents(dirname(__DIR__, 2) . '/Assets/js/webos.js');
+
+        $this->assertIsString($script);
+        $this->assertStringContainsString('function marketIconUrl(icon)', $script);
+        $this->assertStringContainsString('root.dataset.marketBaseUrl', $script);
+        $this->assertStringContainsString('function compareVersions(leftVersion, rightVersion)', $script);
+        $this->assertStringContainsString('function installedVersions()', $script);
+        $this->assertStringContainsString('data-market-icon', $script);
+        $this->assertStringContainsString('fa fa-puzzle-piece', $script);
+        $this->assertStringContainsString("marketState(app)", $script);
+    }
+
+    public function test_installed_tab_renders_list_view_with_status_filter(): void
+    {
+        $script = file_get_contents(dirname(__DIR__, 2) . '/Assets/js/webos.js');
+        $stylesheet = file_get_contents(dirname(__DIR__, 2) . '/Assets/css/webos.css');
+        $view = file_get_contents(dirname(__DIR__, 2) . '/Views/Admin/desktop/index.blade.php');
+
+        $this->assertIsString($script);
+        $this->assertIsString($stylesheet);
+        $this->assertIsString($view);
+        $this->assertStringContainsString('function renderInstalledList(apps)', $script);
+        $this->assertStringContainsString('class="app-install-list"', $script);
+        $this->assertStringContainsString('data-app-status-filter', $script);
+        $this->assertStringContainsString('data-toggle-app-status', $script);
+        $this->assertStringContainsString('data-manage-entry-id', $script);
+        $this->assertStringContainsString('entry-tag', $stylesheet);
+        $this->assertStringContainsString('id="action-dialog"', $view);
+        $this->assertStringContainsString('id="app-package-input"', $view);
+    }
+
+    public function test_installed_app_operations_reuse_system_app_apis(): void
+    {
+        $script = file_get_contents(dirname(__DIR__, 2) . '/Assets/js/webos.js');
+
+        $this->assertIsString($script);
+        $this->assertStringContainsString("'/api/admin/apps/upload'", $script);
+        $this->assertStringContainsString("'/backups'", $script);
+        $this->assertStringContainsString("'/docs'", $script);
+        $this->assertStringContainsString("'/docs/content?path='", $script);
+        $this->assertStringContainsString("'/config'", $script);
+        $this->assertStringContainsString("'/export'", $script);
+        $this->assertStringContainsString("'/uninstall'", $script);
+        $this->assertStringContainsString("'/enable'", $script);
+        $this->assertStringContainsString("'/disable'", $script);
+        $this->assertStringContainsString('data-app-action="', $script);
+        $this->assertStringContainsString("['manual-upgrade', 'fa-upload', '手动升级']", $script);
+        $this->assertStringContainsString("['backup', 'fa-archive', '备份']", $script);
+        $this->assertStringContainsString("['docs', 'fa-book', '文档']", $script);
+        $this->assertStringContainsString("['export', 'fa-download', '导出']", $script);
+        $this->assertStringContainsString("['settings', 'fa-cog', '设置']", $script);
+        $this->assertStringContainsString("['uninstall', 'fa-trash-o', '卸载', 'danger']", $script);
+        $this->assertStringContainsString('请先禁用应用', $script);
+    }
+
     public function test_workspace_api_rejects_external_paths(): void
     {
         $this->actingAdmin();

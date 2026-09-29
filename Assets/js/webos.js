@@ -31,6 +31,7 @@
         marketApps: new Map(),
         updateApps: [],
         appCenterTab: 'market',
+        actionApp: null,
         desktopSnapshot: []
     };
 
@@ -62,6 +63,12 @@
         installSummary: document.getElementById('install-app-summary'),
         installParents: document.getElementById('install-menu-parents'),
         confirmInstall: document.getElementById('confirm-install'),
+        actionDialog: document.getElementById('action-dialog'),
+        actionDialogKicker: document.getElementById('action-dialog-kicker'),
+        actionDialogTitle: document.getElementById('action-dialog-title'),
+        actionDialogBody: document.getElementById('action-dialog-body'),
+        actionDialogFooter: document.getElementById('action-dialog-footer'),
+        packageInput: document.getElementById('app-package-input'),
         toastRegion: document.getElementById('webos-toast-region')
     };
 
@@ -84,6 +91,86 @@
 
     function safePath(path) {
         return typeof path === 'string' && path.charAt(0) === '/' && path.indexOf('//') !== 0;
+    }
+
+    function marketBaseUrl() {
+        return root.dataset.marketBaseUrl || '';
+    }
+
+    function isImageIcon(icon) {
+        return typeof icon === 'string' && (/^\//.test(icon) || /^https?:\/\//.test(icon));
+    }
+
+    function marketIconUrl(icon) {
+        if (!icon) {
+            return '';
+        }
+        if (/^https?:\/\//i.test(icon)) {
+            return icon;
+        }
+        return marketBaseUrl() + (icon.charAt(0) === '/' ? icon : '/' + icon);
+    }
+
+    function compareVersions(leftVersion, rightVersion) {
+        var left = String(leftVersion || '0').split('.');
+        var right = String(rightVersion || '0').split('.');
+        var length = Math.max(left.length, right.length);
+        for (var index = 0; index < length; index += 1) {
+            var leftNumber = parseInt(left[index], 10) || 0;
+            var rightNumber = parseInt(right[index], 10) || 0;
+            if (leftNumber < rightNumber) {
+                return -1;
+            }
+            if (leftNumber > rightNumber) {
+                return 1;
+            }
+        }
+        return 0;
+    }
+
+    function installedVersions() {
+        var versions = {};
+        state.catalog.applications.forEach(function (application) {
+            versions[String(application.app_id || '').toLowerCase()] = application.version || '';
+        });
+        return versions;
+    }
+
+    function formatFileSize(size) {
+        var bytes = Number(size) || 0;
+        if (bytes <= 0) {
+            return '-';
+        }
+        if (bytes < 1024) {
+            return bytes + ' B';
+        }
+        if (bytes < 1024 * 1024) {
+            return (bytes / 1024).toFixed(1) + ' KB';
+        }
+        return (bytes / 1024 / 1024).toFixed(2) + ' MB';
+    }
+
+    function downloadFile(url, fallbackName) {
+        return fetch(url, {
+            headers: { 'X-CSRF-TOKEN': runtime.csrfToken || '' },
+            credentials: 'same-origin'
+        }).then(function (response) {
+            if (!response.ok) {
+                throw new Error(response.status === 401 ? '登录状态已失效' : '下载失败');
+            }
+            var disposition = response.headers.get('Content-Disposition') || '';
+            var matched = disposition.match(/filename[^;=\n]*=((['"]).*?\2|[^;\n]*)/);
+            var fileName = matched && matched[1] ? matched[1].replace(/['"]/g, '') : fallbackName;
+            return response.blob().then(function (blob) {
+                var link = document.createElement('a');
+                link.href = window.URL.createObjectURL(blob);
+                link.download = fileName || 'download';
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+                window.URL.revokeObjectURL(link.href);
+            });
+        });
     }
 
     function api(url, options) {
@@ -280,7 +367,7 @@
             var top = 4 + Math.max(0, Number(item.y) || 0) * 104;
             return '<button class="desktop-icon" type="button" data-desktop-id="' + escapeHtml(item.id) + '"'
                 + ' style="left:' + left + 'px;top:' + top + 'px" title="' + escapeHtml(item.title) + '">'
-                + '<span class="desktop-icon-badge"><i class="' + safeIcon(item.icon) + '"></i></span>'
+                + entryIconMarkup(findEntry(item.id) || item, 'desktop-icon-badge')
                 + '<span class="desktop-icon-label">' + escapeHtml(item.title) + '</span>'
                 + '</button>';
         }).join('');
@@ -290,8 +377,9 @@
     function renderPinnedApps() {
         var pinned = state.workspace.desktop_items.slice(0, 4);
         elements.taskbarPinned.innerHTML = pinned.map(function (item) {
+            var entry = findEntry(item.id) || item;
             return '<button class="taskbar-app-button" type="button" data-launch-id="' + escapeHtml(item.id) + '" title="' + escapeHtml(item.title) + '">'
-                + '<span class="taskbar-app-icon"><i class="' + safeIcon(item.icon) + '"></i></span>'
+                + entryIconMarkup(entry, 'taskbar-app-icon')
                 + '</button>';
         }).join('');
     }
@@ -428,7 +516,9 @@
             return '<div class="start-app-item ' + (isFolderStartItem(item) ? 'is-folder' : '')
                 + '" tabindex="0" role="button" data-menu-id="' + escapeHtml(item.id) + '" data-start-kind="'
                 + escapeHtml(item.start_kind) + '">'
-                + '<span class="start-app-item-icon"><i class="' + safeIcon(item.start_icon) + '"></i></span>'
+                + (isFolderStartItem(item)
+                    ? '<span class="start-app-item-icon"><i class="fa fa-folder"></i></span>'
+                    : entryIconMarkup(item, 'start-app-item-icon'))
                 + '<span class="start-app-item-text"><strong>' + escapeHtml(item.start_title) + '</strong><small>'
                 + escapeHtml(item.start_subtitle || '应用') + '</small></span>'
                 + pinButton
@@ -797,7 +887,7 @@
                 : windowIdentity(windowState.entry);
             return '<button class="taskbar-app-button is-running ' + (windowState.element.classList.contains('is-focused') && !windowState.minimized ? 'is-active' : '')
                 + '" type="button" data-task-window="' + escapeHtml(key) + '" title="' + escapeHtml(identity.title) + '">'
-                + '<span class="taskbar-app-icon"><i class="' + safeIcon(identity.icon) + '"></i></span></button>';
+                + entryIconMarkup(windowState.entry, 'taskbar-app-icon') + '</button>';
         }).join('');
     }
 
@@ -854,6 +944,15 @@
         });
     }
 
+    var APP_CENTER_TABS = {
+        market: ['应用市场', '发现和安装更多应用，扩展系统能力'],
+        installed: ['已安装应用', '管理应用状态与入口位置'],
+        uninstalled: ['未安装应用', '查看本地已发现但尚未安装的应用'],
+        updates: ['应用更新', '检查可用版本并查看更新说明'],
+        records: ['安装记录', '查看应用安装、启用、升级与卸载记录'],
+        entries: ['入口管理', '管理桌面快捷方式与可用系统菜单']
+    };
+
     function renderAppCenter(tab) {
         state.appCenterTab = tab || 'market';
         var appWindow = state.windows.get(windowKey(applicationCenterEntry()));
@@ -864,20 +963,43 @@
             button.classList.toggle('is-active', button.dataset.specialTab === state.appCenterTab);
         });
         var container = appWindow.element.querySelector('[data-app-center]');
-        var titles = {
-            market: ['应用市场', '发现和安装更多应用，扩展系统能力'],
-            installed: ['已安装应用', '管理应用状态，并将入口固定到桌面'],
-            uninstalled: ['未安装应用', '查看本地已发现但尚未安装的应用'],
-            updates: ['应用更新', '检查可用版本并查看更新说明'],
-            records: ['安装记录', '查看应用安装、启用、升级与卸载记录'],
-            entries: ['入口管理', '管理桌面快捷方式与可用系统菜单']
-        };
-        var title = titles[state.appCenterTab] || titles.market;
+        var title = APP_CENTER_TABS[state.appCenterTab] || APP_CENTER_TABS.market;
         container.innerHTML = '<div class="app-center-toolbar"><div><h1>' + title[0] + '</h1><p>' + title[1] + '</p></div>'
-            + '<label class="app-center-search"><i class="fa fa-search"></i><input type="search" data-app-search placeholder="搜索应用"></label></div>'
+            + '<div class="app-center-tools">' + appCenterSearchMarkup() + appCenterExtrasMarkup(state.appCenterTab) + '</div></div>'
             + '<div class="app-center-status" data-app-status><i class="fa fa-circle-o-notch fa-spin"></i>正在读取数据</div>'
             + '<div class="app-center-content" data-app-content></div>';
         loadAppCenterTab(container, state.appCenterTab);
+    }
+
+    function appCenterSearchMarkup() {
+        var placeholders = {
+            market: '搜索市场应用',
+            installed: '搜索已安装应用',
+            uninstalled: '搜索未安装应用'
+        };
+        var placeholder = placeholders[state.appCenterTab] || '搜索应用';
+
+        return '<label class="app-center-search"><i class="fa fa-search"></i>'
+            + '<input type="search" data-app-search placeholder="' + placeholder + '"></label>';
+    }
+
+    function appCenterExtrasMarkup(tab) {
+        if (tab !== 'installed' && tab !== 'uninstalled') {
+            return '';
+        }
+
+        return appStatusFilterMarkup() + (tab === 'installed'
+            ? '<button class="webos-button secondary compact" type="button" data-app-upload><i class="fa fa-upload"></i>上传安装</button>'
+            : '');
+    }
+
+    function appStatusFilterMarkup() {
+        var options = [['', '全部状态'], ['1', '已启用'], ['2', '已禁用'], ['0', '已安装']];
+
+        return '<label class="app-center-filter"><i class="fa fa-filter"></i><select data-app-status-filter>'
+            + options.map(function (option) {
+                return '<option value="' + option[0] + '">' + option[1] + '</option>';
+            }).join('') + '</select></label>';
     }
 
     function extractCollection(payload) {
@@ -906,7 +1028,7 @@
         var status = container.querySelector('[data-app-status]');
         var content = container.querySelector('[data-app-content]');
         if (tab === 'installed') {
-            status.innerHTML = '<i class="fa fa-check-circle"></i>共 ' + state.catalog.applications.length + ' 个已安装应用';
+            renderInstalledSummary(status, state.catalog.applications);
             content.innerHTML = renderApplicationCards(state.catalog.applications, 'installed');
             return;
         }
@@ -973,10 +1095,6 @@
         });
     }
 
-    function isImageIcon(icon) {
-        return typeof icon === 'string' && (/^\//.test(icon) || /^https?:\/\//.test(icon));
-    }
-
     function appIconFallbackMarkup(app) {
         var fallback = app.manifest_icon || app.icon;
         if (isImageIcon(fallback)) {
@@ -996,34 +1114,193 @@
             + safeIcon(app.manifest_icon || app.icon || 'fa fa-cube') + '"></i></span>';
     }
 
-    function appIconMarkup(app) {
-        return applicationIconMarkup(app, 'app-icon');
+    function marketIconMarkup(app, className) {
+        var url = marketIconUrl(app.icon);
+        if (!url) {
+            return '<span class="' + className + '"><i class="fa fa-puzzle-piece"></i></span>';
+        }
+
+        return '<span class="' + className + '"><img data-market-icon src="' + escapeHtml(url) + '" alt="">'
+            + '<i data-market-icon-fallback class="fa fa-puzzle-piece" hidden></i></span>';
+    }
+
+    function cardIconMarkup(app, className) {
+        if (app.icon_url) {
+            return applicationIconMarkup(app, className);
+        }
+        if (app._source === 'market' && app.icon) {
+            return marketIconMarkup(app, className);
+        }
+        return applicationIconMarkup(app, className);
+    }
+
+    function marketState(app) {
+        var currentVersion = installedVersions()[String(app.app_id || '').toLowerCase()];
+        var latestVersion = app.latest_version || app.version || '';
+        var installed = typeof currentVersion === 'string' && currentVersion !== '';
+
+        return {
+            installed: installed,
+            current_version: currentVersion || '',
+            latest_version: latestVersion,
+            has_update: installed && compareVersions(currentVersion, latestVersion) < 0
+        };
+    }
+
+    function entryIconMarkup(entry, className) {
+        var application = findApplication(entry.app_id);
+        if (application) {
+            return applicationIconMarkup(application, className + ' is-app-icon');
+        }
+
+        return '<span class="' + className + '"><i class="' + safeIcon(entry.icon) + '"></i></span>';
     }
 
     function renderApplicationCards(apps, mode) {
+        if (mode === 'installed') {
+            return renderInstalledList(apps);
+        }
         if (!apps || !apps.length) {
             return emptyState(mode === 'updates' ? 'fa-check-circle' : 'fa-cubes', mode === 'updates' ? '当前应用均为最新版本' : '暂无应用数据');
         }
         return '<div class="app-grid">' + apps.map(function (app) {
             var id = app.app_id || '';
-            var installed = mode === 'installed';
             var version = app.version || app.current_version || app.latest_version || '-';
             var description = app.description || app.changelog || '暂无应用说明';
             var actions = '';
-            if (mode === 'market' || mode === 'local') {
-                actions = '<button class="small-action primary" type="button" data-install-id="' + escapeHtml(id) + '" data-install-source="' + mode + '">安装</button>';
+            var market = mode === 'market' ? marketState(app) : null;
+            if (market) {
+                actions = marketCardActions(app, market);
+                version = market.latest_version || version;
+                if (market.installed) {
+                    version += ' · 本地 ' + market.current_version;
+                }
             } else if (mode === 'updates') {
                 actions = '<button class="small-action primary" type="button" data-upgrade-id="' + escapeHtml(id) + '">更新</button>';
-            } else if (installed) {
-                var firstMenu = state.flatMenus.find(function (entry) { return entry.app_id === id; });
-                actions = firstMenu ? '<button class="small-action" type="button" data-open-app-id="' + escapeHtml(id) + '">打开</button>'
-                    + '<button class="small-action" type="button" data-pin-app-id="' + escapeHtml(id) + '">固定</button>' : '<span class="status-pill">' + escapeHtml(app.status_label || '已安装') + '</span>';
+            } else {
+                actions = '<button class="small-action primary" type="button" data-install-id="' + escapeHtml(id) + '" data-install-source="local">安装</button>';
             }
             return '<article class="app-card" data-app-name="' + escapeHtml((app.name || id).toLowerCase()) + '">'
-                + appIconMarkup(app) + '<div class="app-card-info"><strong>' + escapeHtml(app.name || id) + '</strong><span>'
+                + cardIconMarkup(app, 'app-icon') + '<div class="app-card-info"><strong>' + escapeHtml(app.name || id) + '</strong><span>'
                 + escapeHtml(description) + '</span><small>版本 ' + escapeHtml(version) + (app.author ? ' · ' + escapeHtml(app.author) : '') + '</small></div>'
                 + '<div class="app-card-actions">' + actions + '</div></article>';
         }).join('') + '</div>';
+    }
+
+    function marketCardActions(app, market) {
+        if (market.has_update) {
+            return '<button class="small-action primary" type="button" data-upgrade-id="' + escapeHtml(app.app_id) + '">更新</button>';
+        }
+        if (market.installed) {
+            return '<button class="small-action" type="button" disabled>已安装</button>';
+        }
+
+        return '<button class="small-action primary" type="button" data-install-id="' + escapeHtml(app.app_id) + '" data-install-source="market">安装</button>';
+    }
+
+    function findCatalogApp(appId) {
+        return state.catalog.applications.find(function (app) {
+            return app.app_id === appId;
+        }) || null;
+    }
+
+    function renderInstalledSummary(status, apps) {
+        var enabled = (apps || []).filter(function (app) { return Number(app.status) === 1; }).length;
+        status.innerHTML = '<i class="fa fa-check-circle"></i>共 ' + (apps || []).length + ' 个应用 · ' + enabled + ' 个已启用';
+    }
+
+    function appEntryTagsMarkup(app) {
+        var hasMenu = state.flatMenus.some(function (entry) { return entry.app_id === app.app_id; });
+        var onDesktop = state.workspace.desktop_items.some(function (item) {
+            var entry = findEntry(item.id);
+            return entry && entry.app_id === app.app_id;
+        });
+        var tags = (hasMenu ? '<span class="entry-tag">系统菜单</span>' : '')
+            + (onDesktop ? '<span class="entry-tag is-desktop">桌面</span>' : '');
+
+        return tags || '<span class="entry-tag is-empty">未创建入口</span>';
+    }
+
+    function installedRowMarkup(app) {
+        var appId = app.app_id || '';
+        var enabled = Number(app.status) === 1;
+        var hasMenu = state.flatMenus.some(function (entry) { return entry.app_id === appId; });
+        var actions = '<button class="small-action primary" type="button" data-open-app-id="' + escapeHtml(appId) + '"'
+            + (hasMenu ? '' : ' disabled') + '>打开</button>';
+        if (hasMenu) {
+            actions += '<button class="small-action" type="button" data-manage-entry-id="' + escapeHtml(appId) + '">管理入口</button>';
+        }
+        actions += '<button class="small-action more" type="button" data-app-more="' + escapeHtml(appId)
+            + '" aria-expanded="false" aria-label="更多操作" title="更多操作"><i class="fa fa-ellipsis-h"></i></button>';
+
+        return '<article class="install-row" data-app-id="' + escapeHtml(appId) + '" data-app-state="' + escapeHtml(String(app.status))
+            + '" data-app-name="' + escapeHtml((app.name || appId).toLowerCase()) + '">'
+            + '<div class="install-row-app">' + cardIconMarkup(app, 'app-icon') + '<div class="app-card-info"><strong>'
+            + escapeHtml(app.name || appId) + '</strong><span>' + escapeHtml(app.description || '暂无应用说明') + '</span><small>版本 '
+            + escapeHtml(app.version || '-') + (app.is_system ? ' · 系统应用' : '') + '</small></div></div>'
+            + '<div class="install-row-cell">' + statusSwitchMarkup(appId, enabled, app.status_label) + '</div>'
+            + '<div class="install-row-cell">' + appEntryTagsMarkup(app) + '</div>'
+            + '<div class="install-row-actions">' + actions + '</div></article>';
+    }
+
+    function statusSwitchMarkup(appId, enabled, label) {
+        var text = enabled ? '已启用' : (label || '已禁用');
+
+        return '<button class="status-switch" type="button" data-toggle-app-status="' + escapeHtml(appId)
+            + '" aria-pressed="' + (enabled ? 'true' : 'false') + '"><i></i><span>' + escapeHtml(text) + '</span></button>';
+    }
+
+    function renderInstalledList(apps) {
+        if (!apps || !apps.length) {
+            return emptyState('fa-cubes', '暂无已安装应用');
+        }
+
+        return '<div class="app-install-list">'
+            + '<div class="install-row install-row-head"><span>应用信息</span><span>状态</span><span>入口位置</span><span>操作</span></div>'
+            + apps.map(installedRowMarkup).join('') + '</div>';
+    }
+
+    function closeAppRowMenus() {
+        document.querySelectorAll('.row-menu').forEach(function (menu) { menu.remove(); });
+        document.querySelectorAll('[data-app-more]').forEach(function (button) { button.setAttribute('aria-expanded', 'false'); });
+    }
+
+    function appRowMenuItems(app) {
+        var items = [
+            ['backup', 'fa-archive', '备份'],
+            ['docs', 'fa-book', '文档'],
+            ['manual-upgrade', 'fa-upload', '手动升级'],
+            ['export', 'fa-download', '导出']
+        ];
+        if (app.has_config) {
+            items.push(['settings', 'fa-cog', '设置']);
+        }
+        if (!app.is_system) {
+            items.push(['uninstall', 'fa-trash-o', '卸载', 'danger']);
+        }
+        return items;
+    }
+
+    function toggleAppRowMenu(button) {
+        var row = button.closest('.install-row');
+        var opened = row ? row.querySelector('.row-menu') : null;
+        closeAppRowMenus();
+        if (opened || !row) {
+            return;
+        }
+        var app = findCatalogApp(button.dataset.appMore);
+        if (!app) {
+            return;
+        }
+        var menu = document.createElement('div');
+        menu.className = 'row-menu';
+        menu.innerHTML = appRowMenuItems(app).map(function (item) {
+            return '<button class="row-menu-item ' + (item[3] ? 'is-danger' : '') + '" type="button" data-app-action="'
+                + item[0] + '" data-app-id="' + escapeHtml(app.app_id) + '"><i class="fa ' + item[1] + '"></i>'
+                + item[2] + '</button>';
+        }).join('');
+        row.appendChild(menu);
+        button.setAttribute('aria-expanded', 'true');
     }
 
     function renderOperationLogs(logs) {
@@ -1123,7 +1400,7 @@
         state.installTerminals = [];
         state.installRequestId += 1;
         var requestId = state.installRequestId;
-        elements.installSummary.innerHTML = appIconMarkup(app) + '<div><strong>' + escapeHtml(app.name || app.app_id) + '</strong><span>'
+        elements.installSummary.innerHTML = cardIconMarkup(app, 'app-icon') + '<div><strong>' + escapeHtml(app.name || app.app_id) + '</strong><span>'
             + escapeHtml(app.description || '安装后可在 WebOS 中打开此应用') + '</span><span>版本 ' + escapeHtml(app.version || app.latest_version || '-') + '</span></div>';
         renderInstallMenuStatus('fa-circle-o-notch fa-spin', '正在识别应用菜单…', false);
         elements.confirmInstall.disabled = true;
@@ -1177,7 +1454,547 @@
         api('/api/admin/apps/' + encodeURIComponent(appId) + '/upgrade', { method: 'POST' }).then(function () {
             toast('应用更新完成');
             return refreshCatalog();
-        }).then(function () { renderAppCenter('installed'); }).catch(function (error) { toast(error.message, 'error'); });
+        }).then(function () { renderAppCenter('installed'); }).catch(function (error) {
+            if (String(error.message).indexOf('请先禁用应用') >= 0) {
+                openDisableFirstDialog(findCatalogApp(appId), error.message);
+                return;
+            }
+            toast(error.message, 'error');
+        });
+    }
+
+    function openActionDialog(options) {
+        elements.actionDialogKicker.textContent = options.kicker || '应用操作';
+        elements.actionDialogTitle.textContent = options.title || '应用操作';
+        elements.actionDialogBody.innerHTML = options.body || '';
+        elements.actionDialogFooter.innerHTML = options.footer
+            || '<button class="webos-button secondary" type="button" data-action="close-action">关闭</button>';
+        elements.actionDialog.hidden = false;
+    }
+
+    function closeActionDialog() {
+        elements.actionDialog.hidden = true;
+        elements.actionDialogBody.innerHTML = '';
+        elements.actionDialogFooter.innerHTML = '';
+    }
+
+    function actionDialogCancelButton() {
+        return '<button class="webos-button secondary" type="button" data-action="close-action">取消</button>';
+    }
+
+    function appDisplayName(app) {
+        return app ? (app.name || app.app_id) : '应用';
+    }
+
+    function reloadInstalledAppCenter() {
+        return refreshCatalog().then(function () {
+            renderAppCenter('installed');
+            renderDesktop();
+        });
+    }
+
+    function toggleAppStatus(appId, enable) {
+        api('/api/admin/apps/' + encodeURIComponent(appId) + (enable ? '/enable' : '/disable'), { method: 'POST' })
+            .then(function () {
+                toast(enable ? '应用已启用' : '应用已禁用');
+                return reloadInstalledAppCenter();
+            })
+            .catch(function (error) { toast(error.message, 'error'); });
+    }
+
+    function openDisableFirstDialog(app, message) {
+        openActionDialog({
+            kicker: '操作提示',
+            title: '请先禁用应用',
+            body: '<p class="dialog-hint">' + escapeHtml(message || '请先禁用应用后再执行该操作。') + '</p>',
+            footer: actionDialogCancelButton() + (app
+                ? '<button class="webos-button primary" type="button" data-disable-first data-app-id="'
+                    + escapeHtml(app.app_id) + '">禁用应用</button>' : '')
+        });
+    }
+
+    function openAppUploadDialog() {
+        openActionDialog({
+            kicker: '应用安装',
+            title: '上传安装应用',
+            body: uploadFieldMarkup('请选择应用压缩包', '仅支持 CmsPro 应用包（.zip，最大 50MB），上传后可按应用清单识别菜单终端。'),
+            footer: actionDialogCancelButton()
+                + '<button class="webos-button primary" type="button" data-upload-submit><i class="fa fa-upload"></i>上传安装</button>'
+        });
+        preparePackageInput();
+    }
+
+    function openManualUpgradeDialog(app) {
+        openActionDialog({
+            kicker: '应用升级',
+            title: '手动升级「' + appDisplayName(app) + '」',
+            body: uploadFieldMarkup('请选择应用升级包', '选择该应用的升级包（.zip）。启用状态的应用需要先禁用，建议升级前先备份。'),
+            footer: actionDialogCancelButton()
+                + '<button class="webos-button primary" type="button" data-manual-upgrade data-app-id="'
+                + escapeHtml(app.app_id) + '"><i class="fa fa-upload"></i>开始升级</button>'
+        });
+        preparePackageInput();
+    }
+
+    function uploadFieldMarkup(placeholder, hint) {
+        return '<p class="dialog-hint">' + escapeHtml(hint) + '</p>'
+            + '<label class="upload-field"><i class="fa fa-file-archive-o"></i>'
+            + '<span id="upload-file-name">' + escapeHtml(placeholder) + '</span></label>';
+    }
+
+    function preparePackageInput() {
+        elements.packageInput.value = '';
+        elements.packageInput.click();
+    }
+
+    function submitPackageUpload(appId) {
+        var file = elements.packageInput.files && elements.packageInput.files[0];
+        if (!file) {
+            toast('请先选择应用包', 'error');
+            return;
+        }
+        var button = elements.actionDialogFooter.querySelector('[data-upload-submit], [data-manual-upgrade]');
+        var form = new FormData();
+        form.append('package', file);
+        if (appId) {
+            form.append('app_id', appId);
+        }
+        if (button) {
+            button.disabled = true;
+            button.innerHTML = '<i class="fa fa-circle-o-notch fa-spin"></i>正在处理';
+        }
+        api('/api/admin/apps/upload', { method: 'POST', body: form }).then(function () {
+            closeActionDialog();
+            toast(appId ? '升级包已上传，应用将完成升级' : '应用安装成功');
+            return reloadInstalledAppCenter();
+        }).catch(function (error) {
+            toast(error.message, 'error');
+        }).finally(function () {
+            if (button) {
+                button.disabled = false;
+            }
+        });
+    }
+
+    function exportAppPackage(app) {
+        openActionDialog({
+            kicker: '应用导出',
+            title: '导出「' + appDisplayName(app) + '」',
+            body: '<p class="dialog-hint">导出会将该应用的代码与数据表打包为 zip 文件下载到本地。</p>',
+            footer: actionDialogCancelButton()
+                + '<button class="webos-button primary" type="button" data-export-submit data-app-id="'
+                + escapeHtml(app.app_id) + '"><i class="fa fa-download"></i>确认导出</button>'
+        });
+    }
+
+    function runExport(appId) {
+        toast('正在导出应用包');
+        downloadFile('/api/admin/apps/' + encodeURIComponent(appId) + '/export', appId + '.zip')
+            .then(function () {
+                closeActionDialog();
+                toast('导出成功');
+            })
+            .catch(function (error) { toast(error.message, 'error'); });
+    }
+
+    function openUninstallDialog(app) {
+        var name = appDisplayName(app);
+        openActionDialog({
+            kicker: '应用卸载',
+            title: '确认卸载「' + name + '」',
+            body: '<div class="dialog-warning"><i class="fa fa-exclamation-triangle"></i>'
+                + '<p>将删除数据库表、菜单项、配置项、权限项和静态资源；应用文件保留，可重新安装。</p></div>'
+                + '<label class="dialog-field"><span>请输入应用名称「' + escapeHtml(name) + '」确认卸载</span>'
+                + '<input type="text" data-uninstall-input placeholder="请输入应用名称"></label>',
+            footer: actionDialogCancelButton()
+                + '<button class="webos-button danger" type="button" data-uninstall-submit data-app-id="'
+                + escapeHtml(app.app_id) + '" data-app-name="' + escapeHtml(name) + '" disabled>确认卸载</button>'
+        });
+    }
+
+    function runUninstall(appId, appName) {
+        api('/api/admin/apps/' + encodeURIComponent(appId) + '/uninstall', { method: 'POST' }).then(function () {
+            closeActionDialog();
+            toast('应用已卸载');
+            return reloadInstalledAppCenter();
+        }).catch(function (error) {
+            if (String(error.message).indexOf('请先禁用应用') >= 0) {
+                openDisableFirstDialog(findCatalogApp(appId) || { app_id: appId, name: appName }, error.message);
+                return;
+            }
+            toast(error.message, 'error');
+        });
+    }
+
+    function openBackupDialog(app) {
+        openActionDialog({
+            kicker: '应用备份',
+            title: '「' + appDisplayName(app) + '」备份',
+            body: '<div class="backup-list" data-backup-list>'
+                + '<div class="panel-empty"><i class="fa fa-circle-o-notch fa-spin"></i>正在读取备份记录</div></div>',
+            footer: '<button class="webos-button secondary" type="button" data-action="close-action">关闭</button>'
+                + '<button class="webos-button primary" type="button" data-backup-create data-app-id="'
+                + escapeHtml(app.app_id) + '"><i class="fa fa-archive"></i>新建备份</button>'
+        });
+        loadBackups(app.app_id);
+    }
+
+    function loadBackups(appId) {
+        return api('/api/admin/apps/' + encodeURIComponent(appId) + '/backups').then(function (payload) {
+            var list = elements.actionDialogBody.querySelector('[data-backup-list]');
+            if (list) {
+                list.innerHTML = renderBackupList(extractCollection(payload));
+            }
+        }).catch(function (error) {
+            var list = elements.actionDialogBody.querySelector('[data-backup-list]');
+            if (list) {
+                list.innerHTML = emptyState('fa-exclamation-circle', error.message);
+            }
+        });
+    }
+
+    function renderBackupList(backups) {
+        if (!backups.length) {
+            return emptyState('fa-archive', '暂无备份记录');
+        }
+
+        return backups.map(function (backup) {
+            var success = Number(backup.status) === 1;
+            return '<div class="backup-row"><span class="backup-row-icon"><i class="fa fa-archive"></i></span>'
+                + '<div class="backup-row-info"><strong>版本 ' + escapeHtml(backup.app_version || '-') + '</strong><small>'
+                + escapeHtml(backup.create_time || '-') + ' · ' + formatFileSize(backup.file_size) + '</small></div>'
+                + '<span class="status-pill ' + (success ? '' : 'warning') + '">' + (success ? '成功' : '失败') + '</span>'
+                + '<button class="small-action" type="button" data-backup-download="' + escapeHtml(String(backup.id))
+                + '"><i class="fa fa-download"></i>下载</button></div>';
+        }).join('');
+    }
+
+    function createBackup(appId) {
+        var button = elements.actionDialogFooter.querySelector('[data-backup-create]');
+        var list = elements.actionDialogBody.querySelector('[data-backup-list]');
+        if (button) {
+            button.disabled = true;
+            button.innerHTML = '<i class="fa fa-circle-o-notch fa-spin"></i>备份中';
+        }
+        if (list) {
+            list.innerHTML = '<div class="panel-empty"><i class="fa fa-circle-o-notch fa-spin"></i>正在备份应用数据与代码</div>';
+        }
+        api('/api/admin/apps/' + encodeURIComponent(appId) + '/backups', { method: 'POST', body: { volume_size: 2 } })
+            .then(function () {
+                toast('应用备份完成');
+                return loadBackups(appId);
+            })
+            .catch(function (error) {
+                toast(error.message, 'error');
+                return loadBackups(appId);
+            })
+            .finally(function () {
+                if (button) {
+                    button.disabled = false;
+                    button.innerHTML = '<i class="fa fa-archive"></i>新建备份';
+                }
+            });
+    }
+
+    function openDocsDialog(app) {
+        state.actionApp = app;
+        openActionDialog({
+            kicker: '应用文档',
+            title: '「' + appDisplayName(app) + '」文档',
+            body: '<div class="doc-viewer"><nav class="doc-tree" data-doc-tree>'
+                + '<div class="panel-empty"><i class="fa fa-circle-o-notch fa-spin"></i>正在读取文档</div></nav>'
+                + '<div class="doc-body" data-doc-body></div></div>'
+        });
+        api('/api/admin/apps/' + encodeURIComponent(app.app_id) + '/docs').then(function (payload) {
+            var tree = (payload && payload.tree) || [];
+            var treeElement = elements.actionDialogBody.querySelector('[data-doc-tree]');
+            if (!treeElement) {
+                return;
+            }
+            if (!payload || !payload.has_doc || !tree.length) {
+                treeElement.innerHTML = emptyState('fa-book', '该应用暂无文档');
+                return;
+            }
+            treeElement.innerHTML = renderDocTree(tree, '');
+            var first = findFirstDoc(tree);
+            if (first) {
+                loadDocContent(app.app_id, first.path, first.name);
+            }
+        }).catch(function (error) {
+            var treeElement = elements.actionDialogBody.querySelector('[data-doc-tree]');
+            if (treeElement) {
+                treeElement.innerHTML = emptyState('fa-exclamation-circle', error.message);
+            }
+        });
+    }
+
+    function findFirstDoc(items) {
+        for (var index = 0; index < items.length; index += 1) {
+            if (items[index].type === 'file') {
+                return { path: items[index].path, name: items[index].name };
+            }
+            if (items[index].type === 'directory') {
+                var found = findFirstDoc(items[index].children || []);
+                if (found) {
+                    return found;
+                }
+            }
+        }
+        return null;
+    }
+
+    function renderDocTree(items, parentPath) {
+        return '<ul class="doc-tree-list">' + items.map(function (item) {
+            var path = parentPath ? parentPath + '/' + item.name : item.name;
+            if (item.type === 'directory') {
+                return '<li><span class="doc-tree-dir"><i class="fa fa-folder-open-o"></i>'
+                    + escapeHtml(item.name) + '</span>' + renderDocTree(item.children || [], path) + '</li>';
+            }
+            var filePath = item.path || path;
+            return '<li><button class="doc-tree-file" type="button" data-doc-path="' + escapeHtml(filePath)
+                + '" data-doc-name="' + escapeHtml(item.name) + '"><i class="fa fa-file-text-o"></i>'
+                + escapeHtml(item.name) + '</button></li>';
+        }).join('') + '</ul>';
+    }
+
+    function loadDocContent(appId, path, name) {
+        var body = elements.actionDialogBody.querySelector('[data-doc-body]');
+        if (!body) {
+            return;
+        }
+        body.innerHTML = '<div class="panel-empty"><i class="fa fa-circle-o-notch fa-spin"></i>正在读取文档</div>';
+        api('/api/admin/apps/' + encodeURIComponent(appId) + '/docs/content?path=' + encodeURIComponent(path))
+            .then(function (payload) {
+                var content = (payload && payload.content) || '';
+                var current = elements.actionDialogBody.querySelector('[data-doc-body]');
+                if (!current) {
+                    return;
+                }
+                elements.actionDialogBody.querySelectorAll('[data-doc-path]').forEach(function (button) {
+                    button.classList.toggle('is-active', button.dataset.docPath === path);
+                });
+                current.innerHTML = '<header class="doc-body-header"><strong>' + escapeHtml(name || '')
+                    + '</strong><button class="small-action" type="button" data-doc-download data-app-id="'
+                    + escapeHtml(appId) + '" data-doc-path="' + escapeHtml(path)
+                    + '"><i class="fa fa-download"></i>下载</button></header>'
+                    + '<div class="doc-markdown">' + renderMarkdown(content) + '</div>';
+            })
+            .catch(function (error) {
+                var current = elements.actionDialogBody.querySelector('[data-doc-body]');
+                if (current) {
+                    current.innerHTML = emptyState('fa-exclamation-circle', error.message);
+                }
+            });
+    }
+
+    function renderMarkdown(content) {
+        if (window.marked && typeof window.marked.parse === 'function') {
+            return window.marked.parse(String(content || ''));
+        }
+
+        return '<pre>' + escapeHtml(content || '') + '</pre>';
+    }
+
+    function openAppSettingsDialog(app) {
+        openActionDialog({
+            kicker: '应用设置',
+            title: '「' + appDisplayName(app) + '」应用设置',
+            body: '<div class="panel-empty"><i class="fa fa-circle-o-notch fa-spin"></i>正在读取配置</div>'
+        });
+        api('/api/admin/apps/' + encodeURIComponent(app.app_id) + '/config').then(function (groups) {
+            var list = Array.isArray(groups) ? groups : [];
+            if (!list.length) {
+                elements.actionDialogBody.innerHTML = emptyState('fa-cog', '该应用暂无配置项');
+                return;
+            }
+            elements.actionDialogBody.innerHTML = '<div class="config-groups">' + list.map(renderConfigGroup).join('') + '</div>';
+            elements.actionDialogFooter.innerHTML = actionDialogCancelButton()
+                + '<button class="webos-button primary" type="button" data-config-save data-app-id="'
+                + escapeHtml(app.app_id) + '"><i class="fa fa-check"></i>保存设置</button>';
+        }).catch(function (error) {
+            elements.actionDialogBody.innerHTML = emptyState('fa-exclamation-circle', error.message);
+        });
+    }
+
+    function renderConfigGroup(group) {
+        return '<section class="config-group"><h3>' + escapeHtml(group.title || '配置分组') + '</h3>'
+            + (group.items || []).map(renderConfigItem).join('') + '</section>';
+    }
+
+    function configSwitchMarkup(item, value) {
+        var enabled = value === '1' || value === 'true';
+
+        return '<button class="status-switch" type="button" data-config-switch="' + escapeHtml(item.code)
+            + '" aria-pressed="' + (enabled ? 'true' : 'false') + '"><i></i><span>'
+            + (enabled ? '开启' : '关闭') + '</span></button>';
+    }
+
+    function configOptionsMarkup(item, value) {
+        return '<select data-config-code="' + escapeHtml(item.code) + '">' + (item.options || []).map(function (option) {
+            var optionValue = option && typeof option === 'object' ? option.value : option;
+            var optionLabel = option && typeof option === 'object' ? option.label : option;
+
+            return '<option value="' + escapeHtml(String(optionValue)) + '"'
+                + (String(optionValue) === value ? ' selected' : '') + '>' + escapeHtml(String(optionLabel)) + '</option>';
+        }).join('') + '</select>';
+    }
+
+    function renderConfigItem(item) {
+        var value = item.value == null ? '' : String(item.value);
+        var field = '';
+        if (item.type === 'switch') {
+            field = configSwitchMarkup(item, value);
+        } else if (item.type === 'select') {
+            field = configOptionsMarkup(item, value);
+        } else if (item.type === 'textarea') {
+            field = '<textarea rows="3" data-config-code="' + escapeHtml(item.code) + '">' + escapeHtml(value) + '</textarea>';
+        } else if (item.type === 'number') {
+            field = '<input type="number" data-config-code="' + escapeHtml(item.code) + '" value="' + escapeHtml(value) + '">';
+        } else {
+            field = '<input type="text" data-config-code="' + escapeHtml(item.code) + '" value="' + escapeHtml(value)
+                + '"' + (item.type === 'image' ? ' placeholder="请输入图片地址"' : '') + '>';
+        }
+
+        return '<label class="config-field"><span>' + escapeHtml(item.name || item.code) + '</span>' + field
+            + (item.tips ? '<small>' + escapeHtml(item.tips) + '</small>' : '') + '</label>';
+    }
+
+    function saveAppSettings(appId) {
+        var payload = {};
+        elements.actionDialogBody.querySelectorAll('[data-config-code]').forEach(function (field) {
+            payload[field.dataset.configCode] = field.value;
+        });
+        elements.actionDialogBody.querySelectorAll('[data-config-switch]').forEach(function (field) {
+            payload[field.dataset.configSwitch] = field.getAttribute('aria-pressed') === 'true' ? '1' : '0';
+        });
+        api('/api/admin/apps/' + encodeURIComponent(appId) + '/config', { method: 'PUT', body: payload })
+            .then(function () {
+                closeActionDialog();
+                toast('应用设置已保存');
+            })
+            .catch(function (error) { toast(error.message, 'error'); });
+    }
+
+    function openEntryDialog(app) {
+        var entries = state.flatMenus.filter(function (entry) { return entry.app_id === app.app_id; });
+        var body = entries.length ? entries.map(function (entry) {
+            var pinned = state.workspace.desktop_items.some(function (item) { return item.id === entry.id; });
+
+            return '<div class="entry-row"><span class="start-app-item-icon"><i class="' + safeIcon(entry.icon)
+                + '"></i></span><div class="entry-row-info"><strong>' + escapeHtml(entry.title) + '</strong><small>'
+                + escapeHtml(entry.path) + '</small></div><div class="entry-row-actions">'
+                + '<button class="small-action" type="button" data-launch-id="' + escapeHtml(entry.id) + '">打开</button>'
+                + '<button class="small-action" type="button" data-entry-toggle="' + escapeHtml(entry.id) + '">'
+                + (pinned ? '移出桌面' : '添加到桌面') + '</button></div></div>';
+        }).join('') : emptyState('fa-bars', '该应用未声明后台菜单，可在安装时选择菜单挂载位置');
+
+        openActionDialog({
+            kicker: '入口管理',
+            title: '「' + appDisplayName(app) + '」应用入口',
+            body: '<div class="entry-list">' + body + '</div>',
+            footer: '<button class="webos-button secondary" type="button" data-action="close-action">关闭</button>'
+        });
+    }
+
+    function toggleEntryOnDesktop(button) {
+        var entryId = button.dataset.entryToggle;
+        toggleDesktopEntry(entryId);
+        var pinned = state.workspace.desktop_items.some(function (item) { return item.id === entryId; });
+        button.textContent = pinned ? '移出桌面' : '添加到桌面';
+    }
+
+    function runAppRowAction(appId, action) {
+        var app = findCatalogApp(appId);
+        if (!app) {
+            return;
+        }
+        if (action === 'backup') { openBackupDialog(app); }
+        if (action === 'docs') { openDocsDialog(app); }
+        if (action === 'manual-upgrade') { openManualUpgradeDialog(app); }
+        if (action === 'export') { exportAppPackage(app); }
+        if (action === 'settings') { openAppSettingsDialog(app); }
+        if (action === 'uninstall') { openUninstallDialog(app); }
+    }
+
+    function handleAppCenterAction(event) {
+        var statusToggle = event.target.closest('[data-toggle-app-status]');
+        if (statusToggle) {
+            toggleAppStatus(statusToggle.dataset.toggleAppStatus, statusToggle.getAttribute('aria-pressed') !== 'true');
+            return;
+        }
+
+        var manageEntry = event.target.closest('[data-manage-entry-id]');
+        if (manageEntry) {
+            var manageApp = findCatalogApp(manageEntry.dataset.manageEntryId);
+            if (manageApp) { openEntryDialog(manageApp); }
+            return;
+        }
+
+        var upload = event.target.closest('[data-app-upload]');
+        if (upload) { openAppUploadDialog(); return; }
+
+        var uploadSubmit = event.target.closest('[data-upload-submit]');
+        if (uploadSubmit) { submitPackageUpload(''); return; }
+
+        var manualUpgrade = event.target.closest('[data-manual-upgrade]');
+        if (manualUpgrade) { submitPackageUpload(manualUpgrade.dataset.appId); return; }
+
+        var exportSubmit = event.target.closest('[data-export-submit]');
+        if (exportSubmit) { runExport(exportSubmit.dataset.appId); return; }
+
+        var uninstallSubmit = event.target.closest('[data-uninstall-submit]');
+        if (uninstallSubmit) { runUninstall(uninstallSubmit.dataset.appId, uninstallSubmit.dataset.appName); return; }
+
+        var disableFirst = event.target.closest('[data-disable-first]');
+        if (disableFirst) {
+            closeActionDialog();
+            toggleAppStatus(disableFirst.dataset.appId, false);
+            return;
+        }
+
+        var backupCreate = event.target.closest('[data-backup-create]');
+        if (backupCreate) { createBackup(backupCreate.dataset.appId); return; }
+
+        var backupDownload = event.target.closest('[data-backup-download]');
+        if (backupDownload) {
+            downloadFile('/api/admin/apps/backups/' + encodeURIComponent(backupDownload.dataset.backupDownload)
+                + '/download', 'app-backup.zip')
+                .then(function () { toast('备份下载已开始'); })
+                .catch(function (error) { toast(error.message, 'error'); });
+            return;
+        }
+
+        var docDownload = event.target.closest('[data-doc-download]');
+        if (docDownload) {
+            downloadFile('/api/admin/apps/' + encodeURIComponent(docDownload.dataset.appId) + '/docs/download?path='
+                + encodeURIComponent(docDownload.dataset.docPath), docDownload.dataset.docPath)
+                .then(function () { toast('文档下载已开始'); })
+                .catch(function (error) { toast(error.message, 'error'); });
+            return;
+        }
+
+        var docFile = event.target.closest('[data-doc-path]');
+        if (docFile && state.actionApp) {
+            loadDocContent(state.actionApp.app_id, docFile.dataset.docPath, docFile.dataset.docName);
+            return;
+        }
+
+        var configSave = event.target.closest('[data-config-save]');
+        if (configSave) { saveAppSettings(configSave.dataset.appId); return; }
+
+        var configSwitch = event.target.closest('[data-config-switch]');
+        if (configSwitch) {
+            var enabled = configSwitch.getAttribute('aria-pressed') === 'true';
+            configSwitch.setAttribute('aria-pressed', enabled ? 'false' : 'true');
+            configSwitch.querySelector('span').textContent = enabled ? '关闭' : '开启';
+            return;
+        }
+
+        var entryToggle = event.target.closest('[data-entry-toggle]');
+        if (entryToggle) { toggleEntryOnDesktop(entryToggle); return; }
+
+        var appAction = event.target.closest('[data-app-action]');
+        if (appAction) { runAppRowAction(appAction.dataset.appId, appAction.dataset.appAction); }
     }
 
     function refreshCatalog() {
@@ -1382,6 +2199,7 @@
                 var name = action.dataset.action;
                 if (name === 'close-start') { closePanels(); }
                 if (name === 'close-install') { elements.installDialog.hidden = true; }
+                if (name === 'close-action') { closeActionDialog(); }
                 if (name === 'lock-desktop') { closePanels(); elements.lockScreen.hidden = false; updateClock(); }
                 if (name === 'unlock-desktop') { elements.lockScreen.hidden = true; }
                 if (name === 'logout') {
@@ -1401,7 +2219,7 @@
             if (menuButton && !event.target.closest('[data-pin-id]')) { openEntry(findEntry(menuButton.dataset.menuId)); }
 
             var launch = event.target.closest('[data-launch-id]');
-            if (launch) { openEntry(findEntry(launch.dataset.launchId)); }
+            if (launch) { closeActionDialog(); openEntry(findEntry(launch.dataset.launchId)); }
 
             var taskWindow = event.target.closest('[data-task-window]');
             if (taskWindow) {
@@ -1488,6 +2306,12 @@
             if (accountPath) {
                 openEntry({ id: 'account-settings', title: '个人设置', path: accountPath.dataset.accountPath, icon: 'fa fa-cog', group_title: '账号' });
             }
+
+            var appMore = event.target.closest('[data-app-more]');
+            if (appMore) { toggleAppRowMenu(appMore); return; }
+
+            closeAppRowMenus();
+            handleAppCenterAction(event);
         });
 
         elements.confirmInstall.addEventListener('click', confirmInstall);
@@ -1509,6 +2333,33 @@
                 var name = item.dataset.appName || item.dataset.entryName || '';
                 item.style.display = name.indexOf(query) >= 0 ? '' : 'none';
             });
+        });
+
+        elements.windowLayer.addEventListener('change', function (event) {
+            if (!event.target.matches('[data-app-status-filter]')) {
+                return;
+            }
+            var center = event.target.closest('[data-app-center]');
+            var value = event.target.value;
+            center.querySelectorAll('[data-app-state]').forEach(function (item) {
+                item.style.display = value === '' || item.dataset.appState === value ? '' : 'none';
+            });
+        });
+
+        elements.actionDialogBody.addEventListener('input', function (event) {
+            var input = event.target.closest('[data-uninstall-input]');
+            var submit = elements.actionDialogFooter.querySelector('[data-uninstall-submit]');
+            if (input && submit) {
+                submit.disabled = input.value.trim() !== submit.dataset.appName;
+            }
+        });
+
+        elements.packageInput.addEventListener('change', function () {
+            var file = elements.packageInput.files && elements.packageInput.files[0];
+            var label = elements.actionDialogBody.querySelector('#upload-file-name');
+            if (label) {
+                label.textContent = file ? file.name : '请选择应用包';
+            }
         });
 
         elements.windowLayer.addEventListener('error', function (event) {
@@ -1535,6 +2386,15 @@
                 if (finalIcon) {
                     finalIcon.hidden = false;
                 }
+                return;
+            }
+
+            if (image.matches('[data-market-icon]')) {
+                image.hidden = true;
+                var marketFallback = image.parentNode.querySelector('[data-market-icon-fallback]');
+                if (marketFallback) {
+                    marketFallback.hidden = false;
+                }
             }
         }, true);
 
@@ -1547,7 +2407,9 @@
             }
             if (event.key === 'Escape') {
                 closePanels();
+                closeAppRowMenus();
                 elements.installDialog.hidden = true;
+                closeActionDialog();
             }
         });
     }

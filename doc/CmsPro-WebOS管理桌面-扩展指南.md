@@ -1,7 +1,7 @@
 # CmsPro WebOS 管理桌面 · 扩展指南
 
-> 文档版本：1.3.3 | 更新日期：2026-09-29
-> 适用应用：CmsproWebos v1.3.3+
+> 文档版本：1.4.0 | 更新日期：2026-09-29
+> 适用应用：CmsproWebos v1.4.0+
 
 ## 一、概述
 
@@ -38,7 +38,7 @@
 - 叶子菜单必须提供以 `/` 开头的站内路径。
 - `menus`、`user_menus`、`home_menus` 分别对应后台、用户端、前端；安装弹窗只为非空菜单数组显示对应的顶级挂载选择器。
 - 同一应用的菜单必须关联同一个 `app_id`；子菜单可继承父菜单的 `app_id`，这是开始菜单聚合和窗口菜单隔离的依据。
-- 应用中心优先读取应用根目录 `icon.svg`，其次读取 `icon.png`，两者均不可用时使用当前 `manifest.json` 的 `icon`；清单图标可填写站内图片路径或 Font Awesome 4.7、系统 Layui 图标类名，不使用 emoji。
+- 应用中心、桌面快捷方式、任务栏和开始菜单统一优先读取应用根目录 `icon.svg`，其次读取 `icon.png`，两者均不可用时使用当前 `manifest.json` 的 `icon`；清单图标可填写站内图片路径或 Font Awesome 4.7、系统 Layui 图标类名，不使用 emoji。
 - 推荐 `open_type` 使用 `_iframe`。WebOS 对安全的站内路径统一使用应用独立窗口承载，不依赖后台全局侧栏。
 - 当前管理员必须拥有对应菜单权限，WebOS 才会展示入口。
 
@@ -71,7 +71,9 @@ $workspace = app(WorkspaceService::class)->getForAdmin($adminUserId);
 | PUT | `/admin/cmspro/webos/api/workspace` | 保存当前管理员工作区 |
 | GET | `/admin/cmspro/webos/api/catalog` | 读取有权的后台 `admin` 菜单、已安装应用和最近操作记录 |
 
-接口使用后台 Session 认证和 CSRF 保护，返回统一的 `code`、`message`、`data`、`timestamp` 结构。
+接口使用后台 Session 认证和 CSRF 保护，返回统一的 `code`、`message`、`data`、`timestamp` 结构。目录接口中的每个应用包含 `icon_url`、`manifest_icon`、`has_config`、`is_system`、`status` 等字段，供前端渲染图标与应用操作。
+
+WebOS 不新增应用管理接口：应用中心的市场安装、本地安装、启用/禁用、卸载、导出、备份、文档、配置和上传安装都直接调用系统已有的 `/api/admin/apps/*`、`/api/admin/market/*` 接口。页面同时通过 `data-market-base-url` 把系统应用市场地址（`apps.market.api_url`，协议相对形式）传给前端，用于解析远程市场图标。
 
 ## 五、桌面入口结构
 
@@ -103,6 +105,8 @@ $workspace = app(WorkspaceService::class)->getForAdmin($adminUserId);
 6. 若菜单缺少 `app_id`，WebOS 会将第二级系统菜单视为文件夹；顶级菜单下的直属叶子菜单聚合为顶级同名文件夹。新应用应正确关联 `app_id`，不要依赖系统菜单回退行为。
 7. 同一 `app_id` 只有一个可访问菜单时，WebOS 默认隐藏窗口左侧菜单；声明多个后台菜单时默认展开，用户可在标题栏手动收起。
 8. 普通应用窗口标题按 `icon.svg`、`icon.png`、`manifest.json.icon` 顺序显示应用图标；应用记录的 `is_system` 为真时保留 CMSPRO Logo。
+9. 桌面快捷方式、任务栏图标与开始菜单卡片同样按第 8 条的顺序解析应用图标；不带 `app_id` 的系统菜单保留菜单自带图标。
+10. 应用如需在 WebOS 中提供“设置”入口，应在 `manifest.json` 声明 `config_groups`；配置项类型继续使用系统的 `text`、`textarea`、`number`、`select`、`switch`、`image`，WebOS 设置弹窗会按同样类型渲染。
 
 ## 七、数据与卸载注意事项
 
@@ -114,6 +118,7 @@ $workspace = app(WorkspaceService::class)->getForAdmin($adminUserId);
 
 | 版本 | 日期 | 更新人 | 说明 |
 |---|---|---|---|
+| 1.4.0 | 2026-09-29 | CmsPro | 应用图标规则扩展到桌面、任务栏与开始菜单；应用市场接入远程图标与安装升级状态；已安装列表增加状态筛选与应用操作（备份、文档、手动升级、导出、设置、卸载、上传安装） |
 | 1.3.3 | 2026-09-29 | CmsPro | 应用窗口标题接入应用图标并保留系统应用 Logo 规则 |
 | 1.3.2 | 2026-09-29 | CmsPro | 增加应用窗口左侧菜单收起与单菜单自动隐藏规则 |
 | 1.3.1 | 2026-09-29 | CmsPro | 应用中心图标增加 SVG、PNG、清单图标三级回退 |
