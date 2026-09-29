@@ -302,8 +302,26 @@
         });
     }
 
+    function hydrateDesktopAppIds() {
+        var changed = false;
+        state.workspace.desktop_items.forEach(function (item) {
+            if (item.app_id) {
+                return;
+            }
+            var entry = findEntry(item.id);
+            if (entry && entry.app_id) {
+                item.app_id = entry.app_id;
+                changed = true;
+            }
+        });
+        return changed;
+    }
+
     function bootstrapDesktopItems() {
         state.workspace.desktop_items = normalizeDesktopItems(state.workspace.desktop_items);
+        if (hydrateDesktopAppIds()) {
+            saveWorkspace(false).catch(function () {});
+        }
         if (state.workspace.desktop_items.length) {
             return Promise.resolve();
         }
@@ -340,6 +358,7 @@
                     return {
                         id: item.id,
                         menu_id: item.menu_id || null,
+                        app_id: item.app_id || '',
                         title: item.title,
                         path: item.path,
                         icon: safeIcon(item.icon),
@@ -605,6 +624,74 @@
 
     function findStartItem(id) {
         return (state.startItems || []).find(function (item) { return item.id === id; });
+    }
+
+    function closeDesktopContextMenu() {
+        var menu = document.getElementById('desktop-context-menu');
+        if (menu) {
+            menu.remove();
+        }
+    }
+
+    function desktopIconContext(id) {
+        var entry = findEntry(id) || findDesktopItem(id);
+        var application = entry ? findApplication(entry.app_id) : null;
+
+        return {
+            entry: entry,
+            application: application || null
+        };
+    }
+
+    function desktopContextMenuItems(context) {
+        var items = [[context.entry && context.entry.app_id ? '打开应用' : '打开', 'fa-external-link', 'open']];
+        items.push(['删除图标', 'fa-thumb-tack', 'remove']);
+        if (context.application && !context.application.is_system) {
+            items.push(['卸载应用', 'fa-times-circle', 'uninstall', 'danger']);
+        }
+        return items;
+    }
+
+    function openDesktopContextMenu(iconId, clientX, clientY) {
+        closeDesktopContextMenu();
+        closeAppRowMenus();
+        var items = desktopContextMenuItems(desktopIconContext(iconId));
+        var menu = document.createElement('div');
+        menu.id = 'desktop-context-menu';
+        menu.className = 'desktop-context-menu';
+        menu.setAttribute('role', 'menu');
+        menu.innerHTML = items.map(function (item) {
+            return '<button class="desktop-context-item ' + (item[3] ? 'is-danger' : '') + '" type="button" role="menuitem"'
+                + ' data-desktop-action="' + item[2] + '" data-desktop-id="' + escapeHtml(iconId) + '">'
+                + '<i class="fa ' + item[1] + '"></i>' + item[0] + '</button>';
+        }).join('');
+        root.appendChild(menu);
+        var rect = menu.getBoundingClientRect();
+        menu.style.left = Math.max(8, Math.min(clientX, window.innerWidth - rect.width - 8)) + 'px';
+        menu.style.top = Math.max(8, Math.min(clientY, window.innerHeight - rect.height - 8)) + 'px';
+    }
+
+    function runDesktopContextAction(action, iconId) {
+        var context = desktopIconContext(iconId);
+        if (action === 'open') {
+            openEntry(context.entry || findDesktopItem(iconId));
+            return;
+        }
+        if (action === 'remove') {
+            removeDesktopEntry(iconId);
+            return;
+        }
+        if (action === 'uninstall' && context.application) {
+            if (Number(context.application.status) === 1) {
+                openDisableFirstDialog(context.application, '「' + appDisplayName(context.application) + '」当前为启用状态，请先禁用后再卸载。');
+                return;
+            }
+            openUninstallDialog(context.application);
+        }
+    }
+
+    function findDesktopItem(id) {
+        return state.workspace.desktop_items.find(function (item) { return item.id === id; });
     }
 
     function desktopEntryFromStart(startItem) {
@@ -2200,6 +2287,15 @@
                 button.dataset.wasDragged = '0';
             }
         });
+        elements.desktopIcons.addEventListener('contextmenu', function (event) {
+            var button = event.target.closest('[data-desktop-id]');
+            if (!button) {
+                closeDesktopContextMenu();
+                return;
+            }
+            event.preventDefault();
+            openDesktopContextMenu(button.dataset.desktopId, event.clientX, event.clientY);
+        });
 
         document.addEventListener('click', function (event) {
             var action = event.target.closest('[data-action]');
@@ -2325,6 +2421,12 @@
             var appMore = event.target.closest('[data-app-more]');
             if (appMore) { toggleAppRowMenu(appMore); return; }
 
+            var desktopAction = event.target.closest('[data-desktop-action]');
+            if (desktopAction) {
+                runDesktopContextAction(desktopAction.dataset.desktopAction, desktopAction.dataset.desktopId);
+            }
+
+            closeDesktopContextMenu();
             closeAppRowMenus();
             handleAppCenterAction(event);
         });
@@ -2423,6 +2525,7 @@
             if (event.key === 'Escape') {
                 closePanels();
                 closeAppRowMenus();
+                closeDesktopContextMenu();
                 elements.installDialog.hidden = true;
                 closeActionDialog();
             }

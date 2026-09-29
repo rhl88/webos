@@ -67,6 +67,7 @@ class WebosController extends Controller
             'desktop_items' => ['sometimes', 'array', 'max:48'],
             'desktop_items.*.id' => ['required', 'string', 'max:80'],
             'desktop_items.*.menu_id' => ['nullable', 'integer', 'min:0'],
+            'desktop_items.*.app_id' => ['nullable', 'string', 'max:100', 'regex:/^[A-Za-z0-9_.-]*$/'],
             'desktop_items.*.title' => ['required', 'string', 'max:60'],
             'desktop_items.*.path' => [
                 'required',

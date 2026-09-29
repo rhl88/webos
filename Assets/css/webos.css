@@ -2323,6 +2323,53 @@ button {
     text-align: center;
 }
 
+/* 桌面图标右键菜单 */
+.desktop-context-menu {
+    position: fixed;
+    z-index: 4000;
+    display: grid;
+    min-width: 148px;
+    padding: 6px;
+    gap: 2px;
+    border: 1px solid #d4dfe8;
+    border-radius: 8px;
+    background: #fff;
+    box-shadow: 0 14px 30px rgba(10, 34, 59, 0.16);
+}
+
+.desktop-context-item {
+    display: flex;
+    align-items: center;
+    padding: 8px 10px;
+    gap: 9px;
+    border: 0;
+    border-radius: 6px;
+    color: #3f5169;
+    background: transparent;
+    cursor: pointer;
+    font-family: inherit;
+    font-size: 13px;
+    text-align: left;
+}
+
+.desktop-context-item:hover {
+    color: #087f75;
+    background: #eaf8f6;
+}
+
+.desktop-context-item.is-danger {
+    color: #b23c42;
+}
+
+.desktop-context-item.is-danger:hover {
+    background: #fdeff0;
+}
+
+.desktop-context-item i {
+    width: 14px;
+    text-align: center;
+}
+
 /* 应用操作弹窗 */
 .action-dialog-card {
     display: flex;

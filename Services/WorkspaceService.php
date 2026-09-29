@@ -80,10 +80,12 @@ class WorkspaceService
 
         $id = preg_replace('/[^A-Za-z0-9_-]/', '', (string) ($item['id'] ?? '')) ?: Str::uuid()->toString();
         $icon = preg_replace('/[^A-Za-z0-9 _-]/', '', (string) ($item['icon'] ?? 'fa fa-cube'));
+        $appId = preg_replace('/[^A-Za-z0-9_.-]/', '', (string) ($item['app_id'] ?? ''));
 
         return [
             'id' => Str::limit($id, 80, ''),
             'menu_id' => isset($item['menu_id']) ? max(0, (int) $item['menu_id']) : null,
+            'app_id' => Str::limit($appId, 100, ''),
             'title' => Str::limit(trim((string) ($item['title'] ?? '未命名应用')), 60, ''),
             'path' => Str::limit($path, 500, ''),
             'icon' => Str::limit($icon ?: 'fa fa-cube', 100, ''),

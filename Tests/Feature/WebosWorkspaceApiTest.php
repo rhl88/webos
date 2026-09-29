@@ -38,6 +38,7 @@ class WebosWorkspaceApiTest extends WebosTestCase
             'desktop_items' => [[
                 'id' => 'menu-10',
                 'menu_id' => 10,
+                'app_id' => 'cmspro.demo',
                 'title' => '用户管理',
                 'path' => '/admin/user',
                 'icon' => 'fa fa-users',
@@ -65,6 +66,7 @@ class WebosWorkspaceApiTest extends WebosTestCase
             ->assertOk()
             ->assertJsonPath('code', 0)
             ->assertJsonPath('data.desktop_items.0.title', '用户管理')
+            ->assertJsonPath('data.desktop_items.0.app_id', 'cmspro.demo')
             ->assertJsonPath('data.preferences.taskbar_position', 'left')
             ->assertJsonPath('data.preferences.usage_stats.folder:13.count', 4);
     }
@@ -294,6 +296,29 @@ class WebosWorkspaceApiTest extends WebosTestCase
         $this->assertStringContainsString('max-height: calc(100vh - 60px);', $stylesheet);
         $this->assertStringContainsString('.action-dialog-card .dialog-body {', $stylesheet);
         $this->assertStringContainsString('overflow-y: auto;', $stylesheet);
+    }
+
+    public function test_desktop_icon_context_menu_offers_open_remove_and_uninstall(): void
+    {
+        $script = file_get_contents(dirname(__DIR__, 2) . '/Assets/js/webos.js');
+        $stylesheet = file_get_contents(dirname(__DIR__, 2) . '/Assets/css/webos.css');
+
+        $this->assertIsString($script);
+        $this->assertIsString($stylesheet);
+        $this->assertStringContainsString("elements.desktopIcons.addEventListener('contextmenu'", $script);
+        $this->assertStringContainsString('function openDesktopContextMenu(iconId, clientX, clientY)', $script);
+        $this->assertStringContainsString('function closeDesktopContextMenu()', $script);
+        $this->assertStringContainsString('function runDesktopContextAction(action, iconId)', $script);
+        $this->assertStringContainsString("['删除图标', 'fa-thumb-tack', 'remove']", $script);
+        $this->assertStringContainsString("['卸载应用', 'fa-times-circle', 'uninstall', 'danger']", $script);
+        $this->assertStringContainsString('data-desktop-action="', $script);
+        $this->assertStringContainsString('openUninstallDialog(context.application)', $script);
+        $this->assertStringContainsString('closeDesktopContextMenu();', $script);
+        $this->assertStringContainsString('.desktop-context-menu {', $stylesheet);
+        $this->assertStringContainsString('.desktop-context-item {', $stylesheet);
+        $this->assertStringContainsString('function hydrateDesktopAppIds()', $script);
+        $this->assertStringContainsString("app_id: item.app_id || ''", $script);
+        $this->assertStringContainsString('findEntry(id) || findDesktopItem(id)', $script);
     }
 
     public function test_clicking_blank_desktop_closes_open_panels(): void

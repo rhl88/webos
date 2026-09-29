@@ -30,12 +30,22 @@ class WorkspaceServiceTest extends WebosTestCase
                 [
                     'id' => 'menu-88',
                     'menu_id' => 88,
+                    'app_id' => 'cmspro.demo',
                     'title' => '内容管理',
                     'path' => '/admin/content',
                     'icon' => 'fa fa-file-text',
                     'group_title' => '内容中心',
                     'x' => 3,
                     'y' => 7,
+                ],
+                [
+                    'id' => 'menu-89',
+                    'title' => '系统设置',
+                    'path' => '/admin/system/config',
+                    'icon' => 'fa fa-cog',
+                    'app_id' => '非法 app_id!',
+                    'x' => 0,
+                    'y' => 1,
                 ],
             ],
             'preferences' => [
@@ -48,6 +58,8 @@ class WorkspaceServiceTest extends WebosTestCase
 
         $this->assertSame('/admin/content', $workspace->desktop_items[0]['path']);
         $this->assertSame(3, $workspace->desktop_items[0]['x']);
+        $this->assertSame('cmspro.demo', $workspace->desktop_items[0]['app_id']);
+        $this->assertSame('app_id', $workspace->desktop_items[1]['app_id']);
         $this->assertSame('12h', $workspace->preferences['clock_format']);
         $this->assertTrue($workspace->preferences['show_seconds']);
         $this->assertSame('right', $workspace->preferences['taskbar_position']);
