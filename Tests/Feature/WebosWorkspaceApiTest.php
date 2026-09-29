@@ -120,17 +120,19 @@ class WebosWorkspaceApiTest extends WebosTestCase
         AppModel::create([
             'app_id' => 'cmspro.webos',
             'name' => 'WebOS 管理桌面',
-            'version' => '1.3.2',
+            'version' => '1.3.3',
             'icon' => 'fa fa-stale',
             'path' => 'app/Apps/CmsproWebos',
             'status' => 1,
+            'is_system' => false,
             'manifest' => ['icon' => 'fa fa-stale'],
         ]);
 
         $this->getJson('/admin/cmspro/webos/api/catalog')
             ->assertOk()
             ->assertJsonPath('data.applications.0.icon_url', url('/api/app/cmspro.webos/icon'))
-            ->assertJsonPath('data.applications.0.manifest_icon', 'fa fa-desktop');
+            ->assertJsonPath('data.applications.0.manifest_icon', 'fa fa-desktop')
+            ->assertJsonPath('data.applications.0.is_system', false);
     }
 
     public function test_application_cards_fall_back_to_manifest_icon(): void
@@ -157,6 +159,19 @@ class WebosWorkspaceApiTest extends WebosTestCase
         $this->assertStringContainsString('function toggleWindowSidebar', $script);
         $this->assertStringContainsString('is-sidebar-collapsed', $script);
         $this->assertStringContainsString('.app-window.is-sidebar-collapsed .window-sidebar', $stylesheet);
+    }
+
+    public function test_window_brand_uses_application_icon_and_keeps_system_logo(): void
+    {
+        $script = file_get_contents(dirname(__DIR__, 2) . '/Assets/js/webos.js');
+        $stylesheet = file_get_contents(dirname(__DIR__, 2) . '/Assets/css/webos.css');
+
+        $this->assertIsString($script);
+        $this->assertIsString($stylesheet);
+        $this->assertStringContainsString('application.is_system', $script);
+        $this->assertStringContainsString("applicationIconMarkup(application, 'window-brand-icon')", $script);
+        $this->assertStringContainsString('<img src="/Images/logo-80x80.png"', $script);
+        $this->assertStringContainsString('.window-brand-icon', $stylesheet);
     }
 
     public function test_install_dialog_uses_terminal_aware_menu_mounting(): void

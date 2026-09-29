@@ -218,10 +218,33 @@ button {
     padding-left: 18px;
 }
 
-.window-brand img {
+.window-brand-icon {
+    display: inline-flex;
+    flex: 0 0 28px;
+    align-items: center;
+    justify-content: center;
     width: 28px;
     height: 28px;
+    overflow: hidden;
+    border-radius: 7px;
+    color: #fff;
+    background: #178fe5;
+    font-size: 15px;
+}
+
+.window-brand-icon.is-system {
+    border-radius: 0;
+    background: transparent;
+}
+
+.window-brand-icon img {
+    width: 100%;
+    height: 100%;
     object-fit: contain;
+}
+
+.window-brand-icon [hidden] {
+    display: none !important;
 }
 
 .window-brand strong {

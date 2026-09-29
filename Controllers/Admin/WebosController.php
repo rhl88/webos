@@ -95,7 +95,10 @@ class WebosController extends Controller
         $applications = AppModel::query()
             ->installed()
             ->orderBy('name')
-            ->get(['app_id', 'name', 'description', 'version', 'author', 'icon', 'status', 'path', 'manifest'])
+            ->get([
+                'app_id', 'name', 'description', 'version', 'author', 'icon',
+                'status', 'is_system', 'path', 'manifest',
+            ])
             ->map(function (AppModel $app): array {
                 return [
                     'app_id' => $app->app_id,
@@ -109,6 +112,7 @@ class WebosController extends Controller
                         $app->resolvePath(),
                         $app->manifest ?? []
                     ),
+                    'is_system' => $app->is_system,
                     'status' => $app->status->value,
                     'status_label' => $app->status->label(),
                 ];

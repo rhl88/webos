@@ -1,7 +1,7 @@
 # CmsPro WebOS 管理桌面 · 扩展指南
 
-> 文档版本：1.3.2 | 更新日期：2026-09-29
-> 适用应用：CmsproWebos v1.3.2+
+> 文档版本：1.3.3 | 更新日期：2026-09-29
+> 适用应用：CmsproWebos v1.3.3+
 
 ## 一、概述
 
@@ -102,6 +102,7 @@ $workspace = app(WorkspaceService::class)->getForAdmin($adminUserId);
 5. WebOS 窗口按 `app_id` 复用：同一应用的不同菜单切换 iframe，不重复创建窗口。
 6. 若菜单缺少 `app_id`，WebOS 会将第二级系统菜单视为文件夹；顶级菜单下的直属叶子菜单聚合为顶级同名文件夹。新应用应正确关联 `app_id`，不要依赖系统菜单回退行为。
 7. 同一 `app_id` 只有一个可访问菜单时，WebOS 默认隐藏窗口左侧菜单；声明多个后台菜单时默认展开，用户可在标题栏手动收起。
+8. 普通应用窗口标题按 `icon.svg`、`icon.png`、`manifest.json.icon` 顺序显示应用图标；应用记录的 `is_system` 为真时保留 CMSPRO Logo。
 
 ## 七、数据与卸载注意事项
 
@@ -113,6 +114,7 @@ $workspace = app(WorkspaceService::class)->getForAdmin($adminUserId);
 
 | 版本 | 日期 | 更新人 | 说明 |
 |---|---|---|---|
+| 1.3.3 | 2026-09-29 | CmsPro | 应用窗口标题接入应用图标并保留系统应用 Logo 规则 |
 | 1.3.2 | 2026-09-29 | CmsPro | 增加应用窗口左侧菜单收起与单菜单自动隐藏规则 |
 | 1.3.1 | 2026-09-29 | CmsPro | 应用中心图标增加 SVG、PNG、清单图标三级回退 |
 | 1.3.0 | 2026-09-29 | CmsPro | 增加系统菜单文件夹、常用入口统计和 OS 设置偏好 |

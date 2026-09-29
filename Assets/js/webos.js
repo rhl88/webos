@@ -539,16 +539,29 @@
         return state.flatMenus.filter(function (entry) { return entry.folder_id === target.folder_id; });
     }
 
-    function windowIdentity(entry) {
-        var application = entry.app_id ? state.catalog.applications.find(function (item) {
-            return item.app_id === entry.app_id;
+    function findApplication(appId) {
+        return appId ? state.catalog.applications.find(function (application) {
+            return application.app_id === appId;
         }) : null;
+    }
+
+    function windowIdentity(entry) {
+        var application = findApplication(entry.app_id);
         return {
             title: application ? application.name : (entry.folder_title || entry.group_title || entry.title),
             subtitle: entry.title,
             icon: application && typeof application.icon === 'string' && application.icon.indexOf('/') < 0
                 ? application.icon : entry.icon
         };
+    }
+
+    function windowBrandIconMarkup(entry) {
+        var application = findApplication(entry.app_id);
+        if (!application || application.is_system) {
+            return '<span class="window-brand-icon is-system"><img src="/Images/logo-80x80.png" alt=""></span>';
+        }
+
+        return applicationIconMarkup(application, 'window-brand-icon');
     }
 
     function windowSidebarToggleMarkup(key, collapsed) {
@@ -583,6 +596,7 @@
                 : '<iframe src="' + escapeHtml(entry.path) + '" title="' + escapeHtml(entry.title) + '"></iframe>');
         var identity = isMarket ? { title: '应用中心', subtitle: 'WebOS' }
             : (isSettings ? { title: 'OS 设置', subtitle: 'WebOS 系统偏好' } : windowIdentity(entry));
+        var brandIcon = windowBrandIconMarkup(entry);
         var sidebarCollapsed = !isSettings && siblings.length <= 1;
         var sidebarToggle = isSettings ? '' : windowSidebarToggleMarkup(key, sidebarCollapsed);
         var windowBody = isSettings
@@ -595,7 +609,7 @@
         return '<article class="app-window' + (sidebarCollapsed ? ' is-sidebar-collapsed' : '')
             + '" data-window-key="' + key + '">'
             + '<header class="window-titlebar" data-window-drag>'
-            + '<div class="window-brand"><img src="/Images/logo-80x80.png" alt=""><strong>'
+            + '<div class="window-brand">' + brandIcon + '<strong>'
             + escapeHtml(identity.title) + '<small>' + escapeHtml(identity.subtitle) + '</small></strong></div>'
             + '<div class="window-controls">'
             + sidebarToggle
@@ -972,12 +986,18 @@
         return '<i data-app-icon-fallback hidden class="' + safeIcon(fallback || 'fa fa-cube') + '"></i>';
     }
 
-    function appIconMarkup(app) {
+    function applicationIconMarkup(app, className) {
         if (isImageIcon(app.icon_url)) {
-            return '<span class="app-icon"><img data-app-icon-primary src="' + escapeHtml(app.icon_url) + '" alt="">'
+            return '<span class="' + className + '"><img data-app-icon-primary src="'
+                + escapeHtml(app.icon_url) + '" alt="">'
                 + appIconFallbackMarkup(app) + '</span>';
         }
-        return '<span class="app-icon"><i class="' + safeIcon(app.manifest_icon || app.icon || 'fa fa-cube') + '"></i></span>';
+        return '<span class="' + className + '"><i class="'
+            + safeIcon(app.manifest_icon || app.icon || 'fa fa-cube') + '"></i></span>';
+    }
+
+    function appIconMarkup(app) {
+        return applicationIconMarkup(app, 'app-icon');
     }
 
     function renderApplicationCards(apps, mode) {
