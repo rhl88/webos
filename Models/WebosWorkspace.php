@@ -17,12 +17,14 @@ class WebosWorkspace extends BaseModel
     protected $fillable = [
         'admin_user_id',
         'desktop_items',
+        'taskbar_items',
         'preferences',
         'status',
     ];
 
     protected $casts = [
         'desktop_items' => 'array',
+        'taskbar_items' => 'array',
         'preferences' => 'array',
         'status' => 'integer',
     ];

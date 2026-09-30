@@ -19,6 +19,7 @@ class WorkspaceService
         'motion' => true,
         'window_width' => 78,
         'window_height' => 80,
+        'override_admin_home' => false,
         'usage_stats' => [],
     ];
 
@@ -28,6 +29,7 @@ class WorkspaceService
             ['admin_user_id' => $adminUserId],
             [
                 'desktop_items' => [],
+                'taskbar_items' => [],
                 'preferences' => self::DEFAULT_PREFERENCES,
                 'status' => 1,
             ]
@@ -38,11 +40,16 @@ class WorkspaceService
             $workspace->preferences ?? []
         );
 
+        // 旧数据兼容：迁移前无任务栏记录时，沿用桌面项前 4 位作为初始任务栏固定项
+        if (! is_array($workspace->taskbar_items)) {
+            $workspace->taskbar_items = array_slice($workspace->desktop_items ?? [], 0, 4);
+        }
+
         return $workspace;
     }
 
     /**
-     * @param array{desktop_items?:array<int,array<string,mixed>>,preferences?:array<string,mixed>} $payload
+     * @param array{desktop_items?:array<int,array<string,mixed>>,taskbar_items?:array<int,array<string,mixed>>,preferences?:array<string,mixed>} $payload
      */
     public function saveForAdmin(int $adminUserId, array $payload): WebosWorkspace
     {
@@ -50,6 +57,10 @@ class WorkspaceService
 
         if (array_key_exists('desktop_items', $payload)) {
             $workspace->desktop_items = $this->sanitizeDesktopItems($payload['desktop_items'] ?? []);
+        }
+
+        if (array_key_exists('taskbar_items', $payload)) {
+            $workspace->taskbar_items = $this->sanitizeTaskbarItems($payload['taskbar_items'] ?? []);
         }
 
         if (array_key_exists('preferences', $payload)) {
@@ -69,6 +80,15 @@ class WorkspaceService
     {
         return collect(array_slice($items, 0, 48))
             ->map(fn (array $item): array => $this->sanitizeDesktopItem($item))
+            ->values()
+            ->all();
+    }
+
+    /** 任务栏固定项：结构同桌面项但无坐标，最多 12 个 */
+    protected function sanitizeTaskbarItems(array $items): array
+    {
+        return collect(array_slice($items, 0, 12))
+            ->map(fn (array $item): array => Arr::except($this->sanitizeDesktopItem($item), ['x', 'y']))
             ->values()
             ->all();
     }
@@ -127,9 +147,40 @@ class WorkspaceService
             $preferences['window_height'],
             self::DEFAULT_PREFERENCES['window_height']
         );
+        $preferences['override_admin_home'] = (bool) $preferences['override_admin_home'];
         $preferences['usage_stats'] = $this->sanitizeUsageStats($preferences['usage_stats']);
 
         return $preferences;
+    }
+
+    /**
+     * 重置工作区：桌面/任务栏恢复初始默认布局（仅保留「应用中心」内置入口），偏好恢复默认
+     * （不影响已上传的自定义壁纸文件）。返回重置后的工作区模型。
+     */
+    public function resetForAdmin(int $adminUserId): WebosWorkspace
+    {
+        $workspace = $this->getForAdmin($adminUserId);
+
+        // 重置为初始默认布局：仅固定「应用中心」内置入口（与前端首次初始化逻辑一致），
+        // 避免重置后桌面/任务栏空置、内置应用中心入口丢失；偏好恢复默认，自定义壁纸文件保留
+        $defaultEntry = [
+            'id' => 'webos-app-center',
+            'menu_id' => null,
+            'app_id' => 'cmspro.webos',
+            'title' => '应用中心',
+            'path' => '/admin/cmspro/webos?app=market',
+            'icon' => 'fa fa-shopping-bag',
+            'group_title' => 'WebOS',
+            'x' => 0,
+            'y' => 0,
+        ];
+        $workspace->desktop_items = [$defaultEntry];
+        // 任务栏项结构与桌面项一致但无坐标
+        $workspace->taskbar_items = [Arr::except($defaultEntry, ['x', 'y'])];
+        $workspace->preferences = self::DEFAULT_PREFERENCES;
+        $workspace->save();
+
+        return $workspace->refresh();
     }
 
     /**

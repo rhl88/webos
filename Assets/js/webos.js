@@ -10,6 +10,7 @@
     var state = {
         workspace: {
             desktop_items: [],
+            taskbar_items: [],
             preferences: {
                 wallpaper: 'webos-default',
                 taskbar_alignment: 'left',
@@ -22,6 +23,7 @@
                 usage_stats: {}
             }
         },
+        desktopSelection: new Set(),
         catalog: { menus: [], applications: [], operation_logs: [] },
         flatMenus: [],
         activeGroup: '',
@@ -57,10 +59,12 @@
         startGroupCount: document.getElementById('start-group-count'),
         taskbarPinned: document.getElementById('taskbar-pinned'),
         taskbarWindows: document.getElementById('taskbar-windows'),
+        websiteButton: document.getElementById('website-button'),
         notificationButton: document.getElementById('notification-button'),
         notificationPanel: document.getElementById('notification-panel'),
         notificationBadge: document.getElementById('notification-badge'),
         notificationSummary: document.getElementById('notification-summary'),
+        notificationTodos: document.getElementById('notification-todos'),
         notificationList: document.getElementById('notification-list'),
         accountButton: document.getElementById('account-button'),
         accountPanel: document.getElementById('account-panel'),
@@ -79,6 +83,7 @@
         installDialog: document.getElementById('install-dialog'),
         installSummary: document.getElementById('install-app-summary'),
         installParents: document.getElementById('install-menu-parents'),
+        installCreateShortcut: document.getElementById('install-create-shortcut'),
         confirmInstall: document.getElementById('confirm-install'),
         actionDialog: document.getElementById('action-dialog'),
         actionDialogKicker: document.getElementById('action-dialog-kicker'),
@@ -308,6 +313,25 @@
     function flattenMenus(tree) {
         var output = [];
 
+        /** 输出一个可打开菜单叶子（folder 入参仅在没有 app_id 时用于文件夹归属） */
+        function pushLeaf(item, group, appId, folder) {
+            output.push({
+                id: 'menu-' + item.id,
+                menu_id: Number(item.id || 0),
+                app_id: appId,
+                title: item.name || '未命名菜单',
+                path: item.path,
+                icon: safeIcon(item.icon),
+                open_type: item.open_type || '_iframe',
+                group_id: group.id,
+                group_title: group.title,
+                folder_id: appId ? '' : String(folder.id),
+                folder_title: appId ? '' : folder.title,
+                folder_icon: appId ? '' : folder.icon,
+                group_icon: group.icon
+            });
+        }
+
         function walk(items, group, inheritedAppId, folder) {
             (items || []).forEach(function (item) {
                 var isRoot = !group;
@@ -329,27 +353,20 @@
                     nextFolder = nextGroup;
                 }
                 if (children.length) {
+                    var before = output.length;
                     walk(children, nextGroup, nextAppId, nextFolder);
+                    // 子树中没有任何可打开菜单（如「用户管理」下只挂新增/编辑/删除用户等
+                    // 按钮权限项，path 为空会被 openablePath 过滤）且父菜单自身 path 可打开时，
+                    // 父菜单自身输出为可打开菜单项，避免整个菜单从 WebOS 中消失
+                    if (output.length === before && openablePath(item)) {
+                        pushLeaf(item, nextGroup, nextAppId, nextFolder);
+                    }
                     return;
                 }
                 if (!openablePath(item)) {
                     return;
                 }
-                output.push({
-                    id: 'menu-' + item.id,
-                    menu_id: Number(item.id || 0),
-                    app_id: nextAppId,
-                    title: item.name || '未命名菜单',
-                    path: item.path,
-                    icon: safeIcon(item.icon),
-                    open_type: item.open_type || '_iframe',
-                    group_id: nextGroup.id,
-                    group_title: nextGroup.title,
-                    group_icon: nextGroup.icon,
-                    folder_id: nextAppId ? '' : String(nextFolder.id),
-                    folder_title: nextAppId ? '' : nextFolder.title,
-                    folder_icon: nextAppId ? '' : nextFolder.icon
-                });
+                pushLeaf(item, nextGroup, nextAppId, nextFolder);
             });
         }
 
@@ -383,6 +400,19 @@
         };
     }
 
+    function notificationCenterEntry() {
+        return {
+            id: 'webos-notification-page',
+            title: '通知中心',
+            path: '/admin/cmspro/webos?app=notifications',
+            icon: 'fa fa-bell-o',
+            group_id: 'webos',
+            group_title: 'WebOS',
+            group_icon: 'fa fa-desktop',
+            special: 'notifications'
+        };
+    }
+
     function normalizeDesktopItems(items) {
         return (items || []).filter(function (item) {
             return item && item.id && safePath(item.path);
@@ -412,6 +442,9 @@
 
     function bootstrapDesktopItems() {
         state.workspace.desktop_items = normalizeDesktopItems(state.workspace.desktop_items);
+        if (!Array.isArray(state.workspace.taskbar_items)) {
+            state.workspace.taskbar_items = [];
+        }
         if (hydrateDesktopAppIds()) {
             saveWorkspace(false).catch(function () {});
         }
@@ -424,8 +457,27 @@
         state.workspace.desktop_items = selected.map(function (item, index) {
             return Object.assign({}, item, { x: 0, y: index });
         });
+        // 任务栏初始同样固定「应用中心」（两列表相互独立，仅初始默认值相同）
+        if (!state.workspace.taskbar_items.length) {
+            state.workspace.taskbar_items = [Object.assign({}, applicationCenterEntry())];
+        }
 
         return saveWorkspace(false);
+    }
+
+    /** 任务栏固定项：与桌面快捷方式相互独立的列表；旧数据无记录时回退桌面项前 4 位；按 id 去重兜底历史重复数据 */
+    function taskbarItems() {
+        var items = Array.isArray(state.workspace.taskbar_items)
+            ? state.workspace.taskbar_items
+            : state.workspace.desktop_items.slice(0, 4);
+        var seen = Object.create(null);
+        return items.filter(function (item) {
+            if (!item || !item.id || seen[item.id]) {
+                return false;
+            }
+            seen[item.id] = true;
+            return true;
+        });
     }
 
     function saveWorkspace(showMessage) {
@@ -445,10 +497,24 @@
                         y: Math.max(0, Math.min(99, Number(item.y) || 0))
                     };
                 }),
+                taskbar_items: taskbarItems().map(function (item) {
+                    return {
+                        id: item.id,
+                        menu_id: item.menu_id || null,
+                        app_id: item.app_id || '',
+                        title: item.title,
+                        path: item.path,
+                        icon: safeIcon(item.icon),
+                        group_title: item.group_title || '应用'
+                    };
+                }),
                 preferences: state.workspace.preferences
             }
         }).then(function (workspace) {
             state.workspace = workspace;
+            if (!Array.isArray(state.workspace.taskbar_items)) {
+                state.workspace.taskbar_items = [];
+            }
             if (showMessage) {
                 toast('桌面布局已保存');
             }
@@ -463,7 +529,7 @@
         elements.desktopIcons.innerHTML = state.workspace.desktop_items.map(function (item) {
             var left = 4 + Math.max(0, Number(item.x) || 0) * 102;
             var top = 4 + Math.max(0, Number(item.y) || 0) * 104;
-            return '<button class="desktop-icon" type="button" data-desktop-id="' + escapeHtml(item.id) + '"'
+            return '<button class="desktop-icon' + (state.desktopSelection.has(item.id) ? ' is-selected' : '') + '" type="button" data-desktop-id="' + escapeHtml(item.id) + '"'
                 + ' style="left:' + left + 'px;top:' + top + 'px" title="' + escapeHtml(item.title) + '">'
                 + entryIconMarkup(findEntry(item.id) || item, 'desktop-icon-badge')
                 + '<span class="desktop-icon-label">' + escapeHtml(item.title) + '</span>'
@@ -477,9 +543,9 @@
         return entry && entry.app_id ? 'app:' + entry.app_id : 'entry:' + (entry ? entry.id : '');
     }
 
-    /** 固定在任务栏前 4 位的入口聚合键集合 */
+    /** 固定在任务栏的入口聚合键集合（任务栏固定项独立于桌面） */
     function pinnedTaskbarKeys() {
-        return new Set(state.workspace.desktop_items.slice(0, 4).map(function (item) {
+        return new Set(taskbarItems().map(function (item) {
             return entryAppKey(findEntry(item.id) || item);
         }));
     }
@@ -497,7 +563,7 @@
     }
 
     function renderPinnedApps() {
-        var pinned = state.workspace.desktop_items.slice(0, 4);
+        var pinned = taskbarItems();
         elements.taskbarPinned.innerHTML = pinned.map(function (item) {
             var entry = findEntry(item.id) || item;
             var windowKey = runningWindowKeyByApp(entry);
@@ -517,6 +583,11 @@
     function menuGroups() {
         var groups = new Map();
         state.flatMenus.forEach(function (item) {
+            // WebOS 自身菜单不在系统菜单显示：用户已在 WebOS 桌面内，无需从系统菜单再开 WebOS
+            // （应用中心入口保留在桌面与任务栏，不受影响）
+            if (item.app_id === 'cmspro.webos') {
+                return;
+            }
             if (!groups.has(item.group_id)) {
                 groups.set(item.group_id, {
                     id: item.group_id,
@@ -526,12 +597,6 @@
                 });
             }
             groups.get(item.group_id).entries.push(item);
-        });
-        groups.set('webos', {
-            id: 'webos',
-            title: 'WebOS',
-            icon: 'fa fa-desktop',
-            entries: [applicationCenterEntry()]
         });
         return Array.from(groups.values());
     }
@@ -641,7 +706,7 @@
         elements.startGroupCount.textContent = entries.length + ' 个项目';
         elements.startGrid.innerHTML = entries.length ? entries.map(function (item) {
             var isPinned = state.workspace.desktop_items.some(function (entry) { return entry.id === item.id; });
-            var pinButton = isFolderStartItem(item) ? '' : '<button class="pin-button" type="button" data-pin-id="'
+            var pinButton = isFolderStartItem(item) ? '' : '<button class="pin-button' + (isPinned ? ' is-pinned' : '') + '" type="button" data-pin-id="'
                 + escapeHtml(item.id) + '" title="' + (isPinned ? '从桌面移除' : '添加到桌面')
                 + '"><i class="fa ' + (isPinned ? 'fa-thumb-tack' : 'fa-plus') + '"></i></button>';
             return '<div class="start-app-item ' + (isFolderStartItem(item) ? 'is-folder' : '')
@@ -722,6 +787,10 @@
     }
 
     function removeDesktopEntry(id) {
+        if (id === 'webos-app-center') {
+            toast('应用中心为内置入口，不允许删除');
+            return;
+        }
         var before = state.workspace.desktop_items.length;
         state.workspace.desktop_items = state.workspace.desktop_items.filter(function (item) { return item.id !== id; });
         if (state.workspace.desktop_items.length === before) {
@@ -730,6 +799,91 @@
         renderDesktop();
         renderStartMenu();
         saveWorkspace(false).then(function () { toast('已从桌面移除'); });
+    }
+
+    /** 固定入口到任务栏（独立于桌面快捷方式，互不影响）；同应用仅固定一个，避免重复图标 */
+    function addTaskbarItem(entry) {
+        if (!entry) {
+            return;
+        }
+        var appKey = entryAppKey(entry);
+        var alreadyPinned = taskbarItems().some(function (item) {
+            return entryAppKey(findEntry(item.id) || item) === appKey;
+        });
+        if (alreadyPinned) {
+            toast('该应用已固定在任务栏');
+            return;
+        }
+        if (!Array.isArray(state.workspace.taskbar_items)) {
+            state.workspace.taskbar_items = taskbarItems().slice();
+        }
+        state.workspace.taskbar_items.push(Object.assign({}, entry));
+        // 固定运行中的应用后，运行区窗口按钮需按「已固定过滤」重绘，避免出现两个相同图标
+        renderTaskbarWindows();
+        saveWorkspace(false).then(function () { toast('已固定到任务栏'); });
+    }
+
+    /** 从任务栏解除固定（仅影响任务栏，不动桌面图标） */
+    function removeTaskbarItem(id) {
+        if (!Array.isArray(state.workspace.taskbar_items)) {
+            state.workspace.taskbar_items = taskbarItems().slice();
+        }
+        var before = state.workspace.taskbar_items.length;
+        state.workspace.taskbar_items = state.workspace.taskbar_items.filter(function (item) { return item.id !== id; });
+        if (state.workspace.taskbar_items.length === before) {
+            return;
+        }
+        // 解除固定后，运行中的窗口需回到运行区显示
+        renderTaskbarWindows();
+        saveWorkspace(false).then(function () { toast('已从任务栏移除'); });
+    }
+
+    /** 任务栏固定图标拖动排序：跨越相邻图标时实时换位，松开后保存新顺序 */
+    function dragTaskbarIcon(button, event) {
+        var items = taskbarItems();
+        var fromIndex = items.findIndex(function (item) { return item.id === button.dataset.pinnedLaunchId; });
+        if (fromIndex < 0 || !Array.isArray(state.workspace.taskbar_items)) {
+            return;
+        }
+        if (!state.workspace.taskbar_items.length) {
+            state.workspace.taskbar_items = items.slice();
+        }
+        var startX = event.clientX;
+        var startY = event.clientY;
+        var moved = false;
+
+        function move(moveEvent) {
+            if (!moved && Math.abs(moveEvent.clientX - startX) + Math.abs(moveEvent.clientY - startY) < 6) {
+                return;
+            }
+            moved = true;
+            var target = document.elementFromPoint(moveEvent.clientX, moveEvent.clientY);
+            var over = target ? target.closest('[data-pinned-launch-id]') : null;
+            if (!over || over === button) {
+                return;
+            }
+            var toIndex = state.workspace.taskbar_items.findIndex(function (item) {
+                return item.id === over.dataset.pinnedLaunchId;
+            });
+            if (toIndex < 0 || toIndex === fromIndex) {
+                return;
+            }
+            var moved2 = state.workspace.taskbar_items.splice(fromIndex, 1)[0];
+            state.workspace.taskbar_items.splice(toIndex, 0, moved2);
+            fromIndex = toIndex;
+            renderPinnedApps();
+        }
+        function end() {
+            document.removeEventListener('pointermove', move);
+            document.removeEventListener('pointerup', end);
+            if (moved) {
+                // 拖动松开后的 click 落点不可靠，吞掉一次避免误启动入口
+                taskbarDragJustEnded = true;
+                saveWorkspace(false);
+            }
+        }
+        document.addEventListener('pointermove', move);
+        document.addEventListener('pointerup', end);
     }
 
     function findStartItem(id) {
@@ -755,8 +909,11 @@
 
     function desktopContextMenuItems(context) {
         var items = [[context.entry && context.entry.app_id ? '打开应用' : '打开', 'fa-external-link', 'open']];
-        items.push(['删除图标', 'fa-thumb-tack', 'remove']);
-        if (context.application && !context.application.is_system) {
+        // 应用中心为内置入口，不允许删除，右键不提供删除项
+        if (!context.entry || context.entry.id !== 'webos-app-center') {
+            items.push(['删除图标', 'fa-thumb-tack', 'remove']);
+        }
+        if (context.application && Number(context.application.is_system) !== 1) {
             items.push(['卸载应用', 'fa-times-circle', 'uninstall', 'danger']);
         }
         return items;
@@ -851,10 +1008,6 @@
             return;
         }
         if (action === 'uninstall' && context.application) {
-            if (Number(context.application.status) === 1) {
-                openDisableFirstDialog(context.application, '「' + appDisplayName(context.application) + '」当前为启用状态，请先禁用后再卸载。');
-                return;
-            }
             openUninstallDialog(context.application);
         }
     }
@@ -881,7 +1034,7 @@
         items.push({ label: '关闭', icon: 'fa-times', action: 'close', key: key, danger: true });
         var entryId = target.entry ? target.entry.id : '';
         if (entryId) {
-            var pinned = state.workspace.desktop_items.some(function (item) { return item.id === entryId; });
+            var pinned = taskbarItems().some(function (item) { return item.id === entryId; });
             items.push({ label: pinned ? '解除固定' : '固定到任务栏', icon: 'fa-thumb-tack', action: pinned ? 'unpin' : 'pin', id: entryId });
         }
         return items;
@@ -900,7 +1053,7 @@
         }
         items.push({ label: entry && entry.app_id ? '打开应用' : '打开', icon: 'fa-external-link', action: 'open', id: id });
         items.push({ label: '解除固定', icon: 'fa-thumb-tack', action: 'unpin', id: id });
-        if (application && !application.is_system) {
+        if (application && Number(application.is_system) !== 1) {
             items.push({ label: '卸载应用', icon: 'fa-times-circle', action: 'uninstall', id: id, danger: true });
         }
         return items;
@@ -952,20 +1105,18 @@
             return;
         }
         if (action === 'pin') {
-            addDesktopEntry(findEntry(id) || findDesktopItem(id));
+            // 固定到任务栏：仅写任务栏固定项，不影响桌面快捷方式
+            addTaskbarItem(findEntry(id) || findDesktopItem(id));
             return;
         }
         if (action === 'unpin') {
-            removeDesktopEntry(id);
+            // 解除固定：仅移除任务栏固定项，不影响桌面快捷方式
+            removeTaskbarItem(id);
             return;
         }
         if (action === 'uninstall') {
             var context = desktopIconContext(id);
             if (context.application) {
-                if (Number(context.application.status) === 1) {
-                    openDisableFirstDialog(context.application, '「' + appDisplayName(context.application) + '」当前为启用状态，请先禁用后再卸载。');
-                    return;
-                }
                 openUninstallDialog(context.application);
             }
         }
@@ -1092,7 +1243,12 @@
                 }
                 var branch = windowNavBranch(item);
                 collect(children, itemAppId, true, branch.children);
-                if (branch.children.length) { level.push(branch); }
+                if (branch.children.length) {
+                    level.push(branch);
+                } else if (openablePath(item)) {
+                    // 子项均为按钮权限（path 为空）不可打开时，分支自身作为叶子保留（与 flattenMenus 兜底一致）
+                    level.push(windowNavLeaf(item));
+                }
             });
         }
 
@@ -1166,6 +1322,15 @@
         { id: 'entries', title: '入口管理', icon: 'fa fa-th' }
     ];
 
+    /** 通知中心窗口左侧固定菜单：待办 / 通知 */
+    var NOTIFICATION_CENTER_TABS = [
+        { id: 'todos', title: '待办', icon: 'fa fa-list-ul' },
+        { id: 'notifications', title: '通知', icon: 'fa fa-bell-o' }
+    ];
+
+    /** 通知中心窗口状态：当前 Tab 与通知分页 */
+    var notificationCenterState = { tab: 'todos', page: 1, todoFilter: 'all', noticeFilter: 'all' };
+
     /** 「应用更新」右上角的可用更新数量角标：未检查（null）或无更新时不渲染，超过 99 折叠为 99+ */
     function updateBadgeMarkup() {
         var count = Number(state.updateCount) || 0;
@@ -1185,10 +1350,27 @@
         }).join('');
     }
 
+    /** 通知中心窗口侧栏：待办 / 通知两个固定 Tab，待办带数量徽标 */
+    function notificationCenterSidebarMarkup() {
+        var todoTotal = (notificationPanelData.todos || []).reduce(function (sum, todo) {
+            return sum + Number(todo.count || 0);
+        }, 0);
+        return '<span class="window-sidebar-title">通知菜单</span>' + NOTIFICATION_CENTER_TABS.map(function (item) {
+            return '<button class="window-nav-button ' + (item.id === notificationCenterState.tab ? 'is-active' : '')
+                + '" type="button" data-special-tab="' + item.id + '">'
+                + '<i class="' + safeIcon(item.icon) + '"></i><span>' + escapeHtml(item.title) + '</span>'
+                + (item.id === 'todos' && todoTotal > 0 ? '<em class="window-nav-badge">' + (todoTotal > 99 ? '99+' : todoTotal) + '</em>' : '')
+                + '</button>';
+        }).join('');
+    }
+
     /** 应用中心窗口侧栏为固定 Tab，其余窗口按菜单树层级渲染 */
     function windowSidebarMarkup(entry, tree, reveal) {
         if (entry.special === 'market' || entry.id === 'webos-app-center') {
             return appCenterSidebarMarkup();
+        }
+        if (entry.special === 'notifications' || entry.id === 'webos-notification-page') {
+            return notificationCenterSidebarMarkup();
         }
 
         return windowNavMarkup(entry, tree, reveal);
@@ -1268,16 +1450,19 @@
     function windowMarkup(entry, key) {
         var isMarket = entry.special === 'market' || entry.id === 'webos-app-center';
         var isSettings = entry.special === 'settings' || entry.id === 'webos-settings';
-        var navTree = isMarket || isSettings ? [] : windowNavTree(entry);
+        var isNotificationCenter = entry.special === 'notifications' || entry.id === 'webos-notification-page';
+        var navTree = isMarket || isSettings || isNotificationCenter ? [] : windowNavTree(entry);
         var sidebar = isSettings ? '' : windowSidebarMarkup(entry, navTree, true);
         var content = isMarket
             ? '<div class="app-center-shell" data-app-center></div>'
             : (isSettings ? '<div class="webos-settings-shell" data-webos-settings></div>'
-                : '<div class="window-page-host" data-window-page-host></div>');
+                : (isNotificationCenter ? '<div class="webos-notifications-shell" data-webos-notifications></div>'
+                    : '<div class="window-page-host" data-window-page-host></div>'));
         var identity = isMarket ? { title: '应用中心', subtitle: 'WebOS' }
-            : (isSettings ? { title: 'OS 设置', subtitle: 'WebOS 系统偏好' } : windowIdentity(entry));
+            : (isSettings ? { title: 'OS 设置', subtitle: 'WebOS 系统偏好' }
+                : (isNotificationCenter ? { title: '通知中心', subtitle: 'WebOS' } : windowIdentity(entry)));
         var brandIcon = windowBrandIconMarkup(entry);
-        var sidebarCollapsed = !isSettings && !isMarket && countNavLeaves(navTree) <= 1;
+        var sidebarCollapsed = !isSettings && !isMarket && !isNotificationCenter && countNavLeaves(navTree) <= 1;
         var sidebarToggle = isSettings ? '' : windowSidebarToggleMarkup(key, sidebarCollapsed);
         var windowBody = isSettings
             ? '<div class="window-body settings-window-body"><section class="window-content">' + content + '</section></div>'
@@ -1313,7 +1498,7 @@
             + ' data-set-window-size="' + name + '" aria-label="' + title + '"></label>';
     }
 
-    /** 当前 OS 设置窗口激活的 Tab：general=基本设置，wallpaper=背景设置 */
+    /** 当前 OS 设置窗口激活的 Tab：general=基本设置，wallpaper=背景设置，system=系统设置 */
     var osSettingsTab = 'general';
 
     /** 自定义壁纸库最近一次读取是否失败，用于展示重试入口 */
@@ -1322,7 +1507,8 @@
     function osSettingsTabBarMarkup() {
         var tabs = [
             ['general', 'fa-sliders', '基本设置'],
-            ['wallpaper', 'fa-picture-o', '背景设置']
+            ['wallpaper', 'fa-picture-o', '背景设置'],
+            ['system', 'fa-cogs', '系统设置']
         ];
         return '<nav class="settings-tabs" role="tablist">' + tabs.map(function (tab) {
             return '<button class="settings-tab ' + (osSettingsTab === tab[0] ? 'is-active' : '') + '" type="button" role="tab"'
@@ -1435,6 +1621,38 @@
         });
     }
 
+    /** 系统设置：覆盖传统后台首页、重置工作区等高级选项 */
+    function systemSectionMarkup(preferences) {
+        return '<section class="settings-card"><div class="settings-card-title"><i class="fa fa-sign-in"></i><div>'
+            + '<strong>覆盖传统后台</strong><small>开启后访问后台首页将直接进入 WebOS 桌面；在地址后加 ?skip_webos=1 可临时打开传统首页</small></div></div>'
+            + '<button class="settings-toggle" type="button" data-toggle-webos-setting="override_admin_home" aria-pressed="'
+            + (preferences.override_admin_home ? 'true' : 'false') + '"><span><strong>后台首页直达 WebOS</strong>'
+            + '<small>仅影响后台首页，其它后台页面不受影响</small></span><i></i></button></section>'
+            + '<section class="settings-card"><div class="settings-card-title"><i class="fa fa-undo"></i><div>'
+            + '<strong>重置工作区</strong><small>清空桌面与任务栏图标，全部设置恢复默认；自定义壁纸文件保留</small></div></div>'
+            + '<div class="settings-reset-row"><button class="webos-button danger" type="button" data-reset-workspace>恢复默认布局</button>'
+            + '<span class="workspace-reset-confirm" hidden>将清空桌面/任务栏图标与全部偏好，确定重置？'
+            + '<button class="wallpaper-confirm-button danger" type="button" data-reset-workspace-confirm>确认重置</button>'
+            + '<button class="wallpaper-confirm-button" type="button" data-reset-workspace-cancel>取消</button>'
+            + '</span></div></section>';
+    }
+
+    /** 重置工作区：恢复默认布局后同步本地状态并重渲染桌面/任务栏 */
+    function resetWorkspace() {
+        var resetUrl = root.dataset.workspaceUrl.replace(/\/workspace$/, '/workspace/reset');
+        api(resetUrl, { method: 'POST' }).then(function (workspace) {
+            state.workspace = workspace;
+            state.desktopSelection.clear();
+            applyWorkspacePreferences();
+            renderDesktop();
+            renderTaskbarWindows();
+            renderWebosSettings();
+            toast('工作区已恢复默认');
+        }).catch(function (error) {
+            toast(error.message || '重置工作区失败', 'error');
+        });
+    }
+
     function renderWebosSettings() {
         var shell = document.querySelector('[data-webos-settings]');
         if (!shell) {
@@ -1448,6 +1666,8 @@
         var content;
         if (osSettingsTab === 'wallpaper') {
             content = '<div class="settings-grid">' + wallpaperSectionMarkup(preferences) + '</div>';
+        } else if (osSettingsTab === 'system') {
+            content = '<div class="settings-grid">' + systemSectionMarkup(preferences) + '</div>';
         } else {
             content = '<div class="settings-grid">'
             + '<section class="settings-card"><div class="settings-card-title"><i class="fa fa-window-maximize"></i><div>'
@@ -1519,6 +1739,27 @@
         return entries.find(function (entry) {
             return entry.open_type !== '_blank' && entry.open_type !== '_layer';
         }) || entries[0];
+    }
+
+    /**
+     * 通知/待办链接优先在 WebOS 内打开对应应用窗口（按站内路径匹配菜单入口），
+     * 无匹配入口时回退浏览器新标签页。返回 true 表示已在窗口内打开。
+     */
+    function openLinkInWebos(link) {
+        var raw = String(link || '');
+        var path = raw.split('?')[0];
+        if (!path || path === '#') {
+            return false;
+        }
+        var entry = state.flatMenus.find(function (item) {
+            return item.path === path || String(item.path || '').split('?')[0] === path;
+        }) || null;
+        if (!entry || !openablePath(entry)) {
+            window.open(raw, '_blank', 'noopener');
+            return false;
+        }
+        openEntry(entry);
+        return true;
     }
 
     /** _layer（弹窗网页）：用 layui 弹层承载，参数与后台菜单一致；layui 未就绪时降级为新标签页 */
@@ -1695,10 +1936,15 @@
         if (entry.id === 'webos-settings') {
             renderWebosSettings();
         }
+        if (entry.id === 'webos-notification-page') {
+            renderNotificationCenter(notificationCenterState.tab);
+            loadNotifications();
+        }
     }
 
     function activateWindowEntry(windowState, entry) {
-        if (!windowState || entry.id === 'webos-app-center' || entry.id === 'webos-settings') {
+        if (!windowState || entry.id === 'webos-app-center' || entry.id === 'webos-settings'
+            || entry.id === 'webos-notification-page') {
             return;
         }
         var identity = windowIdentity(entry);
@@ -1977,7 +2223,8 @@
         var placeholders = {
             market: '搜索市场应用',
             installed: '搜索已安装应用',
-            uninstalled: '搜索未安装应用'
+            uninstalled: '搜索未安装应用',
+            records: '搜索应用名称或标识'
         };
         var placeholder = placeholders[state.appCenterTab] || '搜索应用';
 
@@ -1986,6 +2233,11 @@
     }
 
     function appCenterExtrasMarkup(tab) {
+        // 安装记录：类型筛选与右上角搜索框并排
+        if (tab === 'records') {
+            return '<label class="app-center-filter"><i class="fa fa-filter"></i>'
+                + '<select data-records-operation aria-label="按操作类型筛选">' + recordOperationOptions(state.recordsOperation) + '</select></label>';
+        }
         if (tab !== 'installed') {
             return '';
         }
@@ -2047,8 +2299,7 @@
             return;
         }
         if (tab === 'records') {
-            status.innerHTML = '<i class="fa fa-history"></i>显示最近 ' + state.catalog.operation_logs.length + ' 条应用操作';
-            content.innerHTML = renderOperationLogs(state.catalog.operation_logs);
+            loadRecordsTab(content, status, state.recordsOperation || '');
             return;
         }
         if (tab === 'entries') {
@@ -2253,7 +2504,7 @@
     }
 
     function appIconFallbackMarkup(app) {
-        var fallback = app.manifest_icon || app.icon;
+        var fallback = app.icon;
         if (isImageIcon(fallback)) {
             return '<img data-app-icon-fallback hidden data-src="' + escapeHtml(fallback) + '" decoding="async" alt="">'
                 + '<i data-app-icon-final hidden class="fa fa-cube"></i>';
@@ -2268,7 +2519,7 @@
                 + appIconFallbackMarkup(app) + '</span>';
         }
         return '<span class="' + className + '"><i class="'
-            + safeIcon(app.manifest_icon || app.icon || 'fa fa-cube') + '"></i></span>';
+            + safeIcon(app.icon || 'fa fa-cube') + '"></i></span>';
     }
 
     function marketIconMarkup(app, className) {
@@ -2341,12 +2592,23 @@
             } else if (mode === 'updates') {
                 actions = '<button class="small-action primary" type="button" data-upgrade-id="' + escapeHtml(id) + '">更新</button>';
             } else {
-                actions = '<button class="small-action primary" type="button" data-install-id="' + escapeHtml(id) + '" data-install-source="local">安装</button>';
+                // 与已安装行菜单对等：未安装应用同样提供导出；右上角 × 物理删除应用文件
+                actions = '<button class="small-action primary" type="button" data-install-id="' + escapeHtml(id)
+                    + '" data-install-source="local">安装</button>'
+                    + '<button class="small-action" type="button" data-export-id="' + escapeHtml(id)
+                    + '" data-export-source="local">导出</button>';
             }
-            // 远程市场应用整卡可点击进入详情页；本地降级应用无市场详情，不加该属性
+            // 远程市场应用整卡可点击进入详情页；本地/更新列表点击应用名称进入本地详情
             var detail = app._source === 'market' && id ? ' data-market-detail="' + escapeHtml(id) + '"' : '';
-            return '<article class="app-card"' + detail + ' data-app-name="' + escapeHtml((app.name || id).toLowerCase()) + '">'
-                + cardIconMarkup(app, 'app-icon') + '<div class="app-card-info"><strong>' + escapeHtml(app.name || id) + '</strong><span>'
+            var remove = mode === 'local'
+                ? '<button class="app-card-remove" type="button" data-delete-app-id="' + escapeHtml(id)
+                    + '" data-app-name="' + escapeHtml(app.name || id) + '" title="删除应用文件" aria-label="删除应用文件">'
+                    + '<i class="fa fa-times"></i></button>'
+                : '';
+            var title = mode === 'market' ? '' : ' class="app-card-title" data-local-detail="'
+                + escapeHtml(id) + '" data-local-source="' + (mode === 'updates' ? 'updates' : 'local') + '"';
+            return '<article class="app-card' + (mode === 'local' ? ' has-remove' : '') + '"' + detail + ' data-app-name="' + escapeHtml((app.name || id).toLowerCase()) + '">'
+                + remove + cardIconMarkup(app, 'app-icon') + '<div class="app-card-info"><strong' + title + '>' + escapeHtml(app.name || id) + '</strong><span>'
                 + escapeHtml(description) + '</span><small>版本 ' + escapeHtml(version) + (app.author ? ' · ' + escapeHtml(app.author) : '') + '</small></div>'
                 + '<div class="app-card-actions">' + actions + '</div></article>';
         }).join('');
@@ -2698,6 +2960,98 @@
         }) || null;
     }
 
+    /** 打开本地应用详情（已安装/未安装/应用更新列表点击应用名称）：复用市场详情布局与返回按钮 */
+    function openLocalDetail(shell, appId, source) {
+        if (!shell || !appId) {
+            return;
+        }
+        var app = findLocalApp(appId, source);
+        if (!app) {
+            return;
+        }
+        closeMarketDetail(shell);
+        var panel = document.createElement('section');
+        panel.className = 'market-detail';
+        panel.innerHTML = localDetailMarkup(app, source || 'installed');
+        shell.appendChild(panel);
+    }
+
+    /** 查找本地应用数据：按打开来源取对应列表，取不到时回退已安装目录 */
+    function findLocalApp(appId, source) {
+        var lower = String(appId || '').toLowerCase();
+        var match = function (app) { return String(app.app_id || '').toLowerCase() === lower; };
+        if (source === 'local') {
+            return state.marketApps.get(appId) || findCatalogApp(appId);
+        }
+        if (source === 'updates') {
+            return (state.updateApps || []).find(match) || findCatalogApp(appId);
+        }
+        return findCatalogApp(appId);
+    }
+
+    /** 本地应用详情主体：基本信息仅展示本地字段（版本/作者/状态/系统应用），无市场指标与截图 */
+    function localDetailMarkup(app, source) {
+        return '<header class="market-detail-bar">'
+            + '<button class="market-detail-back" type="button" data-market-detail-close>'
+            + '<i class="fa fa-arrow-left"></i>返回列表</button><span>应用详情</span></header>'
+            + '<div class="market-detail-body">'
+            + localDetailHeaderMarkup(app, source)
+            + localDetailMetaMarkup(app, source)
+            + marketDetailDescMarkup(app)
+            + '</div>';
+    }
+
+    /** 本地详情头部：图标走全局应用图标链（icon_url → icon 字段），操作按钮复用安装/更新点击委托 */
+    function localDetailHeaderMarkup(app, source) {
+        var id = escapeHtml(app.app_id || '');
+        var links = [];
+        if (app.forum_url) {
+            links.push('<a href="' + escapeHtml(app.forum_url) + '" target="_blank" rel="noopener noreferrer">应用文档</a>');
+        }
+        if (app.author) {
+            links.push('作者 ' + escapeHtml(app.author));
+        }
+
+        return '<div class="market-detail-header">' + applicationIconMarkup(app, 'market-detail-icon')
+            + '<div class="market-detail-identity"><h2>' + escapeHtml(app.name || app.app_id || '应用详情') + '</h2>'
+            + (links.length ? '<p>' + links.join('<i>·</i>') + '</p>' : '') + '</div>'
+            + '<div class="market-detail-actions">' + localDetailActionMarkup(app, source) + '</div></div>';
+    }
+
+    /** 本地详情操作按钮：未安装提供安装、更新列表提供更新、已安装仅展示状态 */
+    function localDetailActionMarkup(app, source) {
+        var id = escapeHtml(app.app_id || '');
+        if (source === 'local') {
+            return '<button class="webos-button primary" type="button" data-install-id="' + id
+                + '" data-install-source="local">安装</button>';
+        }
+        if (source === 'updates') {
+            return '<button class="webos-button primary" type="button" data-upgrade-id="' + id + '">更新</button>';
+        }
+        return '<button class="webos-button secondary" type="button" disabled>已安装</button>';
+    }
+
+    /** 本地详情基本信息：未安装应用不显示状态行，已安装应用显示启用状态 */
+    function localDetailMetaMarkup(app, source) {
+        var items = [['当前版本', 'v' + escapeHtml(app.version || '-')]];
+        if (app.author) {
+            items.push(['作者', escapeHtml(app.author)]);
+        }
+        if (source !== 'local') {
+            items.push(['应用状态', Number(app.status) === 1
+                ? '<span class="is-installed">已启用</span>'
+                : '已禁用']);
+        }
+        if (app.is_system !== undefined && app.is_system !== null) {
+            items.push(['系统应用', app.is_system ? '是' : '否']);
+        }
+
+        return marketDetailSectionMarkup('fa-info-circle', '基本信息', '<dl class="market-detail-meta">'
+            + items.map(function (item) {
+                return '<div><dt>' + item[0] + '</dt><dd>' + item[1] + '</dd></div>';
+            }).join('') + '</dl>');
+    }
+
     function renderInstalledSummary(status, apps) {
         var enabled = (apps || []).filter(function (app) { return Number(app.status) === 1; }).length;
         status.innerHTML = '<i class="fa fa-check-circle"></i>共 ' + (apps || []).length + ' 个应用 · ' + enabled + ' 个已启用';
@@ -2723,15 +3077,16 @@
         return '<article class="install-row" data-app-id="' + escapeHtml(appId) + '" data-app-state="' + escapeHtml(String(app.status))
             + '" data-app-name="' + escapeHtml((app.name || appId).toLowerCase()) + '">'
             + '<div class="install-row-app">' + cardIconMarkup(app, 'app-icon') + '<div class="app-card-info">'
-            + '<strong title="' + escapeHtml(appName) + '">' + escapeHtml(appName) + '</strong><span title="'
+            + '<strong class="app-card-title" data-local-detail="' + escapeHtml(appId) + '" data-local-source="installed" title="'
+            + escapeHtml(appName) + '">' + escapeHtml(appName) + '</strong><span title="'
             + escapeHtml(description) + '">' + escapeHtml(description) + '</span><small>版本 '
             + escapeHtml(app.version || '-') + (app.is_system ? ' · 系统应用' : '') + '</small></div></div>'
-            + '<div class="install-row-cell">' + statusSwitchMarkup(appId, enabled, app.status_label) + '</div>'
+            + '<div class="install-row-cell">' + statusSwitchMarkup(appId, enabled) + '</div>'
             + '<div class="install-row-actions">' + actions + '</div></article>';
     }
 
-    function statusSwitchMarkup(appId, enabled, label) {
-        var text = enabled ? '已启用' : (label || '已禁用');
+    function statusSwitchMarkup(appId, enabled) {
+        var text = enabled ? '已启用' : '已禁用';
 
         return '<button class="status-switch" type="button" data-toggle-app-status="' + escapeHtml(appId)
             + '" aria-pressed="' + (enabled ? 'true' : 'false') + '" aria-label="' + escapeHtml(text)
@@ -2750,7 +3105,33 @@
         button.title = busy ? '正在保存应用状态…' : button.dataset.idleTitle;
     }
 
+    // 取应用参与排序的时间：安装时间与更新时间中较新者（与后台应用管理默认排序一致）
+    function installedAppSortTime(app) {
+        var installTime = app.install_time || '';
+        var updateTime = app.update_time || '';
+        return installTime > updateTime ? installTime : updateTime;
+    }
+
+    // 已安装列表按安装/更新时间降序（最新在前），无时间记录排最后
+    function sortInstalledApps(apps) {
+        return (apps || []).slice().sort(function (left, right) {
+            var leftTime = installedAppSortTime(left);
+            var rightTime = installedAppSortTime(right);
+            if (leftTime === rightTime) {
+                return 0;
+            }
+            if (!leftTime) {
+                return 1;
+            }
+            if (!rightTime) {
+                return -1;
+            }
+            return leftTime < rightTime ? 1 : -1;
+        });
+    }
+
     function renderInstalledList(apps) {
+        apps = sortInstalledApps(apps);
         if (!apps || !apps.length) {
             return emptyState('fa-cubes', '暂无已安装应用');
         }
@@ -2781,10 +3162,11 @@
             items.push(['manage-entry', 'fa-th', '管理入口']);
         }
         items.push(['export', 'fa-download', '导出'], ['backup', 'fa-archive', '备份'], ['docs', 'fa-book', '文档']);
-        if (app.has_config) {
+        // 与系统应用管理一致：manifest 声明了 config_groups 才提供「设置」入口
+        if (app.manifest && app.manifest.config_groups && app.manifest.config_groups.length) {
             items.push(['settings', 'fa-cog', '设置']);
         }
-        if (!app.is_system) {
+        if (Number(app.is_system) !== 1) {
             items.push(['uninstall', 'fa-trash-o', '卸载', 'danger']);
         }
         return items;
@@ -2809,22 +3191,256 @@
                 + item[2] + '</button>';
         }).join('');
         row.appendChild(menu);
+        // 行位于应用中心底部时菜单向下展开会被窗口裁剪，改为向上弹出
+        var buttonRect = button.getBoundingClientRect();
+        var menuRect = menu.getBoundingClientRect();
+        if (buttonRect.bottom + menuRect.height + 8 > window.innerHeight - 12) {
+            menu.classList.add('is-above');
+        }
         button.setAttribute('aria-expanded', 'true');
     }
 
-    function renderOperationLogs(logs) {
+    /** 安装记录当前选中的日志序号（右侧操作详情） */
+    var recordsSelectedIndex = 0;
+
+    /** 操作类型文案与徽标样式映射（result=1 成功时展示 done 文案） */
+    var RECORD_OPERATION_META = {
+        install: { label: '安装应用', done: '安装成功', icon: 'fa-download' },
+        upgrade: { label: '更新应用', done: '更新成功', icon: 'fa-refresh' },
+        uninstall: { label: '卸载应用', done: '已卸载', icon: 'fa-trash-o' },
+        enable: { label: '启用应用', done: '已启用', icon: 'fa-check-circle-o' },
+        disable: { label: '禁用应用', done: '已禁用', icon: 'fa-minus-circle' },
+        export: { label: '导出应用', done: '导出成功', icon: 'fa-share-square-o' }
+    };
+
+    /**
+     * 安装记录 Tab：顶部工具栏（搜索 + 类型筛选）+ 日期分组列表 + 右侧操作详情
+     */
+    function loadRecordsTab(content, status, operation) {
+        state.recordsOperation = operation || '';
+        status.innerHTML = '<i class="fa fa-history"></i>正在读取安装记录';
+        content.innerHTML = emptyState('fa-history', '正在读取应用操作记录');
+        var query = '/api/admin/app-logs?per_page=30' + (state.recordsOperation ? '&operation=' + encodeURIComponent(state.recordsOperation) : '');
+        api(query).then(function (payload) {
+            state.recordsLogs = extractCollection(payload);
+            recordsSelectedIndex = 0;
+            state.recordsKeyword = '';
+            // 搜索已移至右上角全局搜索框：重置关键字时同步清空，保持显示与过滤一致
+            var searchInput = content.closest('[data-app-center]');
+            searchInput = searchInput ? searchInput.querySelector('[data-app-search]') : null;
+            if (searchInput) {
+                searchInput.value = '';
+            }
+            status.innerHTML = '<i class="fa fa-history"></i>显示最近 ' + state.recordsLogs.length + ' 条应用操作'
+                + (state.recordsOperation ? '（已按类型筛选）' : '');
+            content.innerHTML = renderRecordsLayout(state.recordsLogs);
+            fillRecordAppInfo();
+        }).catch(function (error) {
+            status.classList.add('is-error');
+            status.innerHTML = '<i class="fa fa-exclamation-circle"></i>' + escapeHtml(error.message);
+            content.innerHTML = emptyState('fa-history', '暂时无法读取应用操作记录');
+        });
+    }
+
+    /** 日志记录的操作元信息（未知类型兜底） */
+    function recordMeta(log) {
+        return RECORD_OPERATION_META[log.operation] || { label: log.operation, done: '操作成功', icon: 'fa-cube' };
+    }
+
+    /** 日志记录的应用名称：优先应用中心目录，其次市场缓存（含未安装/已卸载应用），最后回退应用标识 */
+    function recordAppName(appId) {
+        var app = findCatalogApp(appId) || state.marketApps.get(appId) || null;
+        return (app && (app.name || app.title)) || appId;
+    }
+
+    /**
+     * 日志记录的应用图标：按全局优先级 icon.svg → icon.png → manifest.json(icon) → 通用占位。
+     * 主图直连服务端图标接口（/api/app/{id}/icon，服务端按 icon.svg → icon.png 顺序返回），
+     * 不依赖前端目录加载状态；失败时按全局兜底机制降级到 manifest 的 icon 字段，最终回退通用占位。
+     */
+    function recordIcon(appId) {
+        var app = findCatalogApp(appId) || state.marketApps.get(appId) || null;
+        var icon = (app && app.icon) || '';
+        // 市场来源的 icon 为市场相对路径时补全为完整 URL（本地应用 manifest 的 icon 无需处理）
+        if (app && app._source === 'market' && icon && !/^https?:\/\//i.test(icon)) {
+            icon = marketIconUrl(icon);
+        }
+        var inner = '<img data-app-icon-primary src="/api/app/' + encodeURIComponent(appId) + '/icon" decoding="async" alt="">';
+        if (icon && isImageIcon(icon)) {
+            inner += '<img data-app-icon-fallback hidden data-src="' + escapeHtml(icon) + '" decoding="async" alt="">'
+                + '<i data-app-icon-final hidden class="fa fa-cube"></i>';
+        } else {
+            inner += '<i data-app-icon-fallback hidden class="' + safeIcon(icon || 'fa fa-cube') + '"></i>';
+        }
+        return '<span class="record-row-icon-inner">' + inner + '</span>';
+    }
+
+    /** 日志版本展示：版本变化 from → to，仅单版本时直接显示 */
+    function recordVersion(log) {
+        var from = String(log.version_from || '');
+        var to = String(log.version_to || '');
+        if (from && to && from !== to) {
+            return from + ' → ' + to;
+        }
+        return to || from || '-';
+    }
+
+    /** 渲染安装记录双栏布局（左侧分组列表 + 右侧详情） */
+    function renderRecordsLayout(logs) {
         if (!logs || !logs.length) {
             return emptyState('fa-file-text-o', '暂无应用操作记录');
         }
-        var labels = { install: '安装', uninstall: '卸载', upgrade: '升级', enable: '启用', disable: '禁用' };
-        return '<table class="records-table"><thead><tr><th>应用</th><th>操作</th><th>版本</th><th>执行人</th><th>时间</th><th>结果</th></tr></thead><tbody>'
-            + logs.map(function (log) {
-                var operator = log.operator ? (log.operator.name || log.operator.username) : '-';
-                var version = log.version_to || log.version_from || '-';
-                return '<tr><td>' + escapeHtml(log.app_id) + '</td><td>' + escapeHtml(labels[log.operation] || log.operation) + '</td><td>'
-                    + escapeHtml(version) + '</td><td>' + escapeHtml(operator) + '</td><td>' + escapeHtml(log.create_time || '-') + '</td><td><span class="status-pill '
-                    + (Number(log.result) === 1 ? '' : 'warning') + '">' + (Number(log.result) === 1 ? '成功' : '失败') + '</span></td></tr>';
-            }).join('') + '</tbody></table>';
+        return '<div class="records-layout">'
+            + '<div class="records-side">'
+            + '<div class="records-groups" data-records-groups>' + renderRecordGroups(logs) + '</div>'
+            + '</div>'
+            + '<aside class="records-detail" data-records-detail>' + renderRecordDetail(logs[recordsSelectedIndex] || null) + '</aside>'
+            + '</div>';
+    }
+
+    /** 操作类型筛选下拉选项 */
+    function recordOperationOptions(selected) {
+        var options = [['', '全部结果']].concat(Object.keys(RECORD_OPERATION_META).map(function (key) {
+            return [key, RECORD_OPERATION_META[key].label];
+        }));
+        return options.map(function (pair) {
+            return '<option value="' + pair[0] + '"' + (pair[0] === (selected || '') ? ' selected' : '') + '>' + escapeHtml(pair[1]) + '</option>';
+        }).join('');
+    }
+
+    /** 安装记录日期分组列表（今天 / 昨天 / 更早），按关键字过滤应用名称/标识 */
+    function renderRecordGroups(logs) {
+        var keyword = String(state.recordsKeyword || '').toLowerCase();
+        var filtered = logs.map(function (log, index) { return { log: log, index: index }; }).filter(function (entry) {
+            if (!keyword) {
+                return true;
+            }
+            // 同时匹配应用名称与应用标识（名称走目录/市场缓存兜底链）
+            return String(entry.log.app_id || '').toLowerCase().indexOf(keyword) >= 0
+                || String(recordAppName(entry.log.app_id) || '').toLowerCase().indexOf(keyword) >= 0;
+        });
+        if (!filtered.length) {
+            return emptyState('fa-search', '没有匹配的操作记录');
+        }
+        var today = new Date();
+        var yesterday = new Date(today.getTime() - 86400000);
+        var pad = function (n) { return (n < 10 ? '0' : '') + n; };
+        var todayStamp = pad(today.getMonth() + 1) + '-' + pad(today.getDate());
+        var yesterdayStamp = pad(yesterday.getMonth() + 1) + '-' + pad(yesterday.getDate());
+        var groups = [];
+        filtered.forEach(function (entry) {
+            var match = String(entry.log.create_time || '').match(/^\d{4}-(\d{2}-\d{2}) (\d{2}:\d{2})/);
+            var label = '更早';
+            if (match) {
+                label = match[1] === todayStamp ? '今天' : (match[1] === yesterdayStamp ? '昨天' : '更早');
+                entry.time = match[2];
+            } else {
+                entry.time = '';
+            }
+            var last = groups[groups.length - 1];
+            if (last && last.label === label) {
+                last.items.push(entry);
+            } else {
+                groups.push({ label: label, items: [entry] });
+            }
+        });
+        return groups.map(function (group) {
+            return '<div class="records-group"><h5>' + group.label + '</h5>'
+                + group.items.map(function (entry) {
+                    var log = entry.log;
+                    var meta = recordMeta(log);
+                    var failed = Number(log.result) !== 1;
+                    var operator = log.operator ? (log.operator.name || log.operator.username) : '-';
+                    return '<button type="button" class="record-row' + (entry.index === recordsSelectedIndex ? ' is-selected' : '') + '" data-record-index="' + entry.index + '">'
+                        + '<span class="record-row-icon">' + recordIcon(log.app_id) + '</span>'
+                        + '<span class="record-row-body"><strong>' + escapeHtml(recordAppName(log.app_id)) + '</strong>'
+                        + '<small>' + escapeHtml(meta.label) + ' · ' + escapeHtml(recordVersion(log)) + '</small></span>'
+                        + '<span class="record-pill ' + (failed ? 'record-pill--failed' : 'record-pill--done') + '">'
+                        + '<i class="fa ' + (failed ? 'fa-times-circle' : 'fa-check-circle') + '"></i>' + (failed ? '失败' : meta.done) + '</span>'
+                        + '<span class="record-row-operator">' + escapeHtml(operator) + '</span>'
+                        + '<time>' + escapeHtml(entry.time || '-') + '</time></button>';
+                }).join('') + '</div>';
+        }).join('');
+    }
+
+    /** 右侧操作详情：应用概要 + 版本变化 / 操作人 / 开始时间 / 操作结果，失败时展示错误信息 */
+    function renderRecordDetail(log) {
+        if (!log) {
+            return emptyState('fa-file-text-o', '选择左侧记录查看操作详情');
+        }
+        var meta = recordMeta(log);
+        var failed = Number(log.result) !== 1;
+        var operator = log.operator ? (log.operator.name || log.operator.username) : '-';
+        return '<div class="record-detail-head"><span class="record-row-icon">' + recordIcon(log.app_id) + '</span>'
+            + '<div><strong>' + escapeHtml(recordAppName(log.app_id)) + '</strong><small>' + escapeHtml(log.app_id) + ' · ' + escapeHtml(meta.label) + '</small></div></div>'
+            + '<dl class="record-detail-fields">'
+            + '<div><dt>目标版本</dt><dd>' + escapeHtml(log.version_to || '-') + '</dd></div>'
+            + '<div><dt>版本变化</dt><dd>' + escapeHtml(recordVersion(log)) + '</dd></div>'
+            + '<div><dt>操作人</dt><dd>' + escapeHtml(operator) + '</dd></div>'
+            + '<div><dt>开始时间</dt><dd>' + escapeHtml(log.create_time || '-') + '</dd></div>'
+            + '<div><dt>操作结果</dt><dd class="' + (failed ? 'is-failed' : 'is-success') + '">' + (failed ? '失败' : meta.done) + '</dd></div>'
+            + '</dl>'
+            + (failed && log.error_message ? '<p class="record-detail-error"><i class="fa fa-exclamation-circle"></i>' + escapeHtml(log.error_message) + '</p>' : '');
+    }
+
+    /** 重绘安装记录列表与详情（搜索过滤 / 选中变化时局部更新，保留工具栏焦点） */
+    function refreshRecordsPanels(center) {
+        var groups = center.querySelector('[data-records-groups]');
+        var detail = center.querySelector('[data-records-detail]');
+        if (!groups || !detail) {
+            return;
+        }
+        groups.innerHTML = renderRecordGroups(state.recordsLogs || []);
+        detail.innerHTML = renderRecordDetail((state.recordsLogs || [])[recordsSelectedIndex] || null);
+    }
+
+    /**
+     * 补齐安装记录中目录缺失的应用信息（名称/图标）：
+     * 已卸载应用不在应用中心目录（apps 表）中，名称会回退显示应用标识。
+     * 第一层用未安装应用接口（本地文件还在的应用）补市场缓存，
+     * 第二层对仍缺失的逐个拉取市场详情（远程上架应用），
+     * 补齐后局部重渲染记录列表与详情（面板已关闭时静默跳过）。
+     */
+    function fillRecordAppInfo() {
+        var missing = [];
+        var seen = {};
+        (state.recordsLogs || []).forEach(function (log) {
+            var appId = String(log.app_id || '');
+            if (!appId || seen[appId]) {
+                return;
+            }
+            seen[appId] = true;
+            if (!findCatalogApp(appId) && !state.marketApps.get(appId)) {
+                missing.push(appId);
+            }
+        });
+        if (!missing.length) {
+            return;
+        }
+        api('/api/admin/apps/available').then(function (payload) {
+            ((payload && payload.all) || []).forEach(function (app) {
+                if (app && app.app_id && !findCatalogApp(app.app_id) && !state.marketApps.get(app.app_id)) {
+                    app._source = 'local';
+                    state.marketApps.set(app.app_id, app);
+                }
+            });
+            var remote = missing.filter(function (appId) { return !state.marketApps.get(appId); });
+            return Promise.all(remote.map(function (appId) {
+                return api('/api/admin/market/apps/' + encodeURIComponent(appId)).then(function (detail) {
+                    if (detail) {
+                        detail.app_id = appId;
+                        detail._source = 'market';
+                        state.marketApps.set(appId, detail);
+                    }
+                }).catch(function () {});
+            }));
+        }).catch(function () {}).then(function () {
+            var groups = document.querySelector('[data-records-groups]');
+            var center = groups ? groups.closest('[data-app-center]') : null;
+            if (center) {
+                refreshRecordsPanels(center);
+            }
+        });
     }
 
     /** 入口管理树中已展开的节点 key；默认全部收起 */
@@ -2832,6 +3448,8 @@
 
     /** 应用市场搜索防抖计时器 */
     var marketSearchTimer = 0;
+    /** 任务栏图标拖动刚结束标志：吞掉松开后的一次 click，避免误启动入口 */
+    var taskbarDragJustEnded = false;
     var marketRequestSequence = 0;
     var marketRequestController = null;
 
@@ -3075,6 +3693,7 @@
         state.installTerminals = [];
         state.installRequestId += 1;
         var requestId = state.installRequestId;
+        elements.installCreateShortcut.checked = false;
         elements.installSummary.innerHTML = cardIconMarkup(app, 'app-icon') + '<div><strong>' + escapeHtml(app.name || app.app_id) + '</strong><span>'
             + escapeHtml(app.description || '安装后可在 WebOS 中打开此应用') + '</span><span>版本 ' + escapeHtml(app.version || app.latest_version || '-') + '</span></div>';
         renderInstallMenuStatus('fa-circle-o-notch fa-spin', '正在识别应用菜单…', false);
@@ -3088,7 +3707,8 @@
         if (!target) {
             return;
         }
-        var mode = document.querySelector('input[name="install_entry"]:checked').value;
+        // 菜单挂载保持默认（安装后自动加入系统菜单）；桌面快捷方式为可选操作
+        var createShortcut = elements.installCreateShortcut.checked;
         var source = target._source;
         var url = source === 'local'
             ? '/api/admin/apps/' + encodeURIComponent(target.app_id) + '/local-install'
@@ -3105,18 +3725,20 @@
         var body = { parent_menu_ids: parentMenuIds };
         api(url, { method: 'POST', body: body }).then(function () {
             hideModalDialog(elements.installDialog);
-            toast('应用安装成功');
             return refreshCatalog();
         }).then(function () {
-            if (mode === 'desktop' || mode === 'both') {
+            if (createShortcut) {
                 var entry = state.flatMenus.find(function (item) { return item.app_id === target.app_id; });
                 if (entry) {
-                    addDesktopEntry(entry);
+                    // 桌面快捷方式显示应用名称，而非菜单名称
+                    addDesktopEntry(Object.assign({}, entry, { title: target.name || entry.title }));
                 } else {
                     toast('应用已安装，但未声明可用的后台菜单入口');
                 }
             }
             renderAppCenter('installed');
+            // 与传统后台应用管理一致：安装成功后询问是否立即启用
+            promptEnableApp(target.app_id, target.name);
         }).catch(function (error) {
             toast(error.message, 'error');
         }).finally(function () {
@@ -3125,26 +3747,246 @@
         });
     }
 
+    /**
+     * 应用升级入口：完整复刻传统后台 admin/app/index.blade.php 的升级交互。
+     * 流程：启用中的应用先禁用（确认后自动继续）→ 获取可用版本列表 →
+     * layui 弹窗选择升级版本（单步/跳跃/直接最新/一键升级）→ 下载升级包安装 →
+     * 成功后清除待升级记录并询问是否启用。
+     */
     function upgradeApp(appId) {
-        api('/api/admin/apps/' + encodeURIComponent(appId) + '/upgrade', { method: 'POST' }).then(function () {
-            toast('应用更新完成');
-            dropUpdatedApp(appId);
-            return refreshCatalog();
-        }).then(function () { renderAppCenter('installed'); }).catch(function (error) {
-            if (String(error.message).indexOf('请先禁用应用') >= 0) {
-                openDisableFirstDialog(findCatalogApp(appId), error.message);
-                return;
+        var layer = layuiLayer();
+
+        // 升级前检查应用状态：启用中的应用需先禁用（与卸载拦截一致），禁用成功后自动继续升级
+        var cachedApp = findCatalogApp(appId);
+        if (cachedApp && Number(cachedApp.status) === 1) {
+            layer.confirm('「' + escapeHtml(appDisplayName(cachedApp)) + '」当前仍处于启用状态，请先禁用应用再进行升级操作。', {
+                icon: 0,
+                title: '操作提示',
+                btn: ['禁用并继续升级', '取消']
+            }, function (index) {
+                layer.close(index);
+                var loadIndex = layer.load(2);
+                legacyAjax({
+                    url: '/api/admin/apps/' + encodeURIComponent(appId) + '/disable',
+                    type: 'POST',
+                    success: function (res) {
+                        layer.close(loadIndex);
+                        if (res.code === 0) {
+                            reloadInstalledAppCenter();
+                            layer.msg('已禁用应用，正在继续升级', { icon: 1, time: 1200 }, function () {
+                                upgradeApp(appId);
+                            });
+                        } else {
+                            layer.msg(res.message || '禁用失败', { icon: 2 });
+                        }
+                    },
+                    error: function () {
+                        layer.close(loadIndex);
+                        layer.msg('禁用失败', { icon: 2 });
+                    }
+                });
+            });
+            return;
+        }
+
+        // 优先使用已加载的待升级记录；未包含该应用时全量检查一次（与后台一致）
+        var updateInfo = state.updateApps.find(function (item) { return item.app_id === appId; });
+        if (updateInfo && Array.isArray(updateInfo.available_versions) && updateInfo.available_versions.length) {
+            openUpgradeDialog(appId, updateInfo.available_versions);
+            return;
+        }
+
+        var loadIndex = layer.load(2);
+        legacyAjax({
+            url: '/api/admin/apps/check-updates',
+            type: 'POST',
+            success: function (res) {
+                layer.close(loadIndex);
+                if (res.code !== 0) {
+                    layer.msg(res.message || '检查更新失败', { icon: 2 });
+                    return;
+                }
+                // 全量检查结果重建待升级记录（与后台 pendingUpdates 行为一致）
+                state.updateApps = Array.isArray(res.data) ? res.data : [];
+                state.updateCount = state.updateApps.length;
+                syncUpdateBadge();
+                var info = state.updateApps.find(function (item) { return item.app_id === appId; });
+                if (!info) {
+                    layer.msg('没有可用的更新', { icon: 1 });
+                    return;
+                }
+                openUpgradeDialog(appId, info.available_versions || []);
+            },
+            error: function () {
+                layer.close(loadIndex);
+                layer.msg('获取更新信息失败', { icon: 2 });
             }
-            toast(error.message, 'error');
+        });
+    }
+
+    /** 升级弹窗：当前版本 + 备份提醒 + layui radio 选择升级版本（含一键升级到最新版） */
+    function openUpgradeDialog(appId, availableVersions) {
+        var layer = layuiLayer();
+        var app = findCatalogApp(appId);
+        var currentVersion = (app && app.version) ? app.version : '?';
+
+        var radioHtml = '<div style="padding:15px;">'
+            + '<div style="margin-bottom:10px;color:#666;">当前版本：<strong style="color:#333;">v' + escapeHtml(String(currentVersion)) + '</strong></div>'
+            + '<div style="margin-bottom:12px;padding:8px 12px;background:#fff8e1;border-left:3px solid #ff9800;color:#e65100;font-size:13px;">'
+            + '<i class="fa fa-exclamation-triangle"></i> 升级前请先使用「备份」功能备份应用，以防升级失败可恢复'
+            + '</div>'
+            + '<form class="layui-form" id="upgradeVersionForm">';
+
+        availableVersions.forEach(function (version, index) {
+            var checked = index === 0 ? 'checked' : '';
+            var tip;
+            if (index === 0) {
+                tip = '（单步升级，推荐）';
+            } else if (index === availableVersions.length - 1) {
+                tip = '（直接最新）';
+            } else {
+                tip = '（跳跃升级）';
+            }
+            radioHtml += '<div style="padding:8px 0;border-bottom:1px solid #f0f0f0;">'
+                + '<input type="radio" name="upgrade_version" value="' + escapeHtml(version.version) + '" title="v' + escapeHtml(version.version) + ' ' + tip + '" ' + checked + '>'
+                + '<div style="padding-left:24px;color:#999;font-size:12px;margin-top:4px;">' + (version.changelog || '无更新日志') + '</div>'
+                + '</div>';
+        });
+
+        // 追加「一键升级到最新版」单选选项（逐级自动升级）
+        radioHtml += '<div style="padding:8px 0;border-bottom:1px solid #f0f0f0;">'
+            + '<input type="radio" name="upgrade_version" value="__auto__" title="一键升级到最新版">'
+            + '<i class="fa fa-question-circle" id="autoUpgradeTip" style="color:#999;cursor:pointer;margin-left:4px;"></i>'
+            + '</div>';
+
+        radioHtml += '</form></div>';
+
+        layer.open({
+            type: 1,
+            title: '升级「' + escapeHtml(appDisplayName(app)) + '」',
+            area: ['500px', '450px'],
+            content: radioHtml,
+            btn: ['我已备份，确认升级', '先去备份', '取消'],
+            success: function (layero) {
+                window.layui.form.render('radio');
+                // 「一键升级到最新版」问号图标：鼠标悬停显示 layui tips 说明
+                layero.find('#autoUpgradeTip').off('mouseenter').on('mouseenter', function () {
+                    layer.tips('按版本自动升级到最新（逐级升级，任一步失败即停止）！', this, { tips: [1, '#666'] });
+                });
+            },
+            btn2: function () {
+                // 打开备份对话框，不关闭当前对话框
+                openBackupDialog(app || { app_id: appId, name: '应用' });
+                return false;
+            },
+            btn1: function (index) {
+                var targetVersion = layuiJquery()('#upgradeVersionForm input[name="upgrade_version"]:checked').val();
+                if (!targetVersion) {
+                    layer.msg('请选择升级版本', { icon: 2 });
+                    return;
+                }
+                layer.close(index);
+                if (targetVersion === '__auto__') {
+                    startAutoUpgrade(appId, availableVersions);
+                } else {
+                    doUpgrade(appId, targetVersion);
+                }
+            }
+        });
+    }
+
+    /** 执行升级（下载升级包并安装指定版本） */
+    function doUpgrade(appId, targetVersion) {
+        var layer = layuiLayer();
+        var loadIndex = layer.load(2, { content: '正在下载升级包 v' + targetVersion + '...', time: 0 });
+        legacyAjax({
+            url: '/api/admin/apps/' + encodeURIComponent(appId) + '/upgrade?version=' + encodeURIComponent(targetVersion),
+            type: 'POST',
+            success: function (res) {
+                layer.close(loadIndex);
+                if (res.code === 0) {
+                    dropUpdatedApp(appId);
+                    layer.msg('升级成功，当前版本：v' + targetVersion, { icon: 1 }, function () {
+                        reloadInstalledAppCenter();
+                        promptEnableAfterUpgrade(appId);
+                    });
+                } else {
+                    layer.msg(res.message || '升级失败', { icon: 2 });
+                }
+            },
+            error: function () {
+                layer.close(loadIndex);
+                layer.msg('升级失败，请检查网络连接', { icon: 2 });
+            }
+        });
+    }
+
+    /** 一键升级到最新版：从当前版本逐级升级，任一步失败即停止并报错 */
+    function startAutoUpgrade(appId, versions) {
+        var list = (versions || []).slice();
+        if (!list.length) {
+            layuiLayer().msg('没有可用的升级版本', { icon: 2 });
+            return;
+        }
+        runAutoUpgradeStep(appId, list, 0);
+    }
+
+    function runAutoUpgradeStep(appId, versions, step) {
+        var layer = layuiLayer();
+        if (step >= versions.length) {
+            dropUpdatedApp(appId);
+            layer.msg('已升级到最新版本', { icon: 1 }, function () {
+                reloadInstalledAppCenter();
+                promptEnableAfterUpgrade(appId);
+            });
+            return;
+        }
+        var targetVersion = versions[step].version;
+        var loadIndex = layer.load(2, { content: '正在自动升级（' + (step + 1) + '/' + versions.length + '）到 v' + targetVersion + '...', time: 0 });
+        legacyAjax({
+            url: '/api/admin/apps/' + encodeURIComponent(appId) + '/upgrade?version=' + encodeURIComponent(targetVersion),
+            type: 'POST',
+            success: function (res) {
+                layer.close(loadIndex);
+                if (res.code === 0) {
+                    // 本步成功，继续下一步
+                    runAutoUpgradeStep(appId, versions, step + 1);
+                } else if (res.code === 50010 && (res.message || '').indexOf('没有可用的更新') !== -1) {
+                    // 已升级到最新版，后端提示无可用更新，视为升级完成
+                    dropUpdatedApp(appId);
+                    layer.msg('已升级到最新版本', { icon: 1 }, function () {
+                        reloadInstalledAppCenter();
+                        promptEnableAfterUpgrade(appId);
+                    });
+                } else {
+                    // 任一步失败即停止并报错
+                    layer.msg('自动升级在第 ' + (step + 1) + ' 步（v' + targetVersion + '）失败：' + (res.message || '未知错误'), { icon: 2 }, function () {
+                        reloadInstalledAppCenter();
+                    });
+                }
+            },
+            error: function () {
+                layer.close(loadIndex);
+                layer.msg('自动升级在第 ' + (step + 1) + ' 步（v' + targetVersion + '）失败：网络错误', { icon: 2 }, function () {
+                    reloadInstalledAppCenter();
+                });
+            }
         });
     }
 
     function openActionDialog(options) {
+        // plain: layui 精简风格（纯色遮罩、无毛玻璃），用于卸载/删除等确认对话框
+        elements.actionDialog.classList.toggle('webos-dialog--plain', options.plain === true);
         elements.actionDialogKicker.textContent = options.kicker || '应用操作';
         elements.actionDialogTitle.textContent = options.title || '应用操作';
         elements.actionDialogBody.innerHTML = options.body || '';
         elements.actionDialogFooter.innerHTML = options.footer
             || '<button class="webos-button secondary" type="button" data-action="close-action">关闭</button>';
+        // 支持自定义弹窗宽度（如删除/卸载对话 660px），未指定时回退 CSS 默认宽度
+        var actionCard = elements.actionDialog.querySelector('.action-dialog-card');
+        if (actionCard) {
+            actionCard.style.width = options.width || '';
+        }
         showModalDialog(elements.actionDialog);
     }
 
@@ -3259,6 +4101,8 @@
 
     function openDisableFirstDialog(app, message) {
         openActionDialog({
+            plain: true,
+            width: 'min(660px, calc(100vw - 60px))',
             kicker: '操作提示',
             title: '请先禁用应用',
             body: '<p class="dialog-hint">' + escapeHtml(message || '请先禁用应用后再执行该操作。') + '</p>',
@@ -3651,8 +4495,15 @@
     }
 
     function openUninstallDialog(app) {
+        // 与传统后台一致：启用中的应用需先禁用，再进行卸载
+        if (Number(app.status) === 1) {
+            openDisableFirstDialog(app, '「' + appDisplayName(app) + '」当前为启用状态，请先禁用后再卸载。');
+            return;
+        }
         var name = appDisplayName(app);
         openActionDialog({
+            plain: true,
+            width: 'min(660px, calc(100vw - 60px))',
             kicker: '应用卸载',
             title: '确认卸载「' + name + '」',
             body: '<div class="dialog-warning"><i class="fa fa-exclamation-triangle"></i>'
@@ -3665,27 +4516,68 @@
         });
     }
 
-    /** 卸载应用后移除其桌面快捷方式（含任务栏固定图标）并持久化 */
+    /** 卸载应用后清理其桌面快捷方式与任务栏固定图标并持久化 */
     function pruneDesktopItemsByAppId(appId) {
         var remaining = state.workspace.desktop_items.filter(function (item) { return item.app_id !== appId; });
-        if (remaining.length === state.workspace.desktop_items.length) {
+        var remainingPinned = taskbarItems().filter(function (item) { return item.app_id !== appId; });
+        if (remaining.length === state.workspace.desktop_items.length && remainingPinned.length === taskbarItems().length) {
             return;
         }
         state.workspace.desktop_items = remaining;
+        state.workspace.taskbar_items = remainingPinned;
+        renderTaskbarWindows();
         saveWorkspace(false).catch(function () {});
     }
 
     function runUninstall(appId, appName) {
+        // 卸载耗时较长，立即显示加载图标反馈进度（仅图标，无文字提示）
+        var layer = layuiLayer();
+        var loadIndex = layer.load(2, { time: 0 });
         api('/api/admin/apps/' + encodeURIComponent(appId) + '/uninstall', { method: 'POST' }).then(function () {
+            layer.close(loadIndex);
             closeActionDialog();
             toast('应用已卸载');
             pruneDesktopItemsByAppId(appId);
             return reloadInstalledAppCenter();
         }).catch(function (error) {
+            layer.close(loadIndex);
             if (String(error.message).indexOf('请先禁用应用') >= 0) {
                 openDisableFirstDialog(findCatalogApp(appId) || { app_id: appId, name: appName }, error.message);
                 return;
             }
+            toast(error.message, 'error');
+        });
+    }
+
+    /** 未安装应用物理删除：对标传统后台 deleteAppFiles，输入应用名确认后删除应用全部文件 */
+    function openDeleteFilesDialog(appId, appName) {
+        openActionDialog({
+            plain: true,
+            width: 'min(660px, calc(100vw - 60px))',
+            kicker: '删除应用',
+            title: '确认删除「' + appName + '」',
+            body: '<div class="dialog-warning"><i class="fa fa-exclamation-triangle"></i>'
+                + '<p>此操作将永久删除应用的所有文件，此操作不可恢复！</p></div>'
+                + '<label class="dialog-field"><span>请输入应用名称「' + escapeHtml(appName) + '」确认删除</span>'
+                + '<input type="text" data-delete-input placeholder="请输入应用名称"></label>',
+            footer: actionDialogCancelButton()
+                + '<button class="webos-button danger" type="button" data-delete-submit data-app-id="'
+                + escapeHtml(appId) + '" data-app-name="' + escapeHtml(appName) + '" disabled>确认删除</button>'
+        });
+    }
+
+    function runDeleteFiles(appId, appName) {
+        // 删除应用文件耗时较长，立即显示加载层反馈进度
+        var layer = layuiLayer();
+        var loadIndex = layer.load(2, { content: '正在删除「' + appName + '」的应用文件...', time: 0 });
+        api('/api/admin/apps/' + encodeURIComponent(appId) + '/delete', { method: 'POST' }).then(function () {
+            layer.close(loadIndex);
+            closeActionDialog();
+            toast('应用文件已删除');
+            // 重新拉取未安装列表（应用文件删除后不再出现）
+            return renderAppCenter('uninstalled');
+        }).catch(function (error) {
+            layer.close(loadIndex);
             toast(error.message, 'error');
         });
     }
@@ -3738,7 +4630,7 @@
         pushBackupLayer(layer.open({
             type: 1,
             title: '「' + appDisplayName(app) + '」备份管理',
-            area: ['680px', '480px'],
+            area: ['90%', '90%'],
             content: '<div style="padding:15px;">' + backupToolbarMarkup(backups.length, app.app_id, appDisplayName(app))
                 + '<div style="overflow-y:auto;max-height:390px;">' + renderBackupList(backups) + '</div></div>',
             success: function (layero) {
@@ -4549,7 +5441,7 @@
         layuiLayer().open({
             type: 1,
             title: '<i class="fa fa-book"></i> ' + escapeHtml(String(name).slice(0, 18)) + ' - 文档预览',
-            area: ['100%', '100%'],
+            area: ['90%', '90%'],
             maxmin: true,
             resize: true,
             content: docViewerMarkup(name),
@@ -4857,6 +5749,7 @@
         openActionDialog({
             kicker: '入口管理',
             title: '「' + appDisplayName(app) + '」应用入口',
+            plain: true,
             body: '<div class="entry-list">' + body + '</div>',
             footer: '<button class="webos-button secondary" type="button" data-action="close-action">关闭</button>'
         });
@@ -4884,6 +5777,17 @@
     }
 
     function handleAppCenterAction(event) {
+        // 安装记录：点击左侧记录行切换右侧操作详情
+        var recordRow = event.target.closest('[data-record-index]');
+        if (recordRow) {
+            var center = recordRow.closest('[data-app-center]');
+            recordsSelectedIndex = Number(recordRow.dataset.recordIndex || 0);
+            if (center) {
+                refreshRecordsPanels(center);
+            }
+            return;
+        }
+
         var statusToggle = event.target.closest('[data-toggle-app-status]');
         if (statusToggle) {
             toggleAppStatus(statusToggle.dataset.toggleAppStatus,
@@ -4899,6 +5803,20 @@
 
         var uninstallSubmit = event.target.closest('[data-uninstall-submit]');
         if (uninstallSubmit) { runUninstall(uninstallSubmit.dataset.appId, uninstallSubmit.dataset.appName); return; }
+
+        // 未安装列表导出：复用已安装的导出实现
+        var exportButton = event.target.closest('[data-export-id]');
+        if (exportButton) {
+            var exportTarget = findLocalApp(exportButton.dataset.exportId, exportButton.dataset.exportSource || 'installed');
+            if (exportTarget) { exportAppPackage(exportTarget); }
+            return;
+        }
+
+        var deleteButton = event.target.closest('[data-delete-app-id]');
+        if (deleteButton) { openDeleteFilesDialog(deleteButton.dataset.deleteAppId, deleteButton.dataset.appName); return; }
+
+        var deleteSubmit = event.target.closest('[data-delete-submit]');
+        if (deleteSubmit) { runDeleteFiles(deleteSubmit.dataset.appId, deleteSubmit.dataset.appName); return; }
 
         var disableFirst = event.target.closest('[data-disable-first]');
         if (disableFirst) {
@@ -4949,10 +5867,43 @@
         });
     }
 
-    function refreshCatalog() {
-        return api(root.dataset.catalogUrl).then(function (catalog) {
-            state.catalog = catalog || state.catalog;
+    /**
+     * WebOS 开始菜单仅展示后台终端菜单：terminal_type 缺省按旧版后台菜单处理（与传统后台菜单目录一致）
+     */
+    function filterAdminMenus(menus) {
+        var filtered = [];
+        (menus || []).forEach(function (menu) {
+            if (!menu || typeof menu !== 'object') { return; }
+            var terminal = menu.terminal_type;
+            if (terminal === undefined || terminal === null || terminal === '') { terminal = 'admin'; }
+            if (terminal !== 'admin') { return; }
+            var item = Object.assign({}, menu);
+            if (Array.isArray(menu.children)) { item.children = filterAdminMenus(menu.children); }
+            filtered.push(item);
+        });
+        return filtered;
+    }
+
+    /**
+     * 应用中心/开始菜单目录：直接复用系统接口作为数据源（与传统后台应用管理同一数据源，便于统一维护）
+     * 已安装应用列表：GET /api/admin/apps；后台菜单目录：GET /api/admin/menus/user
+     * 操作记录不再随目录预取，切换到「安装记录」时按需读取 /api/admin/app-logs
+     */
+    function loadCatalog() {
+        return Promise.all([
+            api('/api/admin/apps'),
+            api('/api/admin/menus/user')
+        ]).then(function (responses) {
+            state.catalog.applications = responses[0] || [];
+            state.catalog.menus = filterAdminMenus(responses[1]);
+            state.catalog.operation_logs = [];
             state.flatMenus = flattenMenus(state.catalog.menus);
+            return state.catalog;
+        });
+    }
+
+    function refreshCatalog() {
+        return loadCatalog().then(function () {
             renderStartMenu();
         });
     }
@@ -4986,19 +5937,310 @@
         });
     }
 
+    /** 通知中心当前 Tab：todos 待办 / notifications 通知 */
+    var notificationActiveTab = 'todos';
+
+    /** 通知中心面板数据缓存（todos + notifications + unread） */
+    var notificationPanelData = {};
+
+    /**
+     * 通知时间显示：今天显示 HH:MM，昨天显示「昨天 HH:MM」，更早显示 月-日 HH:MM
+     */
+    function compactNoticeTime(value) {
+        var text = String(value || '');
+        var match = text.match(/^(\d{4})-(\d{2})-(\d{2}) (\d{2}:\d{2})/);
+        if (!match) {
+            return text;
+        }
+        var today = new Date();
+        var pad = function (n) { return (n < 10 ? '0' : '') + n; };
+        var stamp = match[2] + '-' + match[3];
+        var yesterday = new Date(today.getTime() - 86400000);
+        if (stamp === pad(today.getMonth() + 1) + '-' + pad(today.getDate())) {
+            return match[4];
+        }
+        if (stamp === pad(yesterday.getMonth() + 1) + '-' + pad(yesterday.getDate())) {
+            return '昨天 ' + match[4];
+        }
+        return match[2] + '-' + match[3] + ' ' + match[4];
+    }
+
+    /** 切换通知中心 Tab（待办 / 通知） */
+    function setNotificationTab(tab) {
+        notificationActiveTab = tab === 'notifications' ? 'notifications' : 'todos';
+        document.querySelectorAll('[data-notification-tab]').forEach(function (button) {
+            var active = button.dataset.notificationTab === notificationActiveTab;
+            button.classList.toggle('is-active', active);
+            button.setAttribute('aria-selected', active ? 'true' : 'false');
+        });
+        if (elements.notificationTodos && elements.notificationList) {
+            elements.notificationTodos.hidden = notificationActiveTab !== 'todos';
+            elements.notificationList.hidden = notificationActiveTab !== 'notifications';
+        }
+    }
+
+    /** 待办列表：图标 + 标题 + 待处理数量 + 数字徽标 + 箭头，点击跳转处理页面并标记已读 */
+    function renderNotificationTodos() {
+        var todos = notificationPanelData.todos || [];
+        if (!elements.notificationTodos) {
+            return;
+        }
+        elements.notificationTodos.innerHTML = todos.length ? todos.map(function (todo) {
+            return '<a class="notification-todo" href="' + escapeHtml(todo.link || '#') + '" target="_blank" rel="noopener"'
+                + ' data-todo-key="' + escapeHtml(todo.key || '') + '" data-todo-count="' + Number(todo.count || 0) + '">'
+                + '<span class="notification-todo-icon"><i class="fa fa-list-ul"></i></span>'
+                + '<span class="notification-todo-body"><strong>' + escapeHtml(todo.title) + '</strong>'
+                + '<small>待处理 ' + Number(todo.count || 0) + ' 项</small></span>'
+                + '<span class="notification-todo-badge"><i></i>' + Number(todo.count || 0) + '</span>'
+                + '<i class="fa fa-angle-right notification-todo-arrow"></i></a>';
+        }).join('') : emptyState('fa-check-circle-o', '暂无待办事项');
+    }
+
+    /** 通知列表：图标 + 标题 + 内容 + 时间 + 未读蓝点，点击跳转通知链接 */
+    function renderNotificationItems() {
+        if (!elements.notificationList) {
+            return;
+        }
+        // 面板为未读口径：系统 panel 返回最新 10 条通知（含已读），这里过滤已读只显示未读
+        // （通知中心窗口为全量口径，两者分工不同）；点击通知/全部已读后列表随 loadNotifications 收敛。
+        var notices = (notificationPanelData.notifications || []).filter(function (notice) {
+            return Number(notice.is_read) !== 1;
+        });
+        elements.notificationList.innerHTML = notices.length ? notices.map(function (notice) {
+            var link = notice.link ? ' data-notification-link="' + escapeHtml(notice.link) + '"' : '';
+            var noticeId = notice.id ? ' data-notification-id="' + escapeHtml(notice.id) + '"' : '';
+            return '<article class="notification-item"' + link + noticeId + '>'
+                + '<span class="notification-item-icon"><i class="fa ' + (notice.level === 'error' ? 'fa-exclamation-circle' : 'fa-bell-o') + '"></i></span>'
+                + '<div class="notification-item-body"><strong>' + escapeHtml(notice.title) + '</strong><span>' + escapeHtml(notice.content || '') + '</span></div>'
+                + '<div class="notification-item-meta"><time>' + escapeHtml(compactNoticeTime(notice.create_time)) + '</time>'
+                + '<i class="notification-dot"></i></div></article>';
+        }).join('') : emptyState('fa-bell-o', '暂无新通知');
+    }
+
     function renderNotifications(panel) {
-        var items = [];
-        (panel.todos || []).forEach(function (todo) {
-            items.push({ title: todo.title, content: '待处理 ' + todo.count + ' 项', create_time: '待办', icon: 'fa-list-ul' });
+        notificationPanelData = panel || {};
+        renderNotificationTodos();
+        renderNotificationItems();
+        // 通知中心窗口打开时同步刷新其侧栏徽标与待办列表（待办列表为全量口径，含已读）
+        var centerWindow = state.windows.get(windowKey(notificationCenterEntry()));
+        if (centerWindow) {
+            rerenderWindowNav(centerWindow);
+            if (notificationCenterState.tab === 'todos') {
+                loadNotificationCenterTodos(centerWindow.element);
+            }
+        }
+    }
+
+    /** 待办卡片列表（通知中心窗口用，含已读条目；面板未读列表共用 is_read 缺省时的默认样式） */
+    function renderTodoCards(todos) {
+        return todos.length ? todos.map(function (todo) {
+            var isRead = todo.is_read === true || Number(todo.seen || 0) >= Number(todo.count || 0);
+            return '<a class="notification-todo' + (isRead ? ' is-read' : '') + '" href="' + escapeHtml(todo.link || '#') + '" target="_blank" rel="noopener"'
+                + ' data-todo-key="' + escapeHtml(todo.key || '') + '" data-todo-count="' + Number(todo.count || 0) + '">'
+                + '<span class="notification-todo-icon"><i class="fa ' + (isRead ? 'fa-check-circle-o' : 'fa-list-ul') + '"></i></span>'
+                + '<span class="notification-todo-body"><strong>' + escapeHtml(todo.title) + '</strong>'
+                + '<small>' + (isRead ? '已处理' : '待处理 ' + Number(todo.count || 0) + ' 项') + '</small></span>'
+                + '<span class="notification-todo-badge"><i></i>' + (isRead ? '已读' : Number(todo.count || 0)) + '</span>'
+                + '<i class="fa fa-angle-right notification-todo-arrow"></i></a>';
+        }).join('') : emptyState('fa-check-circle-o', '暂无待办事项');
+    }
+
+    /** 待办点击标记已读：调系统 todo-read 接口刷新徽标，失败不阻断跳转 */
+    function markTodoRead(key, count) {
+        return api('/api/admin/notifications/todo-read', {
+            method: 'POST',
+            body: { key: key, count: Number(count || 0) }
+        }).then(loadNotifications).catch(function () { /* 标记失败不阻断跳转 */ });
+    }
+
+    /** 通知中心窗口渲染：按 Tab 加载待办 / 通知列表 */
+    function renderNotificationCenter(tab) {
+        notificationCenterState.tab = tab === 'notifications' ? 'notifications' : 'todos';
+        if (notificationCenterState.tab !== 'notifications') {
+            notificationCenterState.page = 1;
+        }
+        var appWindow = state.windows.get(windowKey(notificationCenterEntry()));
+        if (!appWindow) {
+            return;
+        }
+        appWindow.element.querySelectorAll('[data-special-tab]').forEach(function (button) {
+            button.classList.toggle('is-active', button.dataset.specialTab === notificationCenterState.tab);
         });
-        (panel.notifications || []).forEach(function (notice) {
-            items.push({ title: notice.title, content: notice.content, create_time: notice.create_time, icon: 'fa-bell-o' });
+        rerenderWindowNav(appWindow);
+        var container = appWindow.element.querySelector('[data-webos-notifications]');
+        if (!container) {
+            return;
+        }
+        var titles = {
+            todos: ['待办事项', '需要您处理的事项，点击进入对应处理页面'],
+            notifications: ['通知消息', '系统与应用的通知消息，点击查看详情']
+        };
+        var title = titles[notificationCenterState.tab];
+        container.innerHTML = '<div class="app-center-toolbar"><div><h1>' + title[0] + '</h1><p>' + title[1] + '</p></div>'
+            + notificationToolbarActionsMarkup()
+            + '</div>'
+            + '<div class="app-center-status" data-notification-status><i class="fa fa-circle-o-notch fa-spin"></i>正在读取数据</div>'
+            + '<div class="app-center-content" data-notification-content></div>';
+        if (notificationCenterState.tab === 'todos') {
+            loadNotificationCenterTodos(container);
+            return;
+        }
+        loadNotificationCenterNotices(container, 1);
+    }
+
+    /** 通知中心窗口工具栏右侧动作区：全部/已读/未读筛选按钮组 + 全部已读按钮 */
+    function notificationToolbarActionsMarkup() {
+        var current = notificationCenterState.tab === 'todos'
+            ? notificationCenterState.todoFilter
+            : notificationCenterState.noticeFilter;
+        var filters = [['all', '全部'], ['unread', '未读'], ['read', '已读']];
+        return '<div class="notification-toolbar-actions">'
+            + '<div class="notification-filter">'
+            + filters.map(function (item) {
+                return '<button type="button" class="notification-filter-btn' + (current === item[0] ? ' is-active' : '') + '"'
+                    + ' data-notification-filter="' + item[0] + '">' + item[1] + '</button>';
+            }).join('')
+            + '</div>'
+            + '<button type="button" class="webos-button secondary notification-read-all" data-notification-read-all>'
+            + '<i class="fa fa-check-double"></i>全部已读</button>'
+            + '</div>';
+    }
+
+    /** 通知中心窗口「全部已读」：待办逐条标记已处理（幂等），通知走系统 read-all；完成后刷新列表与徽标 */
+    function markAllNotificationCenterRead(button) {
+        var isTodos = notificationCenterState.tab === 'todos';
+        if (button) {
+            button.disabled = true;
+            button.innerHTML = '<i class="fa fa-circle-o-notch fa-spin"></i>处理中…';
+        }
+        var finish = function () {
+            if (button) {
+                button.disabled = false;
+                button.innerHTML = '<i class="fa fa-check-double"></i>全部已读';
+            }
+        };
+        var refresh = function () {
+            var appWindow = state.windows.get(windowKey(notificationCenterEntry()));
+            if (appWindow) {
+                if (isTodos) {
+                    loadNotificationCenterTodos(appWindow.element);
+                } else {
+                    loadNotificationCenterNotices(appWindow.element, 1);
+                }
+            }
+        };
+        var request = isTodos
+            ? api('/admin/cmspro/webos/api/all-todos').then(function (todos) {
+                var unread = (Array.isArray(todos) ? todos : []).filter(function (todo) { return !todo.is_read; });
+                if (!unread.length) {
+                    return Promise.resolve();
+                }
+                return Promise.all(unread.map(function (todo) {
+                    return api('/api/admin/notifications/todo-read', {
+                        method: 'POST',
+                        body: { key: todo.key, count: Number(todo.count || 0) }
+                    });
+                })).then(function () {});
+            })
+            : api('/api/admin/notifications/read-all', { method: 'POST' }).then(function () {});
+        request.then(function () {
+            finish();
+            loadNotifications();
+            refresh();
+            toast(isTodos ? '待办已全部标记为已处理' : '通知已全部标记为已读');
+        }).catch(function () {
+            finish();
+            toast('操作失败，请稍后重试', 'error');
         });
-        elements.notificationList.innerHTML = items.length ? items.map(function (item) {
-            return '<article class="notification-item"><span class="notification-item-icon"><i class="fa ' + item.icon + '"></i></span>'
-                + '<div class="notification-item-body"><strong>' + escapeHtml(item.title) + '</strong><span>' + escapeHtml(item.content || '')
-                + '</span><time>' + escapeHtml(item.create_time || '') + '</time></div></article>';
-        }).join('') : emptyState('fa-bell-o', '暂无通知');
+    }
+
+    /** 通知中心窗口-待办列表：显示全部待办（含已读），系统面板数据仅用于侧栏徽标（未读口径） */
+    function loadNotificationCenterTodos(container) {
+        var status = container.querySelector('[data-notification-status]');
+        var content = container.querySelector('[data-notification-content]');
+        api('/api/admin/notifications/panel').then(function (panel) {
+            notificationPanelData = panel || {};
+            rerenderWindowNav(state.windows.get(windowKey(notificationCenterEntry())));
+        }).catch(function () { /* 徽标刷新失败不阻断列表展示 */ });
+        api('/admin/cmspro/webos/api/all-todos').then(function (todos) {
+            todos = Array.isArray(todos) ? todos : [];
+            var filter = notificationCenterState.todoFilter;
+            var filtered = todos.filter(function (todo) {
+                if (filter === 'unread') { return !todo.is_read; }
+                if (filter === 'read') { return todo.is_read; }
+                return true;
+            });
+            var readCount = todos.filter(function (todo) { return todo.is_read; }).length;
+            if (status) {
+                status.innerHTML = '<i class="fa fa-list-ul"></i>共 ' + filtered.length + ' 类待办事项'
+                    + (filter === 'all' && readCount ? '，其中 ' + readCount + ' 类已处理' : '');
+            }
+            content.innerHTML = '<div class="notification-page-todos">' + renderTodoCards(filtered) + '</div>';
+        }).catch(function (error) {
+            if (status) {
+                status.classList.add('is-error');
+                status.innerHTML = '<i class="fa fa-exclamation-circle"></i>' + escapeHtml(error.message);
+            }
+            content.innerHTML = emptyState('fa-list-ul', '暂时无法读取待办事项');
+        });
+    }
+
+    /** 通知中心窗口-通知列表：系统通知分页数据（支持已读/未读筛选，is_read 由系统接口过滤） */
+    function loadNotificationCenterNotices(container, page) {
+        notificationCenterState.page = page;
+        var status = container.querySelector('[data-notification-status]');
+        var content = container.querySelector('[data-notification-content]');
+        var url = '/api/admin/notifications?per_page=15&page=' + page;
+        if (notificationCenterState.noticeFilter === 'unread') {
+            url += '&is_read=0';
+        } else if (notificationCenterState.noticeFilter === 'read') {
+            url += '&is_read=1';
+        }
+        api(url).then(function (body) {
+            // api() 已 resolve 响应的 data 部分（{items, pagination}），无需再取 .data
+            var notices = (body && body.items) || [];
+            var pagination = (body && body.pagination) || {};
+            if (status) {
+                status.innerHTML = '<i class="fa fa-bell-o"></i>共 ' + Number(pagination.total || notices.length) + ' 条通知';
+            }
+            content.innerHTML = '<div class="notification-page-list">' + renderNoticeRows(notices) + '</div>'
+                + noticePaginationMarkup(pagination);
+        }).catch(function (error) {
+            if (status) {
+                status.classList.add('is-error');
+                status.innerHTML = '<i class="fa fa-exclamation-circle"></i>' + escapeHtml(error.message);
+            }
+            content.innerHTML = emptyState('fa-bell-o', '暂时无法读取通知消息');
+        });
+    }
+
+    /** 通知行：图标 + 标题 + 内容 + 相对时间 + 未读点，点击标记已读并打开详情链接 */
+    function renderNoticeRows(notices) {
+        return notices.length ? notices.map(function (notice) {
+            var isRead = Number(notice.is_read) === 1;
+            return '<button type="button" class="notification-item' + (isRead ? ' is-read' : '') + '"'
+                + ' data-notification-notice="' + escapeHtml(notice.id || '') + '"'
+                + (notice.link ? ' data-notice-link="' + escapeHtml(notice.link) + '"' : '') + '>'
+                + '<span class="notification-item-icon"><i class="fa ' + (notice.level === 'error' ? 'fa-exclamation-circle' : 'fa-bell-o') + '"></i></span>'
+                + '<div class="notification-item-body"><strong>' + escapeHtml(notice.title) + '</strong><span>' + escapeHtml(notice.content || '') + '</span></div>'
+                + '<div class="notification-item-meta"><time>' + escapeHtml(compactNoticeTime(notice.create_time)) + '</time>'
+                + (isRead ? '' : '<i class="notification-dot"></i>') + '</div></button>';
+        }).join('') : emptyState('fa-bell-o', '暂无通知消息');
+    }
+
+    /** 通知分页栏：上一页 / 下一页 + 页码信息 */
+    function noticePaginationMarkup(pagination) {
+        var current = Number(pagination.current_page || 1);
+        var last = Number(pagination.last_page || 1);
+        var total = Number(pagination.total || 0);
+        if (last <= 1) {
+            return '';
+        }
+        return '<div class="notification-page-nav">'
+            + '<button class="webos-button secondary compact" type="button" data-notification-goto-page="' + (current - 1) + '"' + (current <= 1 ? ' disabled' : '') + '>上一页</button>'
+            + '<span>第 ' + current + ' / ' + last + ' 页 · 共 ' + total + ' 条</span>'
+            + '<button class="webos-button secondary compact" type="button" data-notification-goto-page="' + (current + 1) + '"' + (current >= last ? ' disabled' : '') + '>下一页</button>'
+            + '</div>';
     }
 
     function closePanels(except) {
@@ -5259,46 +6501,219 @@
         elements.lockTime.textContent = time;
     }
 
+    /** 按 id 查找桌面图标按钮（id 含特殊字符，避开 querySelector 转义） */
+    function desktopButtonById(id) {
+        var found = null;
+        elements.desktopIcons.querySelectorAll('[data-desktop-id]').forEach(function (button) {
+            if (!found && button.dataset.desktopId === id) {
+                found = button;
+            }
+        });
+        return found;
+    }
+
+    /** 将桌面选中集同步到按钮高亮态 */
+    function syncDesktopSelection() {
+        elements.desktopIcons.querySelectorAll('[data-desktop-id]').forEach(function (button) {
+            button.classList.toggle('is-selected', state.desktopSelection.has(button.dataset.desktopId));
+        });
+    }
+
+    /**
+     * 桌面图标拖动：支持单图标与多选（框选/Ctrl 点选）整体移动。
+     * 多选时保持图标相对位置，落点按网格吸附，格子冲突自动向下寻找空位。
+     */
     function dragDesktopIcon(button, event) {
         var id = button.dataset.desktopId;
         var item = state.workspace.desktop_items.find(function (entry) { return entry.id === id; });
         if (!item) {
             return;
         }
+
+        // 选择逻辑：按住已选中的图标拖动 → 保持多选整体移动；否则选中该图标
+        var multiDrag = state.desktopSelection.has(id) && state.desktopSelection.size > 1;
+        if (!multiDrag) {
+            state.desktopSelection.clear();
+            state.desktopSelection.add(id);
+            syncDesktopSelection();
+        }
+        var dragItems = state.workspace.desktop_items.filter(function (entry) {
+            return state.desktopSelection.has(entry.id);
+        });
+        var dragButtons = dragItems.map(function (entry) {
+            return desktopButtonById(entry.id);
+        }).filter(Boolean);
+
         var startX = event.clientX;
         var startY = event.clientY;
-        var initialLeft = button.offsetLeft;
-        var initialTop = button.offsetTop;
+        var initialPositions = dragButtons.map(function (entryButton) {
+            return { left: entryButton.offsetLeft, top: entryButton.offsetTop };
+        });
         var moved = false;
         button.setPointerCapture(event.pointerId);
-        button.classList.add('is-dragging');
+        dragButtons.forEach(function (entryButton) { entryButton.classList.add('is-dragging'); });
 
         function move(moveEvent) {
             if (Math.abs(moveEvent.clientX - startX) + Math.abs(moveEvent.clientY - startY) > 5) {
                 moved = true;
             }
-            button.style.left = Math.max(4, Math.min(elements.desktopIcons.clientWidth - 88, initialLeft + moveEvent.clientX - startX)) + 'px';
-            button.style.top = Math.max(4, Math.min(elements.desktopIcons.clientHeight - 96, initialTop + moveEvent.clientY - startY)) + 'px';
+            if (!moved) {
+                return;
+            }
+            var deltaX = moveEvent.clientX - startX;
+            var deltaY = moveEvent.clientY - startY;
+            dragButtons.forEach(function (entryButton, index) {
+                var base = initialPositions[index];
+                entryButton.style.left = Math.max(4, Math.min(elements.desktopIcons.clientWidth - 88, base.left + deltaX)) + 'px';
+                entryButton.style.top = Math.max(4, Math.min(elements.desktopIcons.clientHeight - 96, base.top + deltaY)) + 'px';
+            });
+        }
+        function cleanup() {
+            dragButtons.forEach(function (entryButton) { entryButton.classList.remove('is-dragging'); });
+            // 监听统一绑在 document：无论指针捕获是否被原生拖选中断，收尾必执行，杜绝图标黏住鼠标
+            document.removeEventListener('pointermove', move);
+            document.removeEventListener('pointerup', end);
+            document.removeEventListener('pointercancel', cleanup);
+            try {
+                button.releasePointerCapture(event.pointerId);
+            } catch (error) {
+                // 指针捕获已随 pointercancel 释放，忽略
+            }
         }
         function end() {
-            button.classList.remove('is-dragging');
-            button.removeEventListener('pointermove', move);
-            button.removeEventListener('pointerup', end);
+            cleanup();
             if (moved) {
-                item.x = Math.max(0, Math.round((button.offsetLeft - 4) / 102));
-                item.y = Math.max(0, Math.round((button.offsetTop - 4) / 104));
+                // 网格落点 + 冲突探测：占用集合为未参与拖动的图标，拖动项按视觉位置排序逐个落格
+                var selectedIds = new Set(dragItems.map(function (entry) { return entry.id; }));
+                var occupied = new Set(state.workspace.desktop_items.filter(function (entry) {
+                    return !selectedIds.has(entry.id);
+                }).map(function (entry) {
+                    return (Number(entry.x) || 0) + ',' + (Number(entry.y) || 0);
+                }));
+                var placed = dragButtons.map(function (entryButton, index) {
+                    return {
+                        item: dragItems[index],
+                        gridX: Math.max(0, Math.round((entryButton.offsetLeft - 4) / 102)),
+                        gridY: Math.max(0, Math.round((entryButton.offsetTop - 4) / 104))
+                    };
+                }).sort(function (a, b) {
+                    return a.gridY - b.gridY || a.gridX - b.gridX;
+                });
+                placed.forEach(function (place) {
+                    var gridX = place.gridX;
+                    var gridY = place.gridY;
+                    var guard = 0;
+                    while (occupied.has(gridX + ',' + gridY) && guard < 200) {
+                        gridY += 1;
+                        guard += 1;
+                    }
+                    occupied.add(gridX + ',' + gridY);
+                    place.item.x = gridX;
+                    place.item.y = gridY;
+                });
                 renderDesktop();
                 saveWorkspace(false);
+                // renderDesktop 重建了按钮节点，拖动标记要写到新节点上（双击打开据此跳过误触）
+                var refreshedButton = desktopButtonById(id);
+                if (refreshedButton) {
+                    refreshedButton.dataset.wasDragged = '1';
+                }
+                return;
             }
-            button.dataset.wasDragged = moved ? '1' : '0';
+            if (event.ctrlKey || event.metaKey) {
+                // Ctrl+单击：切换选中
+                if (state.desktopSelection.has(id)) {
+                    state.desktopSelection.delete(id);
+                } else {
+                    state.desktopSelection.add(id);
+                }
+                syncDesktopSelection();
+            }
         }
-        button.addEventListener('pointermove', move);
-        button.addEventListener('pointerup', end);
+        // 收尾监听统一绑在 document：即便指针捕获被原生拖选中断，pointerup/pointercancel 仍必达，
+        // end/cleanup 必执行，杜绝图标黏住鼠标（图标的 img 已通过 CSS pointer-events:none 禁掉原生拖拽源）
+        document.addEventListener('pointermove', move);
+        document.addEventListener('pointerup', end);
+        document.addEventListener('pointercancel', cleanup);
+    }
+
+    /**
+     * 桌面空白处框选：按住左键拖出选框，框内图标进入选中态（Windows 桌面风格）。
+     * Ctrl 按住时在现有选择基础上追加；松开时位移过小视为点击空白，清空选择。
+     */
+    function bindDesktopMarquee() {
+        elements.desktopIcons.addEventListener('pointerdown', function (event) {
+            if (event.button !== 0 || event.target.closest('[data-desktop-id]')) {
+                return;
+            }
+            var containerRect = elements.desktopIcons.getBoundingClientRect();
+            var originX = event.clientX - containerRect.left;
+            var originY = event.clientY - containerRect.top;
+            var moved = false;
+            var marquee = document.createElement('div');
+            marquee.className = 'desktop-marquee';
+            elements.desktopIcons.appendChild(marquee);
+            // 指针捕获到桌面容器：指针短暂移出容器边缘时框选与收尾逻辑仍能继续
+            elements.desktopIcons.setPointerCapture(event.pointerId);
+
+            function hitTest() {
+                var box = marquee.getBoundingClientRect();
+                elements.desktopIcons.querySelectorAll('[data-desktop-id]').forEach(function (button) {
+                    var iconBox = button.getBoundingClientRect();
+                    var hit = !(iconBox.right < box.left || iconBox.left > box.right || iconBox.bottom < box.top || iconBox.top > box.bottom);
+                    var iconId = button.dataset.desktopId;
+                    if (hit) {
+                        state.desktopSelection.add(iconId);
+                    } else if (!event.ctrlKey && !event.metaKey) {
+                        state.desktopSelection.delete(iconId);
+                    }
+                });
+                syncDesktopSelection();
+            }
+            function moveTarget(moveEvent) {
+                if (!moved && Math.abs(moveEvent.clientX - event.clientX) + Math.abs(moveEvent.clientY - event.clientY) > 5) {
+                    moved = true;
+                }
+                if (!moved) {
+                    return;
+                }
+                var currentX = moveEvent.clientX - containerRect.left;
+                var currentY = moveEvent.clientY - containerRect.top;
+                marquee.style.left = Math.min(originX, currentX) + 'px';
+                marquee.style.top = Math.min(originY, currentY) + 'px';
+                marquee.style.width = Math.abs(currentX - originX) + 'px';
+                marquee.style.height = Math.abs(currentY - originY) + 'px';
+                hitTest();
+            }
+            function endTarget() {
+                marquee.remove();
+                // 收尾监听绑在 document：框选中断（pointercancel）或指针移出容器都能正常收尾
+                document.removeEventListener('pointermove', moveTarget);
+                document.removeEventListener('pointerup', endTarget);
+                document.removeEventListener('pointercancel', endTarget);
+                try {
+                    elements.desktopIcons.releasePointerCapture(event.pointerId);
+                } catch (error) {
+                    // 指针捕获已随 pointercancel 释放，忽略
+                }
+                if (!moved) {
+                    state.desktopSelection.clear();
+                    syncDesktopSelection();
+                }
+            }
+            document.addEventListener('pointermove', moveTarget);
+            document.addEventListener('pointerup', endTarget);
+            document.addEventListener('pointercancel', endTarget);
+        });
     }
 
     function bindEvents() {
         elements.startButton.addEventListener('click', function () { togglePanel('start', elements.startPanel, elements.startButton); });
         elements.notificationButton.addEventListener('click', function () { togglePanel('notifications', elements.notificationPanel, elements.notificationButton); });
+        // 前台首页：浏览器新标签页打开站点首页
+        elements.websiteButton.addEventListener('click', function () {
+            window.open(elements.websiteButton.dataset.websiteUrl, '_blank', 'noopener');
+        });
         elements.accountButton.addEventListener('click', function () { togglePanel('account', elements.accountPanel, elements.accountButton); });
         elements.clockButton.addEventListener('click', function () { togglePanel('calendar', elements.calendarPanel, elements.clockButton); });
         elements.startSearch.addEventListener('input', renderStartMenu);
@@ -5322,6 +6737,40 @@
             }).catch(function (error) { toast(error.message, 'error'); });
         });
 
+        // 通知中心 Tab 切换（待办 / 通知）
+        elements.notificationPanel.addEventListener('click', function (event) {
+            var tab = event.target.closest('[data-notification-tab]');
+            if (tab) {
+                setNotificationTab(tab.dataset.notificationTab);
+                return;
+            }
+            // 待办条目：优先在 WebOS 内打开对应应用窗口并标记待办已读（徽标减少）
+            var todo = event.target.closest('[data-todo-key]');
+            if (todo && todo.dataset.todoKey) {
+                event.preventDefault();
+                markTodoRead(todo.dataset.todoKey, todo.dataset.todoCount);
+                openLinkInWebos(todo.getAttribute('href'));
+                return;
+            }
+            // 通知条目：标记已读（刷新任务栏徽标与面板）并优先在 WebOS 内打开对应应用窗口
+            var item = event.target.closest('[data-notification-link]');
+            if (item) {
+                var panelNoticeId = item.dataset.notificationId;
+                if (panelNoticeId) {
+                    api('/api/admin/notifications/' + encodeURIComponent(panelNoticeId) + '/read', { method: 'POST' })
+                        .then(loadNotifications)
+                        .catch(function () { /* 标记失败不阻断跳转 */ });
+                }
+                openLinkInWebos(item.dataset.notificationLink);
+                return;
+            }
+            // 底部「查看全部」：在 WebOS 窗口中打开通知中心页面
+            var viewAll = event.target.closest('[data-open-notification-page]');
+            if (viewAll) {
+                openEntry(notificationCenterEntry());
+            }
+        });
+
         document.getElementById('show-desktop-button').addEventListener('click', function () {
             state.windows.forEach(function (_, key) { minimizeWindow(key); });
             closePanels();
@@ -5333,6 +6782,8 @@
                 dragDesktopIcon(button, event);
             }
         });
+        // 桌面空白处框选多个图标（Windows 桌面风格）
+        bindDesktopMarquee();
         elements.desktopIcons.addEventListener('dblclick', function (event) {
             var button = event.target.closest('[data-desktop-id]');
             if (button && button.dataset.wasDragged !== '1') {
@@ -5371,6 +6822,13 @@
             uploadWallpaper(file);
         });
 
+        // 任务栏固定图标：左键按住可拖动排序（独立于桌面顺序）
+        elements.taskbarPinned.addEventListener('pointerdown', function (event) {
+            var button = event.target.closest('[data-pinned-launch-id]');
+            if (button && event.button === 0) {
+                dragTaskbarIcon(button, event);
+            }
+        });
         elements.taskbarPinned.addEventListener('contextmenu', function (event) {
             var button = event.target.closest('[data-pinned-launch-id]');
             if (!button) {
@@ -5436,6 +6894,11 @@
 
             var pinnedLaunch = event.target.closest('[data-pinned-launch-id]');
             if (pinnedLaunch) {
+                if (taskbarDragJustEnded) {
+                    // 拖动排序刚结束：吞掉本次 click，避免误启动入口
+                    taskbarDragJustEnded = false;
+                    return;
+                }
                 closeActionDialog();
                 var pinnedEntry = findEntry(pinnedLaunch.dataset.pinnedLaunchId);
                 var runningKey = runningWindowKeyByApp(pinnedEntry || { id: pinnedLaunch.dataset.pinnedLaunchId });
@@ -5491,7 +6954,79 @@
             }
 
             var specialTab = event.target.closest('[data-special-tab]');
-            if (specialTab) { renderAppCenter(specialTab.dataset.specialTab); }
+            if (specialTab) {
+                // 按钮所在窗口为通知中心时切换「待办/通知」，否则视为应用中心功能 Tab
+                var tabWindow = specialTab.closest('[data-window-key]');
+                var tabState = tabWindow ? state.windows.get(tabWindow.dataset.windowKey) : null;
+                if (tabState && tabState.entry && tabState.entry.special === 'notifications') {
+                    renderNotificationCenter(specialTab.dataset.specialTab);
+                } else {
+                    renderAppCenter(specialTab.dataset.specialTab);
+                }
+            }
+
+            // 通知中心窗口：全部/已读/未读筛选（按当前 Tab 写入对应筛选状态并重载列表）
+            var noticeFilterBtn = event.target.closest('[data-notification-filter]');
+            if (noticeFilterBtn) {
+                var filterValue = noticeFilterBtn.dataset.notificationFilter;
+                var filterWindow = noticeFilterBtn.closest('[data-window-key]');
+                var filterState = filterWindow ? state.windows.get(filterWindow.dataset.windowKey) : null;
+                if (filterState && filterState.entry && filterState.entry.special === 'notifications') {
+                    if (notificationCenterState.tab === 'todos') {
+                        notificationCenterState.todoFilter = filterValue;
+                    } else {
+                        notificationCenterState.noticeFilter = filterValue;
+                        notificationCenterState.page = 1;
+                    }
+                    renderNotificationCenter(notificationCenterState.tab);
+                }
+                return;
+            }
+
+            // 通知中心窗口：全部已读按钮
+            var noticeReadAll = event.target.closest('[data-notification-read-all]');
+            if (noticeReadAll) {
+                markAllNotificationCenterRead(noticeReadAll);
+                return;
+            }
+
+            // 通知中心窗口：待办卡片点击，标记已读并优先在 WebOS 内打开对应应用窗口
+            var centerTodo = event.target.closest('.webos-notifications-shell [data-todo-key]');
+            if (centerTodo && centerTodo.dataset.todoKey) {
+                event.preventDefault();
+                markTodoRead(centerTodo.dataset.todoKey, centerTodo.dataset.todoCount);
+                openLinkInWebos(centerTodo.getAttribute('href'));
+                return;
+            }
+
+            // 通知中心窗口：通知行点击，标记已读（同步刷新任务栏徽标）并优先在 WebOS 内打开对应应用窗口
+            var centerNotice = event.target.closest('[data-notification-notice]');
+            if (centerNotice) {
+                var noticeId = centerNotice.dataset.notificationNotice;
+                if (noticeId) {
+                    api('/api/admin/notifications/' + encodeURIComponent(noticeId) + '/read', { method: 'POST' })
+                        .then(function () {
+                            centerNotice.classList.add('is-read');
+                            var dot = centerNotice.querySelector('.notification-dot');
+                            if (dot) { dot.remove(); }
+                            loadNotifications();
+                        }).catch(function () { /* 标记失败不阻断跳转 */ });
+                }
+                var noticeLink = centerNotice.dataset.noticeLink;
+                if (noticeLink) {
+                    openLinkInWebos(noticeLink);
+                }
+                return;
+            }
+
+            // 通知中心窗口：通知分页
+            var noticePage = event.target.closest('[data-notification-goto-page]');
+            if (noticePage && !noticePage.disabled) {
+                var centerShell = noticePage.closest('[data-webos-notifications]');
+                if (centerShell) {
+                    loadNotificationCenterNotices(centerShell, Number(noticePage.dataset.notificationGotoPage || 1));
+                }
+            }
 
             var marketCategory = event.target.closest('[data-market-category]');
             if (marketCategory) {
@@ -5505,6 +7040,13 @@
             var marketDetail = event.target.closest('[data-market-detail]');
             if (marketDetail && !event.target.closest('button, a, input, select, label')) {
                 openMarketDetail(marketDetail.closest('[data-app-center]'), marketDetail.dataset.marketDetail);
+            }
+
+            // 本地列表（已安装/未安装/应用更新）点击应用名称进入本地详情
+            var localDetail = event.target.closest('[data-local-detail]');
+            if (localDetail && !event.target.closest('button, a, input, select, label')) {
+                openLocalDetail(localDetail.closest('[data-app-center]'), localDetail.dataset.localDetail,
+                    localDetail.dataset.localSource);
             }
 
             var marketDetailClose = event.target.closest('[data-market-detail-close]');
@@ -5646,6 +7188,30 @@
                 setWebosPreference(settingName, !state.workspace.preferences[settingName], 'WebOS 设置已更新');
             }
 
+            var resetToggle = event.target.closest('[data-reset-workspace]');
+            if (resetToggle) {
+                var confirmRow = resetToggle.parentElement.querySelector('.workspace-reset-confirm');
+                if (confirmRow) {
+                    confirmRow.hidden = false;
+                    resetToggle.hidden = true;
+                }
+                return;
+            }
+            var resetConfirm = event.target.closest('[data-reset-workspace-confirm]');
+            if (resetConfirm) {
+                resetWorkspace();
+                return;
+            }
+            var resetCancel = event.target.closest('[data-reset-workspace-cancel]');
+            if (resetCancel) {
+                var resetRow = resetCancel.closest('.settings-reset-row');
+                if (resetRow) {
+                    resetRow.querySelector('.workspace-reset-confirm').hidden = true;
+                    resetRow.querySelector('[data-reset-workspace]').hidden = false;
+                }
+                return;
+            }
+
             var accountPath = event.target.closest('[data-account-path]');
             if (accountPath) {
                 openEntry({ id: 'account-settings', title: '个人设置', path: accountPath.dataset.accountPath, icon: 'fa fa-cog', group_title: '账号' });
@@ -5671,13 +7237,6 @@
         });
 
         elements.confirmInstall.addEventListener('click', confirmInstall);
-        document.querySelectorAll('input[name="install_entry"]').forEach(function (input) {
-            input.addEventListener('change', function () {
-                document.querySelectorAll('.install-options label').forEach(function (label) {
-                    label.classList.toggle('is-selected', label.contains(input));
-                });
-            });
-        });
 
         elements.windowLayer.addEventListener('input', function (event) {
             if (!event.target.matches('[data-app-search]')) {
@@ -5685,6 +7244,14 @@
             }
             var query = event.target.value.trim();
             var center = event.target.closest('[data-app-center]');
+            // 安装记录：右上角搜索框承担应用标识过滤，重绘记录列表与详情
+            if (state.appCenterTab === 'records') {
+                state.recordsKeyword = query;
+                if (center) {
+                    refreshRecordsPanels(center);
+                }
+                return;
+            }
             // 应用市场：输入防抖后带 keyword 全量 Ajax 搜索；其余 Tab：本地过滤已渲染卡片
             if (state.appCenterTab === 'market') {
                 window.clearTimeout(marketSearchTimer);
@@ -5704,6 +7271,18 @@
         });
 
         elements.windowLayer.addEventListener('change', function (event) {
+            // 安装记录：操作类型筛选变更后按类型重新拉取
+            if (event.target.matches('[data-records-operation]')) {
+                var recordsCenter = event.target.closest('[data-app-center]');
+                if (recordsCenter) {
+                    var recordsContent = recordsCenter.querySelector('[data-app-content]');
+                    var recordsStatus = recordsCenter.querySelector('[data-app-status]');
+                    if (recordsContent && recordsStatus) {
+                        loadRecordsTab(recordsContent, recordsStatus, event.target.value);
+                    }
+                }
+                return;
+            }
             if (!event.target.matches('[data-app-status-filter]')) {
                 return;
             }
@@ -5723,10 +7302,13 @@
         });
 
         elements.actionDialogBody.addEventListener('input', function (event) {
-            var input = event.target.closest('[data-uninstall-input]');
-            var submit = elements.actionDialogFooter.querySelector('[data-uninstall-submit]');
+            var input = event.target.closest('[data-uninstall-input], [data-delete-input]');
+            var submit = elements.actionDialogFooter.querySelector('[data-uninstall-submit], [data-delete-submit]');
             if (input && submit) {
-                submit.disabled = input.value.trim() !== submit.dataset.appName;
+                var matched = input.value.trim() === submit.dataset.appName;
+                submit.disabled = !matched;
+                // 输入匹配点亮确认按钮：加类触发脉冲动画，失配时移除
+                submit.classList.toggle('is-armed', matched);
             }
         });
 
@@ -5854,15 +7436,13 @@
 
         Promise.all([
             api(root.dataset.workspaceUrl),
-            api(root.dataset.catalogUrl)
+            loadCatalog()
         ]).then(function (responses) {
             state.workspace = responses[0] || state.workspace;
             state.workspace.preferences = normalizePreferences(state.workspace.preferences);
-            state.catalog = responses[1] || state.catalog;
             if (Array.isArray(state.workspace.preferences.usage_stats)) {
                 state.workspace.preferences.usage_stats = {};
             }
-            state.flatMenus = flattenMenus(state.catalog.menus);
             applyWorkspacePreferences();
             return bootstrapDesktopItems();
         }).then(function () {

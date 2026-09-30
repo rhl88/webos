@@ -118,13 +118,38 @@ textarea:focus-visible,
     cursor: default;
     outline: none;
     text-shadow: 0 1px 4px rgba(0, 24, 58, 0.58);
+    user-select: none;
+    touch-action: none;
+}
+
+/* 图标内容不接收指针事件：拖动目标始终是按钮本身，避免 img 原生拖拽打断指针序列 */
+.desktop-icon img,
+.desktop-icon i,
+.desktop-icon span {
+    pointer-events: none;
 }
 
 .desktop-icon:hover,
-.desktop-icon:focus-visible,
-.desktop-icon.is-selected {
+.desktop-icon:focus-visible {
     border-color: rgba(255, 255, 255, 0.42);
     background: rgba(255, 255, 255, 0.16);
+}
+
+/* 桌面图标多选高亮（框选 / Ctrl 点选） */
+.desktop-icon.is-selected {
+    border-color: rgba(120, 195, 255, 0.85);
+    background: rgba(40, 130, 200, 0.4);
+    box-shadow: inset 0 0 0 1px rgba(120, 195, 255, 0.35);
+}
+
+/* 桌面空白处拖动框选的选框 */
+.desktop-marquee {
+    position: absolute;
+    z-index: 5;
+    pointer-events: none;
+    border: 1px solid rgba(120, 195, 255, 0.9);
+    border-radius: 2px;
+    background: rgba(80, 160, 235, 0.18);
 }
 
 .desktop-icon.is-dragging {
@@ -228,7 +253,8 @@ textarea:focus-visible,
 }
 
 .app-window.is-window-gesturing {
-    animation: none;
+    /* 暂停入场动画而非移除：若用 animation: none，拖拽/缩放结束时动画会重新播放，窗口出现闪动 */
+    animation-play-state: paused;
     transition: none !important;
     will-change: left, top, width, height;
 }
@@ -781,19 +807,29 @@ textarea:focus-visible,
     align-self: stretch;
     width: auto;
     height: 7px;
-    margin: 7px 0 0;
+    /* 负下外边距抵消任务栏 8px 上下内边距，横条贴屏幕底缘 */
+    margin: 7px 0 -8px;
     border-top: 1px solid rgba(255, 255, 255, 0.44);
     border-left: 0;
 }
 
+/* 显示桌面：固定宽度窄条（不参与任务栏剩余空间分配），hover 高亮提示可点范围；
+   负右外边距抵消任务栏右侧 10px 内边距，按钮贴屏幕右缘，边缘空白也可点击 */
 .show-desktop-button {
     align-self: stretch;
-    width: 7px;
-    margin-left: 9px;
+    flex: 0 0 auto;
+    width: 14px;
+    margin-right: -10px;
     border: 0;
     border-left: 1px solid rgba(255, 255, 255, 0.44);
-    background: rgba(255, 255, 255, 0.04);
+    background: transparent;
     cursor: pointer;
+    transition: background 0.15s ease;
+}
+
+.show-desktop-button:hover,
+.show-desktop-button:focus-visible {
+    background: rgba(255, 255, 255, 0.12);
 }
 
 .webos-panel {
@@ -1103,6 +1139,7 @@ textarea:focus-visible,
     font-size: 11px;
 }
 
+/* 菜单项「+」按钮默认隐藏，悬停/聚焦菜单项时浮动显示；已固定的图钉保持常显作为状态锚点 */
 .pin-button {
     position: absolute;
     top: 8px;
@@ -1114,6 +1151,18 @@ textarea:focus-visible,
     color: #8592a5;
     background: transparent;
     cursor: pointer;
+    opacity: 0;
+    visibility: hidden;
+    transform: translateX(4px);
+    transition: opacity 0.15s ease, transform 0.15s ease, visibility 0.15s ease;
+}
+
+.start-app-item:hover .pin-button,
+.start-app-item:focus-within .pin-button,
+.pin-button.is-pinned {
+    opacity: 1;
+    visibility: visible;
+    transform: translateX(0);
 }
 
 .pin-button:hover {
@@ -1178,8 +1227,191 @@ textarea:focus-visible,
     bottom: 116px;
 }
 
+.notification-panel {
+    display: flex;
+    flex-direction: column;
+}
+
+.notification-panel .notification-tabs {
+    display: flex;
+    flex: 0 0 auto;
+    border-bottom: 1px solid #edf1f4;
+}
+
+.notification-tab {
+    flex: 1;
+    padding: 11px 0 9px;
+    border: none;
+    background: none;
+    color: #687991;
+    font-size: 13px;
+    cursor: pointer;
+    position: relative;
+}
+
+.notification-tab.is-active {
+    color: var(--webos-primary-dark);
+    font-weight: 600;
+}
+
+.notification-tab.is-active::after {
+    content: '';
+    position: absolute;
+    left: 50%;
+    bottom: 0;
+    width: 34px;
+    height: 3px;
+    border-radius: 2px;
+    background: var(--webos-primary);
+    transform: translateX(-50%);
+}
+
+.notification-todo-list {
+    flex: 1 1 auto;
+    overflow-y: auto;
+    padding: 12px 14px 6px;
+}
+
+.notification-todo {
+    display: flex;
+    align-items: center;
+    gap: 11px;
+    padding: 12px;
+    margin-bottom: 10px;
+    border: 1px solid #e6ecf2;
+    border-radius: 10px;
+    background: #fbfdfe;
+    text-decoration: none;
+    transition: box-shadow 0.15s ease, border-color 0.15s ease;
+}
+
+.notification-todo:hover {
+    border-color: rgba(22, 127, 190, 0.35);
+    box-shadow: 0 3px 10px rgba(15, 55, 95, 0.08);
+}
+
+.notification-todo-icon {
+    display: inline-flex;
+    flex: 0 0 36px;
+    align-items: center;
+    justify-content: center;
+    width: 36px;
+    height: 36px;
+    border-radius: 9px;
+    color: #167fbe;
+    background: #e8f5fc;
+    font-size: 15px;
+}
+
+.notification-todo-body {
+    flex: 1;
+    min-width: 0;
+}
+
+.notification-todo-body strong,
+.notification-todo-body small {
+    display: block;
+}
+
+.notification-todo-body strong {
+    font-size: 13px;
+}
+
+.notification-todo-body small {
+    margin-top: 3px;
+    color: #687991;
+    font-size: 11px;
+}
+
+.notification-todo-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    color: var(--webos-primary-dark);
+    font-size: 14px;
+    font-weight: 700;
+}
+
+.notification-todo-badge i {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--webos-primary);
+}
+
+/* 已读待办：弱化显示（通知中心窗口全量列表用） */
+.notification-todo.is-read {
+    opacity: .62;
+}
+
+/* 通知中心窗口工具栏右侧动作区：筛选按钮组 + 全部已读 */
+.notification-toolbar-actions {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    flex: 0 0 auto;
+    padding-top: 4px;
+}
+
+.notification-filter {
+    display: inline-flex;
+    align-items: center;
+    padding: 3px;
+    border: 1px solid #dbe4ec;
+    border-radius: 8px;
+    background: #f6f9fc;
+}
+
+.notification-filter-btn {
+    border: 0;
+    background: transparent;
+    color: #5b6b7c;
+    font-size: 13px;
+    line-height: 1;
+    padding: 7px 14px;
+    border-radius: 6px;
+    cursor: pointer;
+}
+
+.notification-filter-btn:hover {
+    color: var(--webos-primary-dark);
+}
+
+.notification-filter-btn.is-active {
+    background: var(--webos-primary);
+    color: #fff;
+    font-weight: 600;
+}
+
+.notification-read-all {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    white-space: nowrap;
+}
+
+.notification-todo.is-read .notification-todo-badge {
+    color: #8a97a6;
+    font-size: 12px;
+    font-weight: 600;
+}
+
+.notification-todo.is-read .notification-todo-badge i {
+    background: #b3bfcc;
+}
+
+.notification-todo.is-read .notification-todo-icon {
+    color: #8a97a6;
+    background: #eef2f6;
+}
+
+.notification-todo-arrow {
+    color: #b3bfcc;
+    font-size: 14px;
+}
+
 .notification-list {
-    max-height: 420px;
+    flex: 1 1 auto;
     overflow-y: auto;
 }
 
@@ -1189,6 +1421,29 @@ textarea:focus-visible,
     padding: 14px 16px;
     gap: 11px;
     border-bottom: 1px solid #edf1f4;
+    cursor: pointer;
+}
+
+.notification-item-meta {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 7px;
+    margin-left: auto;
+    flex: 0 0 auto;
+}
+
+.notification-item-meta time {
+    color: #9aa7b6;
+    font-size: 11px;
+    white-space: nowrap;
+}
+
+.notification-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--webos-primary);
 }
 
 .notification-item-icon {
@@ -1243,12 +1498,32 @@ textarea:focus-visible,
 }
 
 .panel-footer-link {
-    display: block;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
     padding: 13px;
     color: var(--webos-primary-dark);
-    background: #f8fafb;
-    text-align: center;
+    background: none;
     text-decoration: none;
+}
+
+.notification-footer {
+    display: flex;
+    flex: 0 0 auto;
+    align-items: center;
+    justify-content: space-between;
+    border-top: 1px solid #edf1f4;
+    background: #f8fafb;
+}
+
+.notification-footer .text-button {
+    padding: 13px;
+}
+
+.notification-footer .panel-footer-link {
+    border: none;
+    cursor: pointer;
+    font-size: 13px;
 }
 
 .calendar-panel {
@@ -1468,6 +1743,17 @@ textarea:focus-visible,
     backdrop-filter: blur(5px);
 }
 
+/* 安装弹窗精简皮肤（layui 风格）：纯色遮罩、无毛玻璃特效、小圆角白卡片 */
+.webos-dialog--plain {
+    background: rgba(0, 0, 0, 0.3);
+    backdrop-filter: none;
+}
+
+.webos-dialog--plain .dialog-card {
+    border-radius: 2px;
+    box-shadow: 1px 1px 50px rgba(0, 0, 0, 0.28);
+}
+
 .dialog-card {
     width: min(520px, 100%);
     overflow: hidden;
@@ -1532,57 +1818,32 @@ textarea:focus-visible,
     font-size: 12px;
 }
 
-.install-options {
-    margin: 18px 0 14px;
-    padding: 0;
-    border: 0;
-}
-
-.install-options legend {
-    margin-bottom: 9px;
-    font-size: 14px;
-    font-weight: 600;
-}
-
-.install-options label {
-    display: flex;
-    align-items: center;
-    min-height: 64px;
-    margin-bottom: 7px;
-    padding: 9px 12px;
-    gap: 11px;
-    border: 1px solid #dbe4ec;
-    border-radius: 8px;
-    cursor: pointer;
-}
-
-.install-options label.is-selected {
-    border-color: #7cd8cf;
-    background: #eaf8f6;
-}
-
-.install-options input {
-    accent-color: var(--webos-primary);
-}
-
-.option-icon {
-    width: 24px;
-    color: #263c5c;
-    font-size: 18px;
-    text-align: center;
-}
-
-.install-options strong,
-.install-options small {
-    display: block;
-}
-
-.install-options strong {
+.install-entry-hint {
+    margin: 16px 0 0;
+    color: #465870;
     font-size: 13px;
 }
 
-.install-options small {
-    margin-top: 4px;
+.install-shortcut-option {
+    display: flex;
+    align-items: center;
+    margin: 10px 0 14px;
+    padding: 9px 12px;
+    gap: 9px;
+    border: 1px solid #dbe4ec;
+    border-radius: 4px;
+    cursor: pointer;
+}
+
+.install-shortcut-option input {
+    accent-color: var(--webos-primary);
+}
+
+.install-shortcut-option span {
+    font-size: 13px;
+}
+
+.install-shortcut-option small {
     color: var(--webos-muted);
     font-size: 11px;
 }
@@ -1948,6 +2209,23 @@ textarea:focus-visible,
     color: #fff;
 }
 
+/* 系统设置：重置工作区的按钮行与内联二次确认 */
+.settings-reset-row {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 10px;
+    font-size: 12px;
+    color: #7c93a6;
+}
+
+.workspace-reset-confirm {
+    display: inline-flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
 .wallpaper-library-hint {
     display: flex;
     flex-direction: column;
@@ -2227,6 +2505,46 @@ textarea:focus-visible,
     min-height: 0;
     overflow-y: auto;
     padding: 0 26px 26px;
+}
+
+/* 通知中心窗口：结构与应用中心一致（工具栏 + 状态栏 + 内容区） */
+.webos-notifications-shell {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    background: #fff;
+}
+
+.webos-notifications-shell .notification-page-todos,
+.webos-notifications-shell .notification-page-list {
+    display: block;
+    padding-top: 4px;
+}
+
+/* 窗口内通知行使用 button 承载，需重置默认外观 */
+.webos-notifications-shell .notification-item {
+    display: flex;
+    width: 100%;
+    border: none;
+    background: none;
+    text-align: left;
+    font: inherit;
+    cursor: pointer;
+}
+
+.webos-notifications-shell .notification-item:hover {
+    background: #f5f9fc;
+}
+
+.notification-page-nav {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 14px;
+    padding: 18px 0 6px;
+    color: #687991;
+    font-size: 12px;
 }
 
 .market-tabs {
@@ -2685,6 +3003,7 @@ textarea:focus-visible,
 }
 
 .app-card {
+    position: relative;
     display: flex;
     align-items: center;
     min-width: 0;
@@ -2699,6 +3018,34 @@ textarea:focus-visible,
 .app-card:hover {
     border-color: #a8dcd7;
     box-shadow: 0 8px 20px rgba(20, 66, 100, 0.08);
+}
+
+/* 未安装卡片右上角 ×：物理删除应用文件，仅悬停当前卡片时显示 */
+.app-card-remove {
+    position: absolute;
+    top: 9px;
+    right: 9px;
+    width: 22px;
+    height: 22px;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    border: 0;
+    border-radius: 4px;
+    background: rgba(102, 116, 133, 0.08);
+    color: #667485;
+    font-size: 12px;
+    line-height: 1;
+    cursor: pointer;
+}
+
+.app-card:hover .app-card-remove {
+    display: inline-flex;
+}
+
+.app-card-remove:hover {
+    background: #ff5722;
+    color: #fff;
 }
 
 .app-icon {
@@ -2739,6 +3086,16 @@ textarea:focus-visible,
     font-size: 15px;
 }
 
+/* 本地列表应用名称可点击进入详情（与市场整卡详情一致） */
+.app-card-info strong.app-card-title {
+    cursor: pointer;
+}
+
+.app-card-info strong.app-card-title:hover {
+    color: var(--webos-primary-dark);
+    text-decoration: underline;
+}
+
 .app-card-info span {
     margin-top: 5px;
     color: #697a91;
@@ -2749,6 +3106,11 @@ textarea:focus-visible,
     margin-top: 5px;
     color: #94a0af;
     font-size: 11px;
+}
+
+.app-card.has-remove {
+    /* 右上角删除按钮需占用卡片角落，操作按钮列整体左移避让 */
+    padding-right: 42px;
 }
 
 .app-card-actions {
@@ -2781,39 +3143,237 @@ textarea:focus-visible,
     border-color: var(--webos-primary-dark);
 }
 
-.records-table {
-    width: 100%;
-    border-collapse: collapse;
-    font-size: 13px;
+/* 安装记录：双栏布局（左侧分组列表 + 右侧操作详情） */
+.records-layout {
+    display: flex;
+    align-items: stretch;
+    gap: 14px;
+    min-height: 0;
 }
 
-.records-table th,
-.records-table td {
-    padding: 12px 10px;
-    border-bottom: 1px solid #e7edf2;
-    text-align: left;
+.records-side {
+    flex: 1 1 auto;
+    min-width: 0;
 }
 
-.records-table th {
+.records-group {
+    margin-bottom: 18px;
+}
+
+.records-group h5 {
+    margin: 0 0 8px;
     color: #697990;
-    background: #f6f8fa;
+    font-size: 12px;
     font-weight: 600;
 }
 
-.status-pill {
-    display: inline-flex;
+.record-row {
+    display: flex;
     align-items: center;
-    min-height: 23px;
-    padding: 0 8px;
-    border-radius: 12px;
-    color: #0c8d80;
-    background: #e7f7f4;
+    gap: 11px;
+    width: 100%;
+    padding: 11px 12px;
+    border: 1px solid transparent;
+    border-radius: 10px;
+    background: none;
+    text-align: left;
+    cursor: pointer;
+}
+
+.record-row:hover {
+    background: #f5f9fc;
+}
+
+.record-row.is-selected {
+    border-color: var(--webos-primary);
+    background: #f2fafd;
+}
+
+.record-row-icon {
+    display: inline-flex;
+    flex: 0 0 40px;
+    align-items: center;
+    justify-content: center;
+    width: 40px;
+    height: 40px;
+    border-radius: 10px;
+    overflow: hidden;
+    color: #167fbe;
+    background: #e8f5fc;
+    font-size: 16px;
+    position: relative;
+}
+
+/* 图标绝对定位铺满内容区：不依赖 flex/百分比高度链，等比缩放完整显示不裁剪 */
+.record-row-icon img {
+    position: absolute;
+    inset: 4px;
+    width: calc(100% - 8px);
+    height: calc(100% - 8px);
+    object-fit: contain;
+}
+
+/* 图标兜底链容器（applicationIconMarkup 生成）：铺满圆角方块并居中 */
+.record-row-icon-inner {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    height: 100%;
+}
+
+.record-row-body {
+    flex: 1;
+    min-width: 0;
+}
+
+.record-row-body strong,
+.record-row-body small {
+    display: block;
+}
+
+.record-row-body strong {
+    font-size: 13px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.record-row-body small {
+    margin-top: 3px;
+    color: #687991;
+    font-size: 11px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.record-pill {
+    display: inline-flex;
+    flex: 0 0 auto;
+    align-items: center;
+    gap: 5px;
+    padding: 4px 9px;
+    border-radius: 999px;
     font-size: 11px;
 }
 
-.status-pill.warning {
-    color: #a16c10;
-    background: #fff6de;
+.record-pill--done {
+    color: #1f8a4c;
+    background: #e8f7ee;
+}
+
+.record-pill--failed {
+    color: #d64541;
+    background: #fdecec;
+}
+
+.record-row-operator {
+    flex: 0 0 auto;
+    color: #687991;
+    font-size: 12px;
+}
+
+.record-row time {
+    flex: 0 0 auto;
+    color: #9aa7b6;
+    font-size: 12px;
+}
+
+.records-detail {
+    flex: 0 0 250px;
+    align-self: flex-start;
+    position: sticky;
+    top: 0;
+    padding: 16px;
+    border: 1px solid #e6ecf2;
+    border-radius: 12px;
+    background: #fbfdfe;
+}
+
+.record-detail-head {
+    display: flex;
+    align-items: center;
+    gap: 11px;
+    padding-bottom: 13px;
+    border-bottom: 1px solid #edf1f4;
+}
+
+.record-detail-head strong,
+.record-detail-head small {
+    display: block;
+}
+
+.record-detail-head strong {
+    font-size: 14px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.record-detail-head small {
+    margin-top: 3px;
+    color: #687991;
+    font-size: 12px;
+}
+
+.record-detail-fields {
+    margin: 0;
+}
+
+.record-detail-fields > div {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 9px 0;
+    border-bottom: 1px dashed #e9eef3;
+}
+
+.record-detail-fields dt {
+    color: #687991;
+    font-size: 12px;
+}
+
+.record-detail-fields dd {
+    margin: 0;
+    font-size: 12px;
+    text-align: right;
+    word-break: break-all;
+}
+
+.record-detail-fields dd.is-success {
+    color: #1f8a4c;
+    font-weight: 600;
+}
+
+.record-detail-fields dd.is-failed {
+    color: #d64541;
+    font-weight: 600;
+}
+
+.record-detail-error {
+    display: flex;
+    gap: 7px;
+    margin: 12px 0 0;
+    padding: 10px 11px;
+    border-radius: 8px;
+    color: #d64541;
+    background: #fdecec;
+    font-size: 12px;
+    line-height: 1.6;
+}
+
+/* 窄窗口时详情面板退化为上下堆叠 */
+@media (max-width: 760px) {
+    .records-layout {
+        flex-direction: column;
+    }
+
+    .records-detail {
+        flex: 1 1 auto;
+        width: auto;
+        position: static;
+    }
 }
 
 .entry-list {
@@ -3224,6 +3784,23 @@ textarea:focus-visible,
     background: #c4433f;
 }
 
+.webos-button.danger:disabled {
+    /* 未输入正确应用名时灰显，与匹配后的红色高亮形成明显视觉反馈 */
+    filter: grayscale(1);
+    opacity: 0.45;
+}
+
+.webos-button.danger.is-armed {
+    /* 输入匹配点亮：红色恢复 + 短暂脉冲提示可点击 */
+    animation: webos-button-armed 0.4s ease;
+}
+
+@keyframes webos-button-armed {
+    0% { box-shadow: 0 0 0 0 rgba(217, 83, 79, 0.45); transform: scale(0.96); }
+    60% { box-shadow: 0 0 0 7px rgba(217, 83, 79, 0.15); transform: scale(1.03); }
+    100% { box-shadow: 0 0 0 0 rgba(217, 83, 79, 0); transform: scale(1); }
+}
+
 .webos-button:disabled {
     cursor: not-allowed;
 }
@@ -3374,6 +3951,12 @@ textarea:focus-visible,
     border-radius: 8px;
     background: #fff;
     box-shadow: 0 14px 30px rgba(10, 34, 59, 0.16);
+}
+
+/* 行位于列表底部时向上弹出，避免菜单被窗口底部裁剪 */
+.row-menu.is-above {
+    top: auto;
+    bottom: calc(100% - 6px);
 }
 
 .row-menu-item {
@@ -3695,6 +4278,15 @@ textarea:focus-visible,
     cursor: pointer;
     font-size: 12px;
     font-weight: 600;
+}
+
+/* 文件/目录名超出一行宽度时省略号截断，不换行 */
+.doc-tree-dir span,
+.doc-tree-file span {
+    min-width: 0;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
 }
 
 .doc-tree-dir i {

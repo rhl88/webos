@@ -29,6 +29,7 @@ abstract class WebosTestCase extends TestCase
             $table->bigIncrements('id');
             $table->unsignedBigInteger('admin_user_id')->unique();
             $table->text('desktop_items')->nullable();
+            $table->text('taskbar_items')->nullable();
             $table->text('preferences')->nullable();
             $table->unsignedTinyInteger('status')->default(1);
             $table->timestamp('create_time')->nullable();

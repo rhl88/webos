@@ -2,27 +2,22 @@
 
 namespace App\Apps\CmsproWebos\Controllers\Admin;
 
-use App\Apps\CmsproWebos\Services\AdminMenuCatalogService;
-use App\Apps\CmsproWebos\Services\ApplicationIconService;
 use App\Apps\CmsproWebos\Services\CalendarService;
 use App\Apps\CmsproWebos\Services\WallpaperService;
 use App\Apps\CmsproWebos\Services\WorkspaceService;
 use App\Http\Controllers\Controller;
 use App\Http\Responses\ApiResponse;
-use App\Models\AppModel;
-use App\Models\AppOperationLog;
-use App\Services\MenuService;
+use App\Models\AdminTodoRead;
+use App\Services\NotificationService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\View\View;
 
 class WebosController extends Controller
 {
     public function __construct(
         protected WorkspaceService $workspaces,
-        protected MenuService $menus,
-        protected AdminMenuCatalogService $menuCatalog,
-        protected ApplicationIconService $applicationIcons,
         protected CalendarService $calendar,
         protected WallpaperService $wallpapers
     ) {
@@ -47,6 +42,31 @@ class WebosController extends Controller
             'marketBaseUrl' => $this->marketBaseUrl(),
             'webosAssetVersion' => $this->assetVersion(),
         ]);
+    }
+
+    /**
+     * 通知中心窗口「待办」数据源：全部待办（含已读）。
+     *
+     * 系统聚合接口（/api/admin/notifications/panel）按契约过滤已读条目，
+     * 通知中心窗口需要展示完整待办列表，因此由应用侧提供全量视图：
+     * 原始条目来自系统待办 hook 聚合（NotificationService::todos，
+     * 各应用通过「admin.notifications.todos」filter 接入，含权限过滤/去重/容错），
+     * 已读状态读 AdminTodoRead（user_id + todo_key → seen_count），seen_count ≥ count 视为已读。
+     */
+    public function allTodos(): JsonResponse
+    {
+        $userId = (int) Auth::guard('admin')->id();
+        $seenMap = AdminTodoRead::where('user_id', $userId)->pluck('seen_count', 'todo_key');
+
+        $todos = array_map(function (array $todo) use ($seenMap) {
+            $seen = min((int) ($seenMap[$todo['key']] ?? 0), (int) $todo['count']);
+            $todo['seen'] = $seen;
+            $todo['is_read'] = $seen >= (int) $todo['count'];
+
+            return $todo;
+        }, app(NotificationService::class)->allTodos());
+
+        return response()->json(ApiResponse::success($todos));
     }
 
     /**
@@ -105,6 +125,23 @@ class WebosController extends Controller
             'desktop_items.*.group_title' => ['nullable', 'string', 'max:60'],
             'desktop_items.*.x' => ['required', 'integer', 'between:0,99'],
             'desktop_items.*.y' => ['required', 'integer', 'between:0,99'],
+            'taskbar_items' => ['sometimes', 'array', 'max:12'],
+            'taskbar_items.*.id' => ['required', 'string', 'max:80'],
+            'taskbar_items.*.menu_id' => ['nullable', 'integer', 'min:0'],
+            'taskbar_items.*.app_id' => ['nullable', 'string', 'max:100', 'regex:/^[A-Za-z0-9_.-]*$/'],
+            'taskbar_items.*.title' => ['required', 'string', 'max:60'],
+            'taskbar_items.*.path' => [
+                'required',
+                'string',
+                'max:500',
+                static function (string $attribute, mixed $value, \Closure $fail): void {
+                    if (! is_string($value) || ! str_starts_with($value, '/') || str_starts_with($value, '//')) {
+                        $fail('任务栏入口路径必须是站内路径');
+                    }
+                },
+            ],
+            'taskbar_items.*.icon' => ['required', 'string', 'max:100'],
+            'taskbar_items.*.group_title' => ['nullable', 'string', 'max:60'],
             'preferences' => ['sometimes', 'array'],
             'preferences.wallpaper' => ['sometimes', 'in:webos-default,deep-blue'],
             'preferences.wallpaper_url' => ['sometimes', 'nullable', 'string', 'max:200'],
@@ -115,6 +152,7 @@ class WebosController extends Controller
             'preferences.motion' => ['sometimes', 'boolean'],
             'preferences.window_width' => ['sometimes', 'integer', 'between:40,100'],
             'preferences.window_height' => ['sometimes', 'integer', 'between:40,100'],
+            'preferences.override_admin_home' => ['sometimes', 'boolean'],
             'preferences.usage_stats' => ['sometimes', 'array', 'max:80'],
         ]);
 
@@ -124,6 +162,17 @@ class WebosController extends Controller
         );
 
         return response()->json(ApiResponse::success($workspace, '桌面布局已保存'));
+    }
+
+    /**
+     * 重置工作区（OS 设置 → 系统设置）：桌面项/任务栏项清空、偏好恢复默认。
+     * 自定义壁纸文件保留，仅当前背景偏好回退系统默认。
+     */
+    public function resetWorkspace(Request $request): JsonResponse
+    {
+        $workspace = $this->workspaces->resetForAdmin((int) $request->user('admin')->id);
+
+        return response()->json(ApiResponse::success($workspace, '工作区已恢复默认'));
     }
 
     /**
@@ -176,75 +225,5 @@ class WebosController extends Controller
         $month = $this->calendar->month($validated['month']);
 
         return response()->json(ApiResponse::success($month));
-    }
-
-    public function catalog(): JsonResponse
-    {
-        $menuResult = $this->menus->userMenus();
-        $applications = AppModel::query()
-            ->installed()
-            ->get([
-                'app_id', 'name', 'description', 'version', 'author', 'icon',
-                'status', 'is_system', 'path', 'manifest', 'install_time', 'update_time',
-            ])
-            // 与后台“应用管理”列表排序一致：按安装时间与更新时间中较新者降序（最新在前），无时间记录排最后
-            ->sort(function (AppModel $left, AppModel $right): int {
-                $leftTime = $this->recentTimeOf($left);
-                $rightTime = $this->recentTimeOf($right);
-                if ($leftTime === $rightTime) {
-                    return 0;
-                }
-                if ($leftTime === '') {
-                    return 1;
-                }
-                if ($rightTime === '') {
-                    return -1;
-                }
-
-                return $leftTime < $rightTime ? 1 : -1;
-            })
-            ->map(function (AppModel $app): array {
-                $manifest = $app->manifest ?? [];
-
-                return [
-                    'app_id' => $app->app_id,
-                    'name' => $app->name,
-                    'description' => $app->description,
-                    'version' => $app->version,
-                    'author' => $app->author,
-                    'icon' => $app->icon,
-                    'icon_url' => url('/api/app/' . $app->app_id . '/icon'),
-                    'manifest_icon' => $this->applicationIcons->resolveManifestIcon(
-                        $app->resolvePath(),
-                        $manifest
-                    ),
-                    'has_config' => ! empty($manifest['config_groups']),
-                    'is_system' => $app->is_system,
-                    'status' => $app->status->value,
-                    'status_label' => $app->status->label(),
-                ];
-            })
-            ->values();
-
-        $logs = AppOperationLog::query()
-            ->with('operator:id,name,username')
-            ->orderByDesc('create_time')
-            ->limit(30)
-            ->get();
-
-        return response()->json(ApiResponse::success([
-            'menus' => $this->menuCatalog->filterAdminMenus($menuResult['data'] ?? []),
-            'applications' => $applications,
-            'operation_logs' => $logs,
-        ]));
-    }
-
-    /** 取应用参与排序的时间：安装时间与更新时间中较新者（与后台“应用管理”默认排序一致），无时间返回空串 */
-    protected function recentTimeOf(AppModel $app): string
-    {
-        $installTime = $app->install_time?->format('Y-m-d H:i:s') ?? '';
-        $updateTime = $app->update_time?->format('Y-m-d H:i:s') ?? '';
-
-        return $installTime > $updateTime ? $installTime : $updateTime;
     }
 }

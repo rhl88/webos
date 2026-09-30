@@ -20,7 +20,6 @@
     id="webos-desktop"
     class="webos-desktop is-loading"
     data-workspace-url="{{ url('/admin/cmspro/webos/api/workspace') }}"
-    data-catalog-url="{{ url('/admin/cmspro/webos/api/catalog') }}"
     data-calendar-url="{{ url('/admin/cmspro/webos/api/calendar') }}"
     data-wallpaper-url="{{ asset('apps/cmspro.webos/images/webos-wallpaper.png') }}"
     data-wallpapers-url="{{ url('/admin/cmspro/webos/api/wallpapers') }}"
@@ -76,10 +75,17 @@
                 <strong>通知中心</strong>
                 <span id="notification-summary">正在读取通知</span>
             </div>
-            <button id="notification-read-all" class="text-button" type="button">全部已读</button>
         </header>
-        <div id="notification-list" class="notification-list"></div>
-        <a class="panel-footer-link" href="/admin/notifications" target="_blank" rel="noopener">查看全部通知</a>
+        <nav class="notification-tabs" role="tablist">
+            <button type="button" class="notification-tab is-active" data-notification-tab="todos" role="tab" aria-selected="true">待办</button>
+            <button type="button" class="notification-tab" data-notification-tab="notifications" role="tab" aria-selected="false">通知</button>
+        </nav>
+        <div id="notification-todos" class="notification-todo-list"></div>
+        <div id="notification-list" class="notification-list" hidden></div>
+        <footer class="notification-footer">
+            <button id="notification-read-all" class="text-button" type="button">全部已读</button>
+            <button class="panel-footer-link" type="button" data-open-notification-page>查看全部 <i class="fa fa-angle-right"></i></button>
+        </footer>
     </section>
 
     <section id="calendar-panel" class="webos-panel calendar-panel" aria-label="日历" hidden>
@@ -121,7 +127,7 @@
         </nav>
     </section>
 
-    <section id="install-dialog" class="webos-dialog" role="dialog" aria-modal="true" aria-labelledby="install-dialog-title" hidden>
+    <section id="install-dialog" class="webos-dialog webos-dialog--plain" role="dialog" aria-modal="true" aria-labelledby="install-dialog-title" hidden>
         <div class="dialog-card">
             <header class="dialog-header">
                 <div>
@@ -134,24 +140,12 @@
             </header>
             <div class="dialog-body">
                 <div id="install-app-summary" class="install-app-summary"></div>
-                <fieldset class="install-options">
-                    <legend>请选择应用入口位置</legend>
-                    <label>
-                        <input type="radio" name="install_entry" value="menu">
-                        <span class="option-icon"><i class="fa fa-bars"></i></span>
-                        <span><strong>添加到系统菜单</strong><small>在开始菜单的应用列表中创建入口</small></span>
-                    </label>
-                    <label>
-                        <input type="radio" name="install_entry" value="desktop">
-                        <span class="option-icon"><i class="fa fa-desktop"></i></span>
-                        <span><strong>创建桌面快捷方式</strong><small>安装后将应用入口固定到桌面</small></span>
-                    </label>
-                    <label class="is-selected">
-                        <input type="radio" name="install_entry" value="both" checked>
-                        <span class="option-icon"><i class="fa fa-th-large"></i></span>
-                        <span><strong>两者都创建</strong><small>同时创建系统菜单和桌面快捷入口</small></span>
-                    </label>
-                </fieldset>
+                <p class="install-entry-hint">安装后默认添加到系统菜单。</p>
+                <label class="install-shortcut-option">
+                    <input type="checkbox" id="install-create-shortcut" name="install_create_shortcut">
+                    <span>创建桌面快捷方式</span>
+                    <small>可选，勾选后将应用入口固定到桌面</small>
+                </label>
                 <section id="install-menu-parents" class="install-menu-parents" aria-live="polite">
                     <div class="install-menu-status">
                         <i class="fa fa-circle-o-notch fa-spin"></i>
@@ -201,6 +195,10 @@
         <div id="taskbar-pinned" class="taskbar-pinned" aria-label="固定应用"></div>
         <div id="taskbar-windows" class="taskbar-windows" aria-label="运行中的应用"></div>
         <div class="taskbar-spacer"></div>
+        {{-- 前台首页入口：在 WebOS 内以通用窗口打开站点首页 --}}
+        <button id="website-button" class="taskbar-button website-button" type="button" aria-label="访问前台首页" data-website-url="{{ url('/') }}">
+            <i class="fa fa-globe" aria-hidden="true"></i>
+        </button>
         <button id="notification-button" class="taskbar-button notification-button" type="button" aria-label="打开通知中心" aria-expanded="false">
             <i class="fa fa-bell" aria-hidden="true"></i>
             <span id="notification-badge" class="notification-badge" hidden>0</span>

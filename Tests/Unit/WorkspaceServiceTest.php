@@ -16,9 +16,71 @@ class WorkspaceServiceTest extends WebosTestCase
 
         $this->assertSame($admin->id, $workspace->admin_user_id);
         $this->assertSame([], $workspace->desktop_items);
+        $this->assertSame([], $workspace->taskbar_items);
         $this->assertSame('webos-default', $workspace->preferences['wallpaper']);
         $this->assertSame('left', $workspace->preferences['taskbar_alignment']);
         $this->assertSame('bottom', $workspace->preferences['taskbar_position']);
+    }
+
+    public function test_it_sanitizes_taskbar_items_independently_from_desktop(): void
+    {
+        $admin = $this->actingAdmin();
+
+        $workspace = app(WorkspaceService::class)->saveForAdmin($admin->id, [
+            'desktop_items' => [[
+                'id' => 'menu-88',
+                'title' => '内容管理',
+                'path' => '/admin/content',
+                'icon' => 'fa fa-file-text',
+                'x' => 0,
+                'y' => 0,
+            ]],
+            'taskbar_items' => [[
+                'id' => 'menu-99',
+                'menu_id' => 99,
+                'app_id' => 'cmspro.demo',
+                'title' => '报表中心',
+                'path' => '/admin/report',
+                'icon' => 'fa fa-bar-chart',
+                'group_title' => '报表',
+                'x' => 5,
+                'y' => 6,
+            ]],
+        ]);
+
+        // 任务栏固定项独立存储，且坐标字段被剔除
+        $this->assertSame('/admin/report', $workspace->taskbar_items[0]['path']);
+        $this->assertSame('cmspro.demo', $workspace->taskbar_items[0]['app_id']);
+        $this->assertArrayNotHasKey('x', $workspace->taskbar_items[0]);
+        $this->assertArrayNotHasKey('y', $workspace->taskbar_items[0]);
+        // 桌面项不受任务栏保存影响
+        $this->assertSame('/admin/content', $workspace->desktop_items[0]['path']);
+
+        // 保存桌面布局（不带 taskbar_items）不应清空已固定的任务栏项
+        $kept = app(WorkspaceService::class)->saveForAdmin($admin->id, [
+            'desktop_items' => $workspace->desktop_items,
+        ]);
+        $this->assertSame('/admin/report', $kept->taskbar_items[0]['path']);
+    }
+
+    public function test_it_falls_back_to_first_four_desktop_items_for_legacy_workspaces(): void
+    {
+        $admin = $this->actingAdmin();
+        app(WorkspaceService::class)->getForAdmin($admin->id);
+
+        // 模拟迁移前的旧数据：taskbar_items 列为 null
+        WebosWorkspace::query()->where('admin_user_id', $admin->id)->update([
+            'desktop_items' => json_encode([
+                ['id' => 'menu-1', 'title' => 'A', 'path' => '/a', 'icon' => 'fa fa-a', 'x' => 0, 'y' => 0],
+                ['id' => 'menu-2', 'title' => 'B', 'path' => '/b', 'icon' => 'fa fa-b', 'x' => 0, 'y' => 1],
+            ]),
+            'taskbar_items' => null,
+        ]);
+
+        $workspace = app(WorkspaceService::class)->getForAdmin($admin->id);
+
+        $this->assertCount(2, $workspace->taskbar_items);
+        $this->assertSame('menu-1', $workspace->taskbar_items[0]['id']);
     }
 
     public function test_it_sanitizes_desktop_items_and_merges_preferences(): void

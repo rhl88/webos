@@ -3,7 +3,6 @@
 namespace App\Apps\CmsproWebos\Tests\Feature;
 
 use App\Apps\CmsproWebos\Tests\WebosTestCase;
-use App\Models\AppModel;
 
 class WebosWorkspaceApiTest extends WebosTestCase
 {
@@ -24,6 +23,45 @@ class WebosWorkspaceApiTest extends WebosTestCase
             ->assertSee('个人设置')
             ->assertSee('修改密码')
             ->assertSee('data-taskbar-position="bottom"', false);
+    }
+
+    public function test_all_todos_api_returns_full_list_with_read_state(): void
+    {
+        $this->actingAdmin();
+
+        // 测试内自建待办数据源（模拟其他应用通过系统 hook 接入，WebOS 自身不注册演示数据）
+        app(\App\Services\HookManager::class)->registerFilter(
+            'admin.notifications.todos',
+            function (array $entries): array {
+                $entries[] = ['key' => 'webos.test.first', 'title' => '测试待办一', 'count' => 3, 'link' => '/admin/user'];
+                $entries[] = ['key' => 'webos.test.second', 'title' => '测试待办二', 'count' => 5, 'link' => '/admin/app'];
+
+                return $entries;
+            },
+            10,
+            'webos.test'
+        );
+
+        // 未点击任何待办：全部返回且均为未读
+        $this->getJson('/admin/cmspro/webos/api/all-todos')
+            ->assertOk()
+            ->assertJsonPath('code', 0)
+            ->assertJsonCount(2, 'data')
+            ->assertJsonPath('data.0.key', 'webos.test.first')
+            ->assertJsonPath('data.0.is_read', false)
+            ->assertJsonPath('data.1.key', 'webos.test.second')
+            ->assertJsonPath('data.1.count', 5);
+
+        // 模拟点击「测试待办一」（seen_count 记满 count）：仍返回全部 2 条，该条 is_read=true
+        app(\App\Services\NotificationService::class)->markTodoRead('webos.test.first', 3);
+
+        $this->getJson('/admin/cmspro/webos/api/all-todos')
+            ->assertOk()
+            ->assertJsonCount(2, 'data')
+            ->assertJsonPath('data.0.is_read', true)
+            ->assertJsonPath('data.1.is_read', false);
+
+        app(\App\Services\HookManager::class)->removeHooksByApp('webos.test');
     }
 
     public function test_admin_can_read_and_save_workspace(): void
@@ -47,6 +85,15 @@ class WebosWorkspaceApiTest extends WebosTestCase
                 'x' => 1,
                 'y' => 2,
             ]],
+            'taskbar_items' => [[
+                'id' => 'menu-20',
+                'menu_id' => 20,
+                'app_id' => 'cmspro.demo',
+                'title' => '报表中心',
+                'path' => '/admin/report',
+                'icon' => 'fa fa-bar-chart',
+                'group_title' => '报表',
+            ]],
             'preferences' => [
                 'wallpaper' => 'webos-default',
                 'taskbar_alignment' => 'left',
@@ -68,8 +115,16 @@ class WebosWorkspaceApiTest extends WebosTestCase
             ->assertJsonPath('code', 0)
             ->assertJsonPath('data.desktop_items.0.title', '用户管理')
             ->assertJsonPath('data.desktop_items.0.app_id', 'cmspro.demo')
+            ->assertJsonPath('data.taskbar_items.0.title', '报表中心')
+            ->assertJsonPath('data.taskbar_items.0.path', '/admin/report')
             ->assertJsonPath('data.preferences.taskbar_position', 'left')
             ->assertJsonPath('data.preferences.usage_stats.folder:13.count', 4);
+
+        // 任务栏固定项与桌面快捷方式相互独立：再次保存桌面布局不影响任务栏
+        $this->getJson('/admin/cmspro/webos/api/workspace')
+            ->assertOk()
+            ->assertJsonPath('data.taskbar_items.0.title', '报表中心')
+            ->assertJsonPath('data.desktop_items.0.title', '用户管理');
     }
 
     public function test_workspace_api_rejects_an_unknown_taskbar_position(): void
@@ -80,6 +135,95 @@ class WebosWorkspaceApiTest extends WebosTestCase
             'preferences' => ['taskbar_position' => 'diagonal'],
         ])->assertUnprocessable()
             ->assertJsonPath('code', 40201);
+    }
+
+    public function test_workspace_api_persists_override_admin_home_preference(): void
+    {
+        $this->actingAdmin();
+
+        // 系统设置「覆盖传统后台」：开启后偏好持久化，供后台布局首页覆盖跳转读取
+        $this->putJson('/admin/cmspro/webos/api/workspace', [
+            'preferences' => ['override_admin_home' => true],
+        ])->assertOk()
+            ->assertJsonPath('code', 0)
+            ->assertJsonPath('data.preferences.override_admin_home', true);
+
+        $this->getJson('/admin/cmspro/webos/api/workspace')
+            ->assertOk()
+            ->assertJsonPath('data.preferences.override_admin_home', true);
+
+        // 关闭覆盖
+        $this->putJson('/admin/cmspro/webos/api/workspace', [
+            'preferences' => ['override_admin_home' => false],
+        ])->assertOk()
+            ->assertJsonPath('data.preferences.override_admin_home', false);
+    }
+
+    public function test_workspace_reset_api_restores_default_layout(): void
+    {
+        $this->actingAdmin();
+
+        $items = [[
+            'id' => 'menu-10',
+            'menu_id' => 10,
+            'app_id' => 'cmspro.demo',
+            'title' => '用户管理',
+            'path' => '/admin/user',
+            'icon' => 'fa fa-users',
+            'group_title' => '系统管理',
+            'x' => 0,
+            'y' => 0,
+        ]];
+        $this->putJson('/admin/cmspro/webos/api/workspace', [
+            'desktop_items' => $items,
+            'taskbar_items' => $items,
+            'preferences' => ['override_admin_home' => true, 'taskbar_position' => 'top'],
+        ])->assertOk();
+
+        // 重置：桌面/任务栏恢复初始默认布局（仅保留「应用中心」内置入口），偏好全部回默认
+        // （覆盖传统后台关闭、任务栏回底部）
+        $this->postJson('/admin/cmspro/webos/api/workspace/reset')
+            ->assertOk()
+            ->assertJsonPath('code', 0)
+            ->assertJsonPath('data.desktop_items.0.id', 'webos-app-center')
+            ->assertJsonPath('data.desktop_items.0.title', '应用中心')
+            ->assertJsonPath('data.taskbar_items.0.id', 'webos-app-center')
+            ->assertJsonPath('data.preferences.override_admin_home', false)
+            ->assertJsonPath('data.preferences.taskbar_position', 'bottom');
+
+        $this->getJson('/admin/cmspro/webos/api/workspace')
+            ->assertOk()
+            ->assertJsonPath('data.desktop_items.0.id', 'webos-app-center')
+            ->assertJsonPath('data.preferences.taskbar_position', 'bottom');
+    }
+
+    public function test_taskbar_pinned_items_are_independent_from_desktop_and_draggable(): void
+    {
+        $script = file_get_contents(dirname(__DIR__, 2) . '/Assets/js/webos.js');
+
+        $this->assertIsString($script);
+
+        // 任务栏固定项独立数据源（不再取桌面项前 4 位；仅旧数据兜底保留一处）
+        $this->assertStringContainsString('function taskbarItems()', $script);
+        $this->assertStringContainsString('var pinned = taskbarItems();', $script);
+        $this->assertStringContainsString('return new Set(taskbarItems().map(', $script);
+        $this->assertSame(1, substr_count($script, 'desktop_items.slice(0, 4)'));
+        // 任务栏固定/解除固定动作不再写桌面列表；固定后重绘运行区避免重复图标
+        $this->assertStringContainsString('function addTaskbarItem(entry)', $script);
+        $this->assertStringContainsString('function removeTaskbarItem(id)', $script);
+        $this->assertStringContainsString('addTaskbarItem(findEntry(id) || findDesktopItem(id));', $script);
+        $this->assertStringContainsString('removeTaskbarItem(id);', $script);
+        // 固定按应用聚合键去重（同应用多菜单入口只留一个图标）
+        $this->assertStringContainsString('var appKey = entryAppKey(entry);', $script);
+        $this->assertStringContainsString("toast('该应用已固定在任务栏');", $script);
+        // 读取时按 id 去重，兜底历史重复数据
+        $this->assertStringContainsString('seen[item.id] = true;', $script);
+        // 任务栏固定图标支持拖动排序，保存时随工作区持久化
+        $this->assertStringContainsString('function dragTaskbarIcon(button, event)', $script);
+        $this->assertStringContainsString('dragTaskbarIcon(button, event);', $script);
+        $this->assertStringContainsString('taskbar_items: taskbarItems().map(', $script);
+        // 卸载应用时同步清理任务栏固定项
+        $this->assertStringContainsString('state.workspace.taskbar_items = remainingPinned;', $script);
     }
 
     public function test_start_menu_application_cards_support_keyboard_activation(): void
@@ -120,28 +264,23 @@ class WebosWorkspaceApiTest extends WebosTestCase
         $this->assertStringContainsString('data-open-webos-settings', $view);
     }
 
-    public function test_catalog_exposes_app_root_icon_url_and_manifest_fallback(): void
+    /** 应用中心目录数据直接复用系统接口（与传统后台应用管理同一数据源），不再自建 catalog 接口 */
+    public function test_app_center_reuses_system_app_and_menu_apis(): void
     {
-        $this->actingAdmin();
-        AppModel::create([
-            'app_id' => 'cmspro.webos',
-            'name' => 'WebOS 管理桌面',
-            'version' => '1.3.3',
-            'icon' => 'fa fa-stale',
-            'path' => 'app/Apps/CmsproWebos',
-            'status' => 1,
-            'is_system' => false,
-            'manifest' => ['icon' => 'fa fa-stale'],
-        ]);
+        $script = file_get_contents(dirname(__DIR__, 2) . '/Assets/js/webos.js');
+        $view = file_get_contents(dirname(__DIR__, 2) . '/Views/Admin/desktop/index.blade.php');
 
-        $this->getJson('/admin/cmspro/webos/api/catalog')
-            ->assertOk()
-            ->assertJsonPath('data.applications.0.icon_url', url('/api/app/cmspro.webos/icon'))
-            ->assertJsonPath('data.applications.0.manifest_icon', 'fa fa-desktop')
-            ->assertJsonPath('data.applications.0.is_system', false);
+        $this->assertIsString($script);
+        $this->assertIsString($view);
+        $this->assertStringContainsString("api('/api/admin/apps')", $script);
+        $this->assertStringContainsString("api('/api/admin/menus/user')", $script);
+        // 安装记录：按操作类型筛选拉取系统接口
+        $this->assertStringContainsString("'/api/admin/app-logs?per_page=30'", $script);
+        $this->assertStringContainsString("'&operation=' + encodeURIComponent(state.recordsOperation)", $script);
+        $this->assertStringNotContainsString('data-catalog-url', $view);
     }
 
-    public function test_application_cards_fall_back_to_manifest_icon(): void
+    public function test_application_cards_fall_back_to_installed_icon(): void
     {
         $script = file_get_contents(dirname(__DIR__, 2) . '/Assets/js/webos.js');
 
@@ -150,7 +289,7 @@ class WebosWorkspaceApiTest extends WebosTestCase
         $this->assertStringContainsString('data-app-icon-fallback', $script);
         $this->assertStringContainsString('data-app-icon-fallback hidden data-src', $script);
         $this->assertStringContainsString('fallback.src = fallback.dataset.src;', $script);
-        $this->assertStringContainsString('app.manifest_icon || app.icon', $script);
+        $this->assertStringContainsString('var fallback = app.icon;', $script);
     }
 
     public function test_application_window_sidebar_can_collapse_and_hides_single_menu(): void
@@ -182,43 +321,181 @@ class WebosWorkspaceApiTest extends WebosTestCase
         $this->assertStringContainsString('.window-brand-icon', $stylesheet);
     }
 
+    /** 安装弹窗精简：默认加入系统菜单（不展示该选项），桌面快捷方式为可选，layui 风格无毛玻璃 */
     public function test_install_dialog_uses_terminal_aware_menu_mounting(): void
     {
         $script = file_get_contents(dirname(__DIR__, 2) . '/Assets/js/webos.js');
         $view = file_get_contents(dirname(__DIR__, 2) . '/Views/Admin/desktop/index.blade.php');
+        $stylesheet = file_get_contents(dirname(__DIR__, 2) . '/Assets/css/webos.css');
 
         $this->assertIsString($script);
         $this->assertIsString($view);
+        $this->assertIsString($stylesheet);
         $this->assertStringContainsString('/menu-terminals', $script);
         $this->assertStringContainsString('/prepare', $script);
         $this->assertStringContainsString('terminal_type=', $script);
         $this->assertStringContainsString('parent_menu_ids', $script);
         $this->assertStringContainsString('id="install-menu-parents"', $view);
+        $this->assertStringContainsString('安装后默认添加到系统菜单。', $view);
+        $this->assertStringContainsString('id="install-create-shortcut"', $view);
+        $this->assertStringContainsString('installCreateShortcut.checked', $script);
+        $this->assertStringNotContainsString('install_entry', $script);
+        $this->assertStringNotContainsString('install_entry', $view);
+        $this->assertStringContainsString('webos-dialog--plain', $view);
+        $this->assertStringContainsString('backdrop-filter: none', $stylesheet);
     }
 
-    public function test_catalog_exposes_config_flag_and_market_base_url(): void
+    /** 安装成功后询问启用（对齐传统后台）；已安装/未安装/应用更新点击应用名称进入本地详情 */
+    public function test_install_prompts_enable_and_local_app_detail(): void
+    {
+        $script = file_get_contents(dirname(__DIR__, 2) . '/Assets/js/webos.js');
+        $stylesheet = file_get_contents(dirname(__DIR__, 2) . '/Assets/css/webos.css');
+
+        $this->assertIsString($script);
+        $this->assertIsString($stylesheet);
+        // 安装成功后询问启用（confirmInstall 内调用，与后台 layer.confirm 一致）
+        $this->assertStringContainsString('promptEnableApp(target.app_id, target.name);', $script);
+        // 本地详情：三个列表的应用名称可点击，复用市场详情布局与返回按钮委托
+        $this->assertStringContainsString('function openLocalDetail(shell, appId, source)', $script);
+        $this->assertStringContainsString('data-local-detail', $script);
+        $this->assertStringContainsString('data-local-source="installed"', $script);
+        $this->assertStringContainsString("data-local-source=\"' + (mode === 'updates' ? 'updates' : 'local') + '\"", $script);
+        $this->assertStringContainsString('strong.app-card-title', $stylesheet);
+    }
+
+    /** 未安装列表：导出对等已安装、右上角 × 物理删除（悬停显示）；卸载/删除确认弹窗 layui 无毛玻璃 */
+    public function test_uninstalled_export_delete_and_plain_uninstall_dialog(): void
+    {
+        $script = file_get_contents(dirname(__DIR__, 2) . '/Assets/js/webos.js');
+        $stylesheet = file_get_contents(dirname(__DIR__, 2) . '/Assets/css/webos.css');
+
+        $this->assertIsString($script);
+        $this->assertIsString($stylesheet);
+        // 未安装卡片：安装按钮下提供导出（复用 exportAppPackage），卡片右上角 × 删除
+        $this->assertStringContainsString('data-export-id', $script);
+        $this->assertStringContainsString('data-export-source="local"', $script);
+        $this->assertStringContainsString('data-delete-app-id', $script);
+        $this->assertStringContainsString('app-card-remove', $stylesheet);
+        $this->assertStringContainsString('.app-card:hover .app-card-remove', $stylesheet);
+        // 未安装卡片右上角删除按钮：卡片右侧预留空间，避免操作按钮列与删除按钮重叠
+        $this->assertStringContainsString('.app-card.has-remove', $stylesheet);
+        // 已安装列表沿用后台应用管理的默认排序：安装/更新时间较新者在前
+        $this->assertStringContainsString('function sortInstalledApps(apps)', $script);
+        $this->assertStringContainsString('apps = sortInstalledApps(apps);', $script);
+        // 物理删除对标后台 deleteAppFiles：输入应用名确认后调用系统删除接口
+        $this->assertStringContainsString('function openDeleteFilesDialog(appId, appName)', $script);
+        $this->assertStringContainsString("'/delete'", $script);
+        $this->assertStringContainsString('此操作将永久删除应用的所有文件，此操作不可恢复！', $script);
+        // 卸载与删除确认弹窗均为 layui 精简风格（无毛玻璃）；管理入口弹窗同风格
+        $this->assertStringContainsString("elements.actionDialog.classList.toggle('webos-dialog--plain', options.plain === true)", $script);
+        $this->assertStringContainsString("kicker: '入口管理',", $script);
+        $this->assertStringContainsString("kicker: '入口管理',\n            title: '「' + appDisplayName(app) + '」应用入口',\n            plain: true,", $script);
+        // 卸载/禁用引导/删除对话宽度 660px
+        $this->assertStringContainsString("width: 'min(660px, calc(100vw - 60px))'", $script);
+        $this->assertStringContainsString('plain: true,', $script);
+        // 输入匹配点亮确认按钮：is-armed 脉冲动画 + 未匹配灰显
+        $this->assertStringContainsString("submit.classList.toggle('is-armed', matched);", $script);
+        $this->assertStringContainsString('.webos-button.danger.is-armed {', $stylesheet);
+        $this->assertStringContainsString('@keyframes webos-button-armed {', $stylesheet);
+        $this->assertStringContainsString('.webos-button.danger:disabled {', $stylesheet);
+        // 安装勾选创建桌面快捷方式时，快捷方式标题使用应用名称而非菜单名称
+        $this->assertStringContainsString("addDesktopEntry(Object.assign({}, entry, { title: target.name || entry.title }));", $script);
+        // 卸载执行期间显示加载图标（无文字）；删除显示加载层进度提示
+        $this->assertStringContainsString('var loadIndex = layer.load(2, { time: 0 });', $script);
+        $this->assertStringContainsString("layer.load(2, { content: '正在删除「' + appName + '」的应用文件...', time: 0 });", $script);
+    }
+
+    public function test_notification_center_and_records_ux(): void
+    {
+        $script = file_get_contents(dirname(__DIR__, 2) . '/Assets/js/webos.js');
+        $view = file_get_contents(dirname(__DIR__, 2) . '/Views/Admin/desktop/index.blade.php');
+        $stylesheet = file_get_contents(dirname(__DIR__, 2) . '/Assets/css/webos.css');
+
+        $this->assertIsString($script);
+        $this->assertIsString($view);
+        $this->assertIsString($stylesheet);
+
+        // 通知中心：待办 / 通知 Tab 分离 + 待办计数徽标 + 未读蓝点 + 底部全部已读与查看全部
+        $this->assertStringContainsString('data-notification-tab="todos"', $view);
+        $this->assertStringContainsString('data-notification-tab="notifications"', $view);
+        $this->assertStringContainsString('notification-todo-list', $view);
+        $this->assertStringContainsString('notification-footer', $view);
+        $this->assertStringContainsString('function setNotificationTab(', $script);
+        $this->assertStringContainsString("'/api/admin/notifications/todo-read'", $script);
+        $this->assertStringContainsString('notification-dot', $script);
+        $this->assertStringContainsString('.notification-tab.is-active::after', $stylesheet);
+        $this->assertStringContainsString('.notification-todo-badge', $stylesheet);
+        $this->assertStringContainsString('.notification-footer', $stylesheet);
+        // 底部「查看全部」在 WebOS 通知中心窗口中打开（左侧待办/通知菜单 + 对应列表）
+        $this->assertStringContainsString('data-open-notification-page', $view);
+        $this->assertStringContainsString("openEntry(notificationCenterEntry());", $script);
+        $this->assertStringContainsString("id: 'webos-notification-page',", $script);
+        $this->assertStringContainsString("special: 'notifications'", $script);
+        $this->assertStringContainsString('NOTIFICATION_CENTER_TABS = [', $script);
+        $this->assertStringContainsString('function notificationCenterSidebarMarkup()', $script);
+        $this->assertStringContainsString('function renderNotificationCenter(', $script);
+        $this->assertStringContainsString("var url = '/api/admin/notifications?per_page=15&page=' + page;", $script);
+        // 窗口工具栏右侧：全部/已读/未读筛选 + 全部已读按钮（待办逐条标记，通知走系统 read-all）
+        $this->assertStringContainsString('function notificationToolbarActionsMarkup()', $script);
+        $this->assertStringContainsString('data-notification-filter', $script);
+        $this->assertStringContainsString('data-notification-read-all', $script);
+        $this->assertStringContainsString('function markAllNotificationCenterRead(button)', $script);
+        $this->assertStringContainsString('notificationCenterState.noticeFilter === \'unread\'', $script);
+        // 通知标记已读后刷新任务栏徽标（/badge 驱动）：窗口行与面板行均已接入 loadNotifications
+        $this->assertStringContainsString('data-notification-id=', $script);
+        $this->assertStringContainsString('.then(loadNotifications)', $script);
+        $this->assertStringContainsString('.notification-filter-btn.is-active {', $stylesheet);
+        $this->assertStringContainsString("'/read', { method: 'POST' })", $script);
+        $this->assertStringContainsString('data-notification-goto-page', $script);
+        $this->assertStringContainsString('.webos-notifications-shell {', $stylesheet);
+        // 通知/待办点击优先在 WebOS 内打开对应应用窗口（按路径匹配菜单入口），无匹配回退新标签页
+        $this->assertStringContainsString('function openLinkInWebos(link) {', $script);
+        $this->assertStringContainsString('openLinkInWebos(todo.getAttribute(\'href\'));', $script);
+        $this->assertStringContainsString('openLinkInWebos(item.dataset.notificationLink);', $script);
+        $this->assertStringContainsString('openLinkInWebos(noticeLink);', $script);
+        // 通知中心待办数据源：WebOS 自身不注册演示数据，由其他应用通过系统 hook 接入；
+        // 窗口待办列表显示全部（含已读）走应用侧全量接口 + 已读弱化样式
+        $this->assertStringContainsString("'/admin/cmspro/webos/api/all-todos'", $script);
+        $this->assertStringContainsString("class=\"notification-todo' + (isRead ? ' is-read' : '')", $script);
+        $this->assertStringContainsString('.notification-todo.is-read {', $stylesheet);
+        $this->assertStringContainsString('public function allTodos(): JsonResponse', file_get_contents(dirname(__DIR__, 2) . '/Controllers/Admin/WebosController.php'));
+        $this->assertStringContainsString("Route::get('/all-todos', [WebosController::class, 'allTodos'])", file_get_contents(dirname(__DIR__, 2) . '/Routes/admin.php'));
+
+        // 安装记录：搜索（名称/标识）与类型筛选移至右上角工具区 + 日期分组 + 右侧操作详情
+        $this->assertStringContainsString("records: '搜索应用名称或标识'", $script);
+        $this->assertStringContainsString("state.appCenterTab === 'records'", $script);
+        $this->assertStringNotContainsString('data-records-search', $script);
+        $this->assertStringContainsString('data-records-operation', $script);
+        $this->assertStringContainsString("String(recordAppName(entry.log.app_id) || '').toLowerCase().indexOf(keyword) >= 0", $script);
+        $this->assertStringNotContainsString('records-toolbar', $script);
+        $this->assertStringNotContainsString('records-toolbar', $stylesheet);
+        $this->assertStringContainsString('function loadRecordsTab(', $script);
+        $this->assertStringContainsString('function renderRecordGroups(', $script);
+        $this->assertStringContainsString('function renderRecordDetail(', $script);
+        $this->assertStringContainsString("label = match[1] === todayStamp ? '今天' : (match[1] === yesterdayStamp ? '昨天' : '更早');", $script);
+        $this->assertStringContainsString('.records-layout {', $stylesheet);
+        $this->assertStringContainsString('.records-detail {', $stylesheet);
+        $this->assertStringContainsString('.record-detail-error {', $stylesheet);
+        // 记录行显示应用名称（目录 → 市场缓存 → 应用标识）；图标按全局优先级：服务端 icon.svg → icon.png → manifest icon → 通用占位
+        $this->assertStringContainsString('function recordAppName(', $script);
+        $this->assertStringContainsString('return (app && (app.name || app.title)) || appId;', $script);
+        $this->assertStringContainsString('function fillRecordAppInfo(', $script);
+        $this->assertStringContainsString("'/api/admin/apps/available'", $script);
+        $this->assertStringContainsString("'/api/admin/market/apps/' + encodeURIComponent(appId)", $script);
+        $this->assertStringContainsString("src=\"/api/app/' + encodeURIComponent(appId) + '/icon\"", $script);
+        $this->assertStringContainsString('data-app-icon-primary', $script);
+        $this->assertStringContainsString('data-app-icon-fallback', $script);
+        $this->assertStringContainsString('.record-row-icon-inner {', $stylesheet);
+        $this->assertStringContainsString('object-fit: contain;', $stylesheet);
+        // 旧表格实现已废弃
+        $this->assertStringNotContainsString('records-table', $script);
+        $this->assertStringNotContainsString('status-pill', $stylesheet);
+    }
+
+    public function test_market_base_url_is_passed_to_frontend(): void
     {
         $this->actingAdmin();
         config(['apps.market.api_url' => 'https://v5.cmspro.cn/']);
-        AppModel::create([
-            'app_id' => 'cmspro.webos',
-            'name' => 'WebOS 管理桌面',
-            'version' => '1.4.0',
-            'icon' => 'fa fa-stale',
-            'path' => 'app/Apps/CmsproWebos',
-            'status' => 1,
-            'is_system' => false,
-            'manifest' => [
-                'icon' => 'fa fa-desktop',
-                'config_groups' => [
-                    ['title' => '基础配置', 'name' => 'basic'],
-                ],
-            ],
-        ]);
-
-        $this->getJson('/admin/cmspro/webos/api/catalog')
-            ->assertOk()
-            ->assertJsonPath('data.applications.0.has_config', true);
 
         $this->get('/admin/cmspro/webos')
             ->assertOk()
@@ -474,6 +751,10 @@ class WebosWorkspaceApiTest extends WebosTestCase
         $this->assertStringContainsString('function closeDesktopContextMenu()', $script);
         $this->assertStringContainsString('function runDesktopContextAction(action, iconId)', $script);
         $this->assertStringContainsString("['删除图标', 'fa-thumb-tack', 'remove']", $script);
+        // 应用中心为内置入口：右键不显示删除项，removeDesktopEntry 对其拦截兜底
+        $this->assertStringContainsString("context.entry.id !== 'webos-app-center'", $script);
+        $this->assertStringContainsString("if (id === 'webos-app-center') {", $script);
+        $this->assertStringContainsString('应用中心为内置入口，不允许删除', $script);
         $this->assertStringContainsString("['卸载应用', 'fa-times-circle', 'uninstall', 'danger']", $script);
         $this->assertStringContainsString('data-desktop-action="', $script);
         $this->assertStringContainsString('openUninstallDialog(context.application)', $script);
@@ -938,6 +1219,8 @@ class WebosWorkspaceApiTest extends WebosTestCase
         $this->assertStringContainsString('local_file_name: res.data.file_name', $script);
         // 从服务器本地文件恢复入口
         $this->assertStringContainsString('function doLocalRestore(', $script);
+        // 备份管理弹层宽高 90%
+        $this->assertStringContainsString("title: '「' + appDisplayName(app) + '」备份管理',\n            area: ['90%', '90%']", $script);
     }
 
     /** 文档：照抄后台三栏预览（文件树 + 正文 + TOC），含 hljs 高亮与滚动联动 */
@@ -961,6 +1244,10 @@ class WebosWorkspaceApiTest extends WebosTestCase
         $this->assertStringContainsString('highlight.js/highlight.min.js', $view);
         $this->assertStringContainsString('highlight.js/styles/github-dark.min.css', $view);
         $this->assertStringContainsString('highlight.js/languages/php.min.js', $view);
+        // 文档预览弹层宽高 90%；左侧文件名超出一行省略号截断不换行
+        $this->assertStringContainsString("' - 文档预览',\n            area: ['90%', '90%']", $script);
+        $this->assertStringContainsString('.doc-tree-dir span,', $stylesheet);
+        $this->assertStringContainsString('text-overflow: ellipsis;', $stylesheet);
     }
 
     /** 头像：任务栏与账号菜单始终渲染 img，未上传头像时兜底系统默认头像图 */
@@ -1023,7 +1310,7 @@ class WebosWorkspaceApiTest extends WebosTestCase
 
         $this->assertIsString($script);
         $this->assertIsString($stylesheet);
-        // 树的应用节点存真实应用引用并复用 applicationIconMarkup（含 icon_url → manifest_icon 兜底链）
+        // 树的应用节点存真实应用引用并复用 applicationIconMarkup（icon_url 优先，应用 icon 字段兜底）
         $this->assertStringContainsString('application ? application.name : appId,', $script);
         $this->assertStringContainsString("applicationIconMarkup(node.application, 'entry-tree-app-icon is-app-icon')", $script);
         // 桌面入口行与可用菜单叶子/分支复用 entryIconMarkup（应用项自动带 is-app-icon 图片链）
@@ -1102,7 +1389,7 @@ class WebosWorkspaceApiTest extends WebosTestCase
         $this->assertIsString($stylesheet);
         $this->assertStringContainsString('>手动升级</button>', $script);
         $this->assertStringContainsString("items.push(['export', 'fa-download', '导出']", $script);
-        $this->assertStringContainsString('title="\' + escapeHtml(appName)', $script);
+        $this->assertStringContainsString('data-local-source="installed" title="\'', $script);
         $this->assertStringContainsString('<span title="\'', $script);
         $this->assertStringContainsString('escapeHtml(description)', $script);
         $this->assertStringContainsString('function setStatusToggleBusy(button, busy)', $script);
