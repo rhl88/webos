@@ -1129,4 +1129,22 @@ class WebosWorkspaceApiTest extends WebosTestCase
         $this->assertStringContainsString('requestId !== marketRequestSequence', $script);
         $this->assertStringContainsString("error.name === 'AbortError'", $script);
     }
+
+    /** 模态弹窗：打开后接管焦点，Tab 不得越过遮罩，关闭后恢复触发位置 */
+    public function test_modal_dialogs_manage_and_restore_keyboard_focus(): void
+    {
+        $script = file_get_contents(dirname(__DIR__, 2) . '/Assets/js/webos.js');
+
+        $this->assertIsString($script);
+        $this->assertStringContainsString('var modalFocusableSelector =', $script);
+        $this->assertStringContainsString('function showModalDialog(dialog)', $script);
+        $this->assertStringContainsString('function hideModalDialog(dialog)', $script);
+        $this->assertStringContainsString('function trapModalFocus(event, dialog)', $script);
+        $this->assertStringContainsString('dialog._webosReturnFocus = document.activeElement;', $script);
+        $this->assertStringContainsString('focusables[0].focus();', $script);
+        $this->assertStringContainsString('returnFocus.focus();', $script);
+        $this->assertStringContainsString("if (event.key === 'Tab' && activeDialog)", $script);
+        $this->assertStringContainsString('hideModalDialog(elements.installDialog);', $script);
+        $this->assertStringContainsString('showModalDialog(elements.actionDialog);', $script);
+    }
 }

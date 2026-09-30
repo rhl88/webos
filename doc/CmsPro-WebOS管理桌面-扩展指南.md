@@ -1,6 +1,6 @@
 # CmsPro WebOS 管理桌面 · 扩展指南
 
-> 文档版本：1.8.2 | 更新日期：2026-09-30
+> 文档版本：1.8.3 | 更新日期：2026-09-30
 > 适用应用：CmsproWebos v1.5.5+
 
 ## 一、概述
@@ -175,6 +175,7 @@ WebOS 不新增应用管理接口：应用中心的市场安装、本地安装�
 
 | 版本 | 日期 | 更新人 | 说明 |
 |---|---|---|---|
+| 1.8.3 | 2026-09-30 | CmsPro | 新增 `showModalDialog()` / `hideModalDialog()` / `trapModalFocus()` 统一管理原生 WebOS 模态弹窗焦点：打开后聚焦首个可用控件，Tab 正反向循环限制在弹窗内，Esc 只关闭顶层弹窗，关闭后通过 `_webosReturnFocus` 恢复触发位置。`closeAppRowMenus()` 在移除获得焦点的菜单前先聚焦对应“更多操作”按钮，确保后续弹窗能记录稳定的返回目标。 |
 | 1.8.2 | 2026-09-30 | CmsPro | `createFrameScheduler()` 将窗口拖拽与八方向缩放的高频 `pointermove` 合并到 `requestAnimationFrame`，结束时刷新最后一帧，并处理 `pointercancel` / `lostpointercapture`；CSS 新增三档动效变量、窗口/面板/弹层入场动效与全局键盘焦点环，移除 `transition: all`，系统 `prefers-reduced-motion` 与 WebOS 动效开关均可关闭动画。应用市场以全局单调请求序号和 `AbortController` 在切换分类、搜索或离开市场时取消旧请求，防止迟到响应覆盖新结果。已安装列表调整操作层级、文本提示与状态按钮忙碌态；图片增加异步解码，远程市场图标增加懒加载。控制器以已发布 CSS/JS 的最新修改时间生成资源版本参数，避免应用升级后浏览器继续使用旧缓存。 |
 | 1.8.1 | 2026-09-29 | CmsPro | 任务栏与账号菜单头像照抄后台 `layouts/admin.blade.php` 写法，`avatar ?: asset('Admin/images/avatar.png')` 始终渲染 `<img>`，未上传时显示系统默认头像；`bootstrapDesktopItems()` 初始数据只固定「应用中心」，不再按关键词挑选系统菜单；修复 `buildEntryTree()` 应用节点不收集应用菜单的问题（新增 `appNodeOf` / `collectAppMenu`，`fresh` 判据：首次创建应用节点时其根菜单子项直接铺开，同一应用后续顶级菜单以自身名称为子分组）；展开/收起应用节点时重渲染前后保持列表滚动位置；入口管理树的应用节点（`appNodeOf` 存 `application` 引用，`entryTreeNodeMarkup` 按节点类型分发：应用节点用 `applicationIconMarkup`、分支保持字体图标）与桌面入口行（`renderEntryManager` 改用 `entryIconMarkup(findEntry(item.id) || item)`）显示应用图标（icon_url → manifest_icon 兜底链与全局规则一致，纯菜单项保持字体图标）；`webos.css` 补 `.entry-row .entry-row-icon` / `.entry-tree-toggle .start-app-item-icon` / `.entry-tree-toggle .entry-tree-app-icon` 38px 尺寸规则。备份弹窗工具栏照抄后台移到顶部并补齐“导入恢复”：`renderBackupDialog` 顶部渲染 `backupToolbarMarkup(count, appId, appName)`（左「共 N 条备份记录 + 导入恢复」/ 右「立即备份」）、列表在下，`#dlgBtnImportBackup` 绑定 `openImportDialog`；移植后台 `openImportDialog` / `bindImportDialogEvents` / `loadServerBackupFiles` / `doLocalRestore`（上传文件与从服务器选择两个 Tab，`.zip` 上传 `/backups/upload-file` 成功后 `doRestoreWithProgress({ local_file_name })` 分步恢复，服务器列表懒加载 `GET /backups/local-files`，隐藏 fileInput 随弹层 `remove` 清理）。文档同步：入口管理与账号菜单描述更新 |
 | 1.8.0 | 2026-09-29 | CmsPro | 应用中心「已安装」的导出、手动升级、备份、文档四项操作照抄传统后台 `admin/app/index.blade.php` 实现：导出改 XHR blob 并解析 `Content-Disposition`、识别 JSON 错误体；上传安装与手动升级共用拖拽/点选弹层（`fileInput` 随弹层 `end` 销毁，删除桌面页静态 `#app-package-input`）；备份改三步分卷并新增三步恢复（单表最多重试 3 次）、下载与删除；文档改文件树 + 正文 + 目录三栏预览，代码块接入 highlight.js。新增公共 helper `layuiLayer` / `layuiJquery` / `legacyAjax` / `formatSize` / `showErrorDialog` / `resolveBlobFileName` / `saveBlobAsFile` / `readBlobError`；用 `backupLayerStack` 替代后台的 `layer.closeAll()` 以免误关应用窗口；清理 `handleAppCenterAction` 的 7 个失效委托分支、`state.actionApp`（改 `state.docAppId`）、`elements.packageInput` 与孤儿函数 `downloadFile`。文档同步：桌面页资源环境补充 `marked` / `highlight.js`，“复用系统接口”一节新增四项操作的接口与调用要点对照表 |

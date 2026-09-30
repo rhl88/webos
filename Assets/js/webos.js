@@ -88,6 +88,76 @@
         toastRegion: document.getElementById('webos-toast-region')
     };
 
+    var modalFocusableSelector = [
+        'button:not([disabled])',
+        'a[href]',
+        'input:not([disabled]):not([type="hidden"])',
+        'select:not([disabled])',
+        'textarea:not([disabled])',
+        '[tabindex]:not([tabindex="-1"])'
+    ].join(',');
+
+    function modalFocusables(dialog) {
+        return Array.prototype.filter.call(dialog.querySelectorAll(modalFocusableSelector), function (element) {
+            return !element.hidden && element.getClientRects().length > 0;
+        });
+    }
+
+    function showModalDialog(dialog) {
+        dialog._webosReturnFocus = document.activeElement;
+        dialog.hidden = false;
+        window.requestAnimationFrame(function () {
+            if (dialog.hidden) {
+                return;
+            }
+            var focusables = modalFocusables(dialog);
+            if (focusables.length) {
+                focusables[0].focus();
+            }
+        });
+    }
+
+    function hideModalDialog(dialog) {
+        if (!dialog || dialog.hidden) {
+            return;
+        }
+        var returnFocus = dialog._webosReturnFocus;
+        dialog._webosReturnFocus = null;
+        dialog.hidden = true;
+        if (returnFocus && returnFocus.isConnected && typeof returnFocus.focus === 'function') {
+            window.requestAnimationFrame(function () { returnFocus.focus(); });
+        }
+    }
+
+    function activeModalDialog() {
+        if (!elements.actionDialog.hidden) {
+            return elements.actionDialog;
+        }
+        return elements.installDialog.hidden ? null : elements.installDialog;
+    }
+
+    function trapModalFocus(event, dialog) {
+        var focusables = modalFocusables(dialog);
+        if (!focusables.length) {
+            event.preventDefault();
+            return;
+        }
+        var first = focusables[0];
+        var last = focusables[focusables.length - 1];
+        if (!dialog.contains(document.activeElement)) {
+            event.preventDefault();
+            first.focus();
+            return;
+        }
+        if (event.shiftKey && document.activeElement === first) {
+            event.preventDefault();
+            last.focus();
+        } else if (!event.shiftKey && document.activeElement === last) {
+            event.preventDefault();
+            first.focus();
+        }
+    }
+
     function escapeHtml(value) {
         return String(value == null ? '' : value).replace(/[&<>'"]/g, function (character) {
             return {
@@ -2691,8 +2761,18 @@
     }
 
     function closeAppRowMenus() {
-        document.querySelectorAll('.row-menu').forEach(function (menu) { menu.remove(); });
+        var focusTarget = null;
+        document.querySelectorAll('.row-menu').forEach(function (menu) {
+            if (menu.contains(document.activeElement)) {
+                var row = menu.closest('.install-row');
+                focusTarget = row ? row.querySelector('[data-app-more]') : null;
+            }
+            menu.remove();
+        });
         document.querySelectorAll('[data-app-more]').forEach(function (button) { button.setAttribute('aria-expanded', 'false'); });
+        if (focusTarget && focusTarget.isConnected) {
+            focusTarget.focus();
+        }
     }
 
     function appRowMenuItems(app) {
@@ -2999,7 +3079,7 @@
             + escapeHtml(app.description || '安装后可在 WebOS 中打开此应用') + '</span><span>版本 ' + escapeHtml(app.version || app.latest_version || '-') + '</span></div>';
         renderInstallMenuStatus('fa-circle-o-notch fa-spin', '正在识别应用菜单…', false);
         elements.confirmInstall.disabled = true;
-        elements.installDialog.hidden = false;
+        showModalDialog(elements.installDialog);
         loadInstallMenuFields(state.installTarget, source, requestId);
     }
 
@@ -3024,7 +3104,7 @@
         });
         var body = { parent_menu_ids: parentMenuIds };
         api(url, { method: 'POST', body: body }).then(function () {
-            elements.installDialog.hidden = true;
+            hideModalDialog(elements.installDialog);
             toast('应用安装成功');
             return refreshCatalog();
         }).then(function () {
@@ -3065,11 +3145,11 @@
         elements.actionDialogBody.innerHTML = options.body || '';
         elements.actionDialogFooter.innerHTML = options.footer
             || '<button class="webos-button secondary" type="button" data-action="close-action">关闭</button>';
-        elements.actionDialog.hidden = false;
+        showModalDialog(elements.actionDialog);
     }
 
     function closeActionDialog() {
-        elements.actionDialog.hidden = true;
+        hideModalDialog(elements.actionDialog);
         elements.actionDialogBody.innerHTML = '';
         elements.actionDialogFooter.innerHTML = '';
     }
@@ -5319,7 +5399,7 @@
                 if (name === 'close-start') { closePanels(); }
                 if (name === 'close-calendar') { closePanels(); }
                 if (name === 'open-password-dialog') { closePanels(); openPasswordDialog(); }
-                if (name === 'close-install') { elements.installDialog.hidden = true; }
+                if (name === 'close-install') { hideModalDialog(elements.installDialog); }
                 if (name === 'close-action') { closeActionDialog(); }
                 if (name === 'lock-desktop') { closePanels(); elements.lockScreen.hidden = false; updateClock(); }
                 if (name === 'unlock-desktop') { elements.lockScreen.hidden = true; }
@@ -5721,6 +5801,21 @@
                 return;
             }
 
+            var activeDialog = activeModalDialog();
+            if (event.key === 'Tab' && activeDialog) {
+                trapModalFocus(event, activeDialog);
+                return;
+            }
+            if (event.key === 'Escape' && activeDialog) {
+                event.preventDefault();
+                if (activeDialog === elements.actionDialog) {
+                    closeActionDialog();
+                } else {
+                    hideModalDialog(elements.installDialog);
+                }
+                return;
+            }
+
             var startItem = event.target.closest('.start-app-item[data-menu-id]');
             if (startItem && event.target === startItem && (event.key === 'Enter' || event.key === ' ')) {
                 event.preventDefault();
@@ -5731,7 +5826,6 @@
                 closePanels();
                 closeAppRowMenus();
                 closeDesktopContextMenu();
-                elements.installDialog.hidden = true;
                 closeActionDialog();
             }
         });
