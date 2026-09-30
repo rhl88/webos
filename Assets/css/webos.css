@@ -12,6 +12,11 @@
     --webos-taskbar: rgba(8, 38, 67, 0.90);
     --webos-shadow: 0 18px 56px rgba(9, 37, 68, 0.24);
     --webos-radius: 12px;
+    --webos-focus: #0b83e5;
+    --motion-fast: 120ms;
+    --motion-standard: 180ms;
+    --motion-emphasized: 240ms;
+    --motion-ease: cubic-bezier(0.2, 0, 0, 1);
     --taskbar-height: 50px;
     --taskbar-size: 50px;
 }
@@ -38,6 +43,37 @@ select {
 
 button {
     color: inherit;
+}
+
+button:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible,
+[tabindex]:focus-visible {
+    outline: 2px solid var(--webos-focus);
+    outline-offset: 2px;
+}
+
+@keyframes webos-window-enter {
+    from {
+        opacity: 0;
+        transform: translateY(8px) scale(0.985);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+    }
+}
+
+@keyframes webos-panel-enter {
+    from {
+        opacity: 0;
+        transform: translateY(6px) scale(0.99);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+    }
 }
 
 .webos-desktop {
@@ -184,10 +220,21 @@ button {
     background: #fff;
     box-shadow: var(--webos-shadow);
     pointer-events: auto;
+    animation: webos-window-enter var(--motion-emphasized) var(--motion-ease) both;
 }
 
 .app-window.is-focused {
     box-shadow: 0 22px 68px rgba(4, 31, 61, 0.35);
+}
+
+.app-window.is-window-gesturing {
+    animation: none;
+    transition: none !important;
+    will-change: left, top, width, height;
+}
+
+.app-window.is-window-gesturing iframe {
+    pointer-events: none;
 }
 
 .app-window.is-minimized {
@@ -765,6 +812,13 @@ button {
 .lock-screen[hidden],
 .viewport-warning[hidden] {
     display: none !important;
+}
+
+.webos-panel,
+.row-menu,
+.desktop-context-menu {
+    transform-origin: bottom left;
+    animation: webos-panel-enter var(--motion-standard) var(--motion-ease) both;
 }
 
 .start-panel {
@@ -1423,6 +1477,11 @@ button {
     box-shadow: 0 26px 80px rgba(2, 25, 52, 0.34);
 }
 
+.webos-dialog:not([hidden]) .dialog-card {
+    transform-origin: center;
+    animation: webos-window-enter var(--motion-emphasized) var(--motion-ease) both;
+}
+
 .dialog-header {
     display: flex;
     align-items: flex-start;
@@ -1687,7 +1746,9 @@ button {
     color: #4b5f6d;
     font-size: 13px;
     cursor: pointer;
-    transition: all .18s ease;
+    transition: border-color var(--motion-standard) var(--motion-ease),
+        color var(--motion-standard) var(--motion-ease),
+        background-color var(--motion-standard) var(--motion-ease);
 }
 
 .settings-tab i {
@@ -3077,6 +3138,9 @@ button {
     *::before,
     *::after {
         scroll-behavior: auto !important;
+        animation-duration: 0.001ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.001ms !important;
     }
 }
 
@@ -3173,7 +3237,7 @@ button {
 .install-row {
     position: relative;
     display: grid;
-    grid-template-columns: minmax(0, 1fr) 92px 252px;
+    grid-template-columns: minmax(0, 1fr) 92px 202px;
     align-items: center;
     min-height: 76px;
     padding: 10px 14px;
@@ -3274,6 +3338,15 @@ button {
 
 .status-switch[aria-pressed="true"] > i::after {
     transform: translateX(17px);
+}
+
+.status-switch[aria-busy="true"] {
+    opacity: 0.62;
+    cursor: wait;
+}
+
+.status-switch[aria-busy="true"] > i {
+    box-shadow: 0 0 0 3px rgba(22, 186, 170, 0.14);
 }
 
 .small-action.more {
@@ -3411,7 +3484,8 @@ button {
     background: #fafafa;
     cursor: pointer;
     text-align: center;
-    transition: all 0.3s;
+    transition: border-color var(--motion-standard) var(--motion-ease),
+        background-color var(--motion-standard) var(--motion-ease);
 }
 
 .app-upload-zone:hover,
@@ -3429,7 +3503,8 @@ button {
     margin-bottom: 10px;
     color: #c0c4cc;
     font-size: 40px;
-    transition: all 0.3s;
+    transition: color var(--motion-standard) var(--motion-ease),
+        transform var(--motion-emphasized) var(--motion-ease);
 }
 
 .app-upload-text {
@@ -3489,7 +3564,8 @@ button {
     background: none;
     cursor: pointer;
     font-size: 16px;
-    transition: all 0.2s;
+    transition: color var(--motion-fast) var(--motion-ease),
+        background-color var(--motion-fast) var(--motion-ease);
 }
 
 .app-upload-file-remove:hover {
@@ -3935,6 +4011,6 @@ button {
 
 @media (max-width: 1180px) {
     .install-row {
-        grid-template-columns: minmax(0, 1fr) 84px 236px;
+        grid-template-columns: minmax(0, 1fr) 84px 192px;
     }
 }

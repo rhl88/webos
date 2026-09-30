@@ -45,7 +45,25 @@ class WebosController extends Controller
                 'baseUrl' => url('/'),
             ],
             'marketBaseUrl' => $this->marketBaseUrl(),
+            'webosAssetVersion' => $this->assetVersion(),
         ]);
+    }
+
+    /**
+     * 使用已发布资源的最新修改时间刷新浏览器缓存，避免应用升级后继续执行旧版 CSS/JS。
+     */
+    protected function assetVersion(): int
+    {
+        $version = 1;
+
+        foreach (['css/webos.css', 'js/webos.js'] as $asset) {
+            $path = public_path('apps/cmspro.webos/' . $asset);
+            if (is_file($path)) {
+                $version = max($version, (int) filemtime($path));
+            }
+        }
+
+        return $version;
     }
 
     /**

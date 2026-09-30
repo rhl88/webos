@@ -12,7 +12,7 @@
     <link rel="stylesheet" href="{{ asset('Admin/css/reset.css') }}">
     {{-- 应用文档预览的代码高亮主题，与传统后台 admin/app/index.blade.php 保持一致 --}}
     <link rel="stylesheet" href="{{ asset('CmsProUi/component/highlight.js/styles/github-dark.min.css') }}">
-    <link rel="stylesheet" href="{{ asset('apps/cmspro.webos/css/webos.css') }}">
+    <link rel="stylesheet" href="{{ asset('apps/cmspro.webos/css/webos.css') }}?v={{ $webosAssetVersion }}">
     @include('admin.partials.permission-script')
 </head>
 <body>
@@ -260,6 +260,6 @@ layui.use(['element', 'form', 'jquery', 'layer', 'toast', 'button', 'popup'], fu
 <script src="{{ asset('CmsProUi/component/highlight.js/languages/php.min.js') }}"></script>
 <script src="{{ asset('CmsProUi/component/highlight.js/languages/sql.min.js') }}"></script>
 <script src="{{ asset('CmsProUi/component/highlight.js/languages/xml.min.js') }}"></script>
-<script src="{{ asset('apps/cmspro.webos/js/webos.js') }}"></script>
+<script src="{{ asset('apps/cmspro.webos/js/webos.js') }}?v={{ $webosAssetVersion }}"></script>
 </body>
 </html>

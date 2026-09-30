@@ -525,12 +525,10 @@ class WebosWorkspaceApiTest extends WebosTestCase
         $this->assertStringContainsString("'/disable'", $script);
         $this->assertStringContainsString('data-app-action="', $script);
         $this->assertStringContainsString('data-app-action="manual-upgrade" data-app-id="', $script);
-        $this->assertStringContainsString('data-app-action="export" data-app-id="', $script);
-        $this->assertStringContainsString('>手动</button>', $script);
-        $this->assertStringContainsString('>导出</button>', $script);
+        $this->assertStringContainsString('>手动升级</button>', $script);
+        $this->assertStringContainsString("['export', 'fa-download', '导出']", $script);
         $this->assertStringContainsString("['manage-entry', 'fa-th', '管理入口']", $script);
         $this->assertStringContainsString("if (action === 'manage-entry')", $script);
-        $this->assertStringNotContainsString("'手动升级'", $script);
         $this->assertStringContainsString("['backup', 'fa-archive', '备份']", $script);
         $this->assertStringContainsString("['docs', 'fa-book', '文档']", $script);
         $this->assertStringContainsString("['settings', 'fa-cog', '设置']", $script);
@@ -626,6 +624,18 @@ class WebosWorkspaceApiTest extends WebosTestCase
         // 与传统后台一致：jQuery 由 layui 内部持有，不向全局暴露 $
         $this->assertStringNotContainsString('window.jQuery =', $view);
         $this->assertStringNotContainsString('window.$ =', $view);
+    }
+
+    public function test_webos_assets_use_the_published_file_timestamp_to_bust_browser_cache(): void
+    {
+        $controller = file_get_contents(dirname(__DIR__, 2) . '/Controllers/Admin/WebosController.php');
+        $view = file_get_contents(dirname(__DIR__, 2) . '/Views/Admin/desktop/index.blade.php');
+
+        $this->assertIsString($controller);
+        $this->assertIsString($view);
+        $this->assertStringContainsString("'webosAssetVersion' => \$this->assetVersion()", $controller);
+        $this->assertStringContainsString("asset('apps/cmspro.webos/css/webos.css') }}?v={{ \$webosAssetVersion }}", $view);
+        $this->assertStringContainsString("asset('apps/cmspro.webos/js/webos.js') }}?v={{ \$webosAssetVersion }}", $view);
     }
 
     public function test_default_window_entry_skips_blank_and_layer_menus(): void
@@ -1056,5 +1066,67 @@ class WebosWorkspaceApiTest extends WebosTestCase
         $this->assertStringContainsString('.entry-row:not(.is-tree-leaf) .entry-row-icon:not(.is-app-icon)', $stylesheet);
         $this->assertStringContainsString('background: #178fe5', $stylesheet);
         $this->assertStringContainsString('color: #fff', $stylesheet);
+    }
+
+    /** 企业级动效：窗口拖拽与缩放需按帧合并，并完整尊重系统减少动态效果偏好 */
+    public function test_window_gestures_and_motion_are_optimized(): void
+    {
+        $script = file_get_contents(dirname(__DIR__, 2) . '/Assets/js/webos.js');
+        $stylesheet = file_get_contents(dirname(__DIR__, 2) . '/Assets/css/webos.css');
+
+        $this->assertIsString($script);
+        $this->assertIsString($stylesheet);
+        $this->assertStringContainsString('function createFrameScheduler(callback)', $script);
+        $this->assertStringContainsString('window.requestAnimationFrame', $script);
+        $this->assertStringContainsString("element.classList.add('is-window-gesturing')", $script);
+        $this->assertStringContainsString("titlebar.addEventListener('pointercancel', end)", $script);
+        $this->assertStringContainsString("handle.addEventListener('pointercancel', end)", $script);
+        $this->assertStringContainsString('--motion-fast: 120ms;', $stylesheet);
+        $this->assertStringContainsString('--motion-standard: 180ms;', $stylesheet);
+        $this->assertStringContainsString('--motion-emphasized: 240ms;', $stylesheet);
+        $this->assertStringContainsString('@keyframes webos-window-enter', $stylesheet);
+        $this->assertStringContainsString('@keyframes webos-panel-enter', $stylesheet);
+        $this->assertStringContainsString('outline: 2px solid var(--webos-focus);', $stylesheet);
+        $this->assertStringContainsString('animation-duration: 0.001ms !important;', $stylesheet);
+        $this->assertStringContainsString('transition-duration: 0.001ms !important;', $stylesheet);
+        $this->assertStringNotContainsString('transition: all', $stylesheet);
+    }
+
+    /** 已安装应用：操作层级清晰、长文本可查看，并防止状态切换重复提交 */
+    public function test_installed_application_rows_have_enterprise_interaction_feedback(): void
+    {
+        $script = file_get_contents(dirname(__DIR__, 2) . '/Assets/js/webos.js');
+        $stylesheet = file_get_contents(dirname(__DIR__, 2) . '/Assets/css/webos.css');
+
+        $this->assertIsString($script);
+        $this->assertIsString($stylesheet);
+        $this->assertStringContainsString('>手动升级</button>', $script);
+        $this->assertStringContainsString("items.push(['export', 'fa-download', '导出']", $script);
+        $this->assertStringContainsString('title="\' + escapeHtml(appName)', $script);
+        $this->assertStringContainsString('<span title="\'', $script);
+        $this->assertStringContainsString('escapeHtml(description)', $script);
+        $this->assertStringContainsString('function setStatusToggleBusy(button, busy)', $script);
+        $this->assertStringContainsString("button.setAttribute('aria-busy', busy ? 'true' : 'false')", $script);
+        $this->assertStringContainsString('toggleAppStatus(statusToggle.dataset.toggleAppStatus', $script);
+        $this->assertStringContainsString('.status-switch[aria-busy="true"]', $stylesheet);
+        $this->assertStringContainsString('decoding="async"', $script);
+    }
+
+    /** 应用市场：切换分类或搜索时取消旧请求，禁止迟到响应覆盖新结果 */
+    public function test_market_requests_ignore_stale_responses(): void
+    {
+        $script = file_get_contents(dirname(__DIR__, 2) . '/Assets/js/webos.js');
+
+        $this->assertIsString($script);
+        $this->assertStringContainsString('var marketRequestSequence = 0;', $script);
+        $this->assertStringContainsString('var marketRequestController = null;', $script);
+        $this->assertStringContainsString('function cancelMarketRequest()', $script);
+        $this->assertStringContainsString("if (state.appCenterTab !== 'market')", $script);
+        $this->assertStringContainsString('function resetMarketPager(category, keyword)', $script);
+        $this->assertStringContainsString('marketRequestController.abort();', $script);
+        $this->assertStringContainsString('var requestId = ++marketRequestSequence;', $script);
+        $this->assertStringContainsString('signal: requestController.signal', $script);
+        $this->assertStringContainsString('requestId !== marketRequestSequence', $script);
+        $this->assertStringContainsString("error.name === 'AbortError'", $script);
     }
 }

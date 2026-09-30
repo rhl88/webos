@@ -1733,6 +1733,36 @@
         renderPinnedApps();
     }
 
+    /** 将高频 pointermove 合并到浏览器绘制帧，避免同一帧重复触发布局计算 */
+    function createFrameScheduler(callback) {
+        var frame = 0;
+        var latest = null;
+
+        function run() {
+            frame = 0;
+            var value = latest;
+            latest = null;
+            callback(value);
+        }
+
+        function schedule(value) {
+            latest = value;
+            if (!frame) {
+                frame = window.requestAnimationFrame(run);
+            }
+        }
+
+        schedule.flush = function () {
+            if (!frame) {
+                return;
+            }
+            window.cancelAnimationFrame(frame);
+            run();
+        };
+
+        return schedule;
+    }
+
     function bindWindowGestures(key) {
         var target = state.windows.get(key);
         var element = target.element;
@@ -1747,19 +1777,33 @@
             var startY = event.clientY;
             var startLeft = element.offsetLeft;
             var startTop = element.offsetTop;
-            titlebar.setPointerCapture(event.pointerId);
-            function move(moveEvent) {
-                var left = Math.max(0, Math.min(window.innerWidth - 180, startLeft + moveEvent.clientX - startX));
-                var top = Math.max(0, Math.min(window.innerHeight - 120, startTop + moveEvent.clientY - startY));
+            var pointerId = event.pointerId;
+            var scheduleMove = createFrameScheduler(function (point) {
+                var left = Math.max(0, Math.min(window.innerWidth - 180, startLeft + point.x - startX));
+                var top = Math.max(0, Math.min(window.innerHeight - 120, startTop + point.y - startY));
                 element.style.left = left + 'px';
                 element.style.top = top + 'px';
+            });
+            element.classList.add('is-window-gesturing');
+            titlebar.setPointerCapture(event.pointerId);
+            function move(moveEvent) {
+                scheduleMove({ x: moveEvent.clientX, y: moveEvent.clientY });
             }
             function end() {
+                scheduleMove.flush();
+                element.classList.remove('is-window-gesturing');
                 titlebar.removeEventListener('pointermove', move);
                 titlebar.removeEventListener('pointerup', end);
+                titlebar.removeEventListener('pointercancel', end);
+                titlebar.removeEventListener('lostpointercapture', end);
+                if (titlebar.hasPointerCapture(pointerId)) {
+                    titlebar.releasePointerCapture(pointerId);
+                }
             }
             titlebar.addEventListener('pointermove', move);
             titlebar.addEventListener('pointerup', end);
+            titlebar.addEventListener('pointercancel', end);
+            titlebar.addEventListener('lostpointercapture', end);
         });
 
         element.querySelectorAll('[data-window-resize]').forEach(function (handle) {
@@ -1775,10 +1819,10 @@
                 var startHeight = element.offsetHeight;
                 var startLeft = element.offsetLeft;
                 var startTop = element.offsetTop;
-                handle.setPointerCapture(event.pointerId);
-                function move(moveEvent) {
-                    var dx = moveEvent.clientX - startX;
-                    var dy = moveEvent.clientY - startY;
+                var pointerId = event.pointerId;
+                var scheduleMove = createFrameScheduler(function (point) {
+                    var dx = point.x - startX;
+                    var dy = point.y - startY;
                     var width = startWidth;
                     var height = startHeight;
                     var left = startLeft;
@@ -1804,13 +1848,27 @@
                     element.style.height = height + 'px';
                     element.style.left = left + 'px';
                     element.style.top = top + 'px';
+                });
+                element.classList.add('is-window-gesturing');
+                handle.setPointerCapture(event.pointerId);
+                function move(moveEvent) {
+                    scheduleMove({ x: moveEvent.clientX, y: moveEvent.clientY });
                 }
                 function end() {
+                    scheduleMove.flush();
+                    element.classList.remove('is-window-gesturing');
                     handle.removeEventListener('pointermove', move);
                     handle.removeEventListener('pointerup', end);
+                    handle.removeEventListener('pointercancel', end);
+                    handle.removeEventListener('lostpointercapture', end);
+                    if (handle.hasPointerCapture(pointerId)) {
+                        handle.releasePointerCapture(pointerId);
+                    }
                 }
                 handle.addEventListener('pointermove', move);
                 handle.addEventListener('pointerup', end);
+                handle.addEventListener('pointercancel', end);
+                handle.addEventListener('lostpointercapture', end);
             });
         });
     }
@@ -1826,6 +1884,9 @@
 
     function renderAppCenter(tab) {
         state.appCenterTab = tab || 'market';
+        if (state.appCenterTab !== 'market') {
+            cancelMarketRequest();
+        }
         var appWindow = state.windows.get(windowKey(applicationCenterEntry()));
         if (!appWindow) {
             return;
@@ -1948,7 +2009,7 @@
 
     /** 应用市场 Tab：分类 Tab 条 + 应用列表滚动分页加载（远程不可用时降级本地可安装应用） */
     function loadMarketTab(content, status) {
-        state.marketPager = { category: '', keyword: '', page: 0, lastPage: 1, total: 0, loading: false, failed: false, token: 0 };
+        resetMarketPager('', '');
         status.hidden = true;
         content.innerHTML = '<nav class="market-tabs" data-market-tabs hidden></nav>'
             + '<div class="app-grid" data-market-grid></div>'
@@ -1974,9 +2035,13 @@
         var query = '?per_page=20&page=' + page
             + (pager.category ? '&category=' + encodeURIComponent(pager.category) : '')
             + (pager.keyword ? '&keyword=' + encodeURIComponent(pager.keyword) : '');
-        var token = pager.token = (pager.token || 0) + 1;
-        return api('/api/admin/market/apps' + query).then(function (payload) {
-            if (state.marketPager.token !== token) {
+        var requestId = ++marketRequestSequence;
+        marketRequestController = typeof window.AbortController === 'function' ? new window.AbortController() : null;
+        var requestController = marketRequestController;
+        pager.token = requestId;
+        return api('/api/admin/market/apps' + query,
+            requestController ? { signal: requestController.signal } : {}).then(function (payload) {
+            if (requestId !== marketRequestSequence || state.marketPager !== pager) {
                 return []; // 请求已被更新（切换分类/搜索）取代，丢弃过期结果
             }
             var apps = extractCollection(payload);
@@ -2004,7 +2069,14 @@
             return apps;
         }).catch(function (error) {
             pager.loading = false;
+            if (error && error.name === 'AbortError') {
+                return [];
+            }
             throw error;
+        }).finally(function () {
+            if (marketRequestController === requestController) {
+                marketRequestController = null;
+            }
         });
     }
 
@@ -2045,7 +2117,7 @@
         if (state.marketPager.category === code) {
             return;
         }
-        state.marketPager = { category: code, keyword: '', page: 0, lastPage: 1, total: 0, loading: false, failed: false, token: 0 };
+        resetMarketPager(code, '');
         content.querySelectorAll('[data-market-category]').forEach(function (tab) {
             tab.classList.toggle('is-active', tab.dataset.marketCategory === code);
         });
@@ -2064,7 +2136,7 @@
 
     /** 市场全量搜索：带 keyword 重新 Ajax 拉取（远程市场搜索参数为 keyword），保留当前分类 */
     function searchMarketApps(content, keyword) {
-        state.marketPager = { category: state.marketPager.category, keyword: keyword, page: 0, lastPage: 1, total: 0, loading: false, failed: false, token: 0 };
+        resetMarketPager(state.marketPager.category, keyword);
         var grid = content.querySelector('[data-market-grid]');
         if (grid) {
             grid.innerHTML = '<div class="panel-empty"><i class="fa fa-circle-o-notch fa-spin"></i>正在搜索应用…</div>';
@@ -2113,7 +2185,7 @@
     function appIconFallbackMarkup(app) {
         var fallback = app.manifest_icon || app.icon;
         if (isImageIcon(fallback)) {
-            return '<img data-app-icon-fallback hidden data-src="' + escapeHtml(fallback) + '" alt="">'
+            return '<img data-app-icon-fallback hidden data-src="' + escapeHtml(fallback) + '" decoding="async" alt="">'
                 + '<i data-app-icon-final hidden class="fa fa-cube"></i>';
         }
         return '<i data-app-icon-fallback hidden class="' + safeIcon(fallback || 'fa fa-cube') + '"></i>';
@@ -2122,7 +2194,7 @@
     function applicationIconMarkup(app, className) {
         if (isImageIcon(app.icon_url)) {
             return '<span class="' + className + '"><img data-app-icon-primary src="'
-                + escapeHtml(app.icon_url) + '" alt="">'
+                + escapeHtml(app.icon_url) + '" decoding="async" alt="">'
                 + appIconFallbackMarkup(app) + '</span>';
         }
         return '<span class="' + className + '"><i class="'
@@ -2135,7 +2207,8 @@
             return '<span class="' + className + '"><i class="fa fa-puzzle-piece"></i></span>';
         }
 
-        return '<span class="' + className + '"><img data-market-icon src="' + escapeHtml(url) + '" alt="">'
+        return '<span class="' + className + '"><img data-market-icon src="' + escapeHtml(url)
+            + '" loading="lazy" decoding="async" alt="">'
             + '<i data-market-icon-fallback class="fa fa-puzzle-piece" hidden></i></span>';
     }
 
@@ -2566,21 +2639,22 @@
 
     function installedRowMarkup(app) {
         var appId = app.app_id || '';
+        var appName = app.name || appId;
+        var description = app.description || '暂无应用说明';
         var enabled = Number(app.status) === 1;
         var hasMenu = appHasMenu(appId);
         var actions = '<button class="small-action primary" type="button" data-open-app-id="' + escapeHtml(appId) + '"'
             + (hasMenu ? '' : ' disabled') + '>打开</button>'
             + '<button class="small-action" type="button" data-app-action="manual-upgrade" data-app-id="'
-            + escapeHtml(appId) + '">手动</button>'
-            + '<button class="small-action" type="button" data-app-action="export" data-app-id="'
-            + escapeHtml(appId) + '">导出</button>'
+            + escapeHtml(appId) + '">手动升级</button>'
             + '<button class="small-action more" type="button" data-app-more="' + escapeHtml(appId)
             + '" aria-expanded="false" aria-label="更多操作" title="更多操作"><i class="fa fa-ellipsis-h"></i></button>';
 
         return '<article class="install-row" data-app-id="' + escapeHtml(appId) + '" data-app-state="' + escapeHtml(String(app.status))
             + '" data-app-name="' + escapeHtml((app.name || appId).toLowerCase()) + '">'
-            + '<div class="install-row-app">' + cardIconMarkup(app, 'app-icon') + '<div class="app-card-info"><strong>'
-            + escapeHtml(app.name || appId) + '</strong><span>' + escapeHtml(app.description || '暂无应用说明') + '</span><small>版本 '
+            + '<div class="install-row-app">' + cardIconMarkup(app, 'app-icon') + '<div class="app-card-info">'
+            + '<strong title="' + escapeHtml(appName) + '">' + escapeHtml(appName) + '</strong><span title="'
+            + escapeHtml(description) + '">' + escapeHtml(description) + '</span><small>版本 '
             + escapeHtml(app.version || '-') + (app.is_system ? ' · 系统应用' : '') + '</small></div></div>'
             + '<div class="install-row-cell">' + statusSwitchMarkup(appId, enabled, app.status_label) + '</div>'
             + '<div class="install-row-actions">' + actions + '</div></article>';
@@ -2592,6 +2666,18 @@
         return '<button class="status-switch" type="button" data-toggle-app-status="' + escapeHtml(appId)
             + '" aria-pressed="' + (enabled ? 'true' : 'false') + '" aria-label="' + escapeHtml(text)
             + '" title="' + escapeHtml(text) + '"><i></i></button>';
+    }
+
+    function setStatusToggleBusy(button, busy) {
+        if (!button) {
+            return;
+        }
+        if (!button.dataset.idleTitle) {
+            button.dataset.idleTitle = button.title || '';
+        }
+        button.disabled = busy;
+        button.setAttribute('aria-busy', busy ? 'true' : 'false');
+        button.title = busy ? '正在保存应用状态…' : button.dataset.idleTitle;
     }
 
     function renderInstalledList(apps) {
@@ -2614,7 +2700,7 @@
         if (appHasMenu(app.app_id)) {
             items.push(['manage-entry', 'fa-th', '管理入口']);
         }
-        items.push(['backup', 'fa-archive', '备份'], ['docs', 'fa-book', '文档']);
+        items.push(['export', 'fa-download', '导出'], ['backup', 'fa-archive', '备份'], ['docs', 'fa-book', '文档']);
         if (app.has_config) {
             items.push(['settings', 'fa-cog', '设置']);
         }
@@ -2666,6 +2752,32 @@
 
     /** 应用市场搜索防抖计时器 */
     var marketSearchTimer = 0;
+    var marketRequestSequence = 0;
+    var marketRequestController = null;
+
+    /** 取消当前市场请求并递增序号，使不支持 AbortController 的环境也会丢弃迟到响应 */
+    function cancelMarketRequest() {
+        marketRequestSequence += 1;
+        if (marketRequestController) {
+            marketRequestController.abort();
+            marketRequestController = null;
+        }
+    }
+
+    /** 重置市场查询并立即取消旧请求，单调序号用于无 AbortController 环境的竞态兜底 */
+    function resetMarketPager(category, keyword) {
+        cancelMarketRequest();
+        state.marketPager = {
+            category: category || '',
+            keyword: keyword || '',
+            page: 0,
+            lastPage: 1,
+            total: 0,
+            loading: false,
+            failed: false,
+            token: marketRequestSequence
+        };
+    }
 
     function entryLeafOf(item, pinnedIds) {
         return {
@@ -3052,15 +3164,17 @@
         });
     }
 
-    /** afterSuccess：状态保存成功后的回调（如禁用后继续弹出卸载确认），可选 */
-    function toggleAppStatus(appId, enable, afterSuccess) {
-        api('/api/admin/apps/' + encodeURIComponent(appId) + (enable ? '/enable' : '/disable'), { method: 'POST' })
+    /** afterSuccess：状态保存成功后的回调；trigger：发起操作的状态按钮，可选 */
+    function toggleAppStatus(appId, enable, afterSuccess, trigger) {
+        setStatusToggleBusy(trigger, true);
+        return api('/api/admin/apps/' + encodeURIComponent(appId) + (enable ? '/enable' : '/disable'), { method: 'POST' })
             .then(function () {
                 toast(enable ? '应用已启用' : '应用已禁用');
                 return reloadInstalledAppCenter();
             })
             .then(function () { if (afterSuccess) { afterSuccess(); } })
-            .catch(function (error) { toast(error.message, 'error'); });
+            .catch(function (error) { toast(error.message, 'error'); })
+            .finally(function () { setStatusToggleBusy(trigger, false); });
     }
 
     function openDisableFirstDialog(app, message) {
@@ -4692,7 +4806,8 @@
     function handleAppCenterAction(event) {
         var statusToggle = event.target.closest('[data-toggle-app-status]');
         if (statusToggle) {
-            toggleAppStatus(statusToggle.dataset.toggleAppStatus, statusToggle.getAttribute('aria-pressed') !== 'true');
+            toggleAppStatus(statusToggle.dataset.toggleAppStatus,
+                statusToggle.getAttribute('aria-pressed') !== 'true', null, statusToggle);
             return;
         }
 
@@ -5498,7 +5613,7 @@
                     if (content) {
                         searchMarketApps(content, query);
                     }
-                }, 350);
+                }, 220);
                 return;
             }
             var lower = query.toLowerCase();
