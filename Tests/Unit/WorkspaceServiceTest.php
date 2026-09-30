@@ -101,6 +101,28 @@ class WorkspaceServiceTest extends WebosTestCase
         $this->assertSame('bottom', $workspace->preferences['taskbar_position']);
     }
 
+    public function test_it_keeps_only_local_wallpaper_urls(): void
+    {
+        $admin = $this->actingAdmin();
+
+        $workspace = app(WorkspaceService::class)->saveForAdmin($admin->id, [
+            'preferences' => [
+                'wallpaper_url' => 'apps/cmspro.webos/wallpapers/admin_1_20260929120000_abc123.png',
+            ],
+        ]);
+        $this->assertSame(
+            'apps/cmspro.webos/wallpapers/admin_1_20260929120000_abc123.png',
+            $workspace->preferences['wallpaper_url']
+        );
+
+        $injected = app(WorkspaceService::class)->saveForAdmin($admin->id, [
+            'preferences' => [
+                'wallpaper_url' => 'https://evil.example.com/wallpaper.png',
+            ],
+        ]);
+        $this->assertSame('', $injected->preferences['wallpaper_url']);
+    }
+
     public function test_it_sanitizes_usage_statistics_for_the_common_menu(): void
     {
         $admin = $this->actingAdmin();

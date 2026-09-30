@@ -11,6 +11,7 @@ class WorkspaceService
 {
     public const DEFAULT_PREFERENCES = [
         'wallpaper' => 'webos-default',
+        'wallpaper_url' => '',
         'taskbar_alignment' => 'left',
         'taskbar_position' => 'bottom',
         'clock_format' => '24h',
@@ -106,6 +107,7 @@ class WorkspaceService
         $preferences['wallpaper'] = in_array($preferences['wallpaper'], ['webos-default', 'deep-blue'], true)
             ? $preferences['wallpaper']
             : self::DEFAULT_PREFERENCES['wallpaper'];
+        $preferences['wallpaper_url'] = $this->sanitizeWallpaperUrl((string) ($preferences['wallpaper_url'] ?? ''));
         $preferences['taskbar_alignment'] = in_array($preferences['taskbar_alignment'], ['left', 'center'], true)
             ? $preferences['taskbar_alignment']
             : self::DEFAULT_PREFERENCES['taskbar_alignment'];
@@ -128,6 +130,21 @@ class WorkspaceService
         $preferences['usage_stats'] = $this->sanitizeUsageStats($preferences['usage_stats']);
 
         return $preferences;
+    }
+
+    /**
+     * 自定义壁纸路径只允许本应用壁纸目录下的相对路径，防止注入外部或越权地址。
+     */
+    protected function sanitizeWallpaperUrl(string $url): string
+    {
+        $url = trim($url);
+        if ($url === '') {
+            return '';
+        }
+
+        return preg_match('#^apps/cmspro\.webos/wallpapers/[A-Za-z0-9_-]+\.(jpg|jpeg|png|gif|webp)$#', $url)
+            ? $url
+            : '';
     }
 
     /**

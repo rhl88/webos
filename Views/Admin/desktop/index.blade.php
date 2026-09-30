@@ -10,6 +10,8 @@
     <link rel="stylesheet" href="{{ asset('Admin/css/admin.css') }}">
     <link rel="stylesheet" href="{{ asset('Admin/css/variables.css') }}">
     <link rel="stylesheet" href="{{ asset('Admin/css/reset.css') }}">
+    {{-- 应用文档预览的代码高亮主题，与传统后台 admin/app/index.blade.php 保持一致 --}}
+    <link rel="stylesheet" href="{{ asset('CmsProUi/component/highlight.js/styles/github-dark.min.css') }}">
     <link rel="stylesheet" href="{{ asset('apps/cmspro.webos/css/webos.css') }}">
     @include('admin.partials.permission-script')
 </head>
@@ -19,7 +21,9 @@
     class="webos-desktop is-loading"
     data-workspace-url="{{ url('/admin/cmspro/webos/api/workspace') }}"
     data-catalog-url="{{ url('/admin/cmspro/webos/api/catalog') }}"
+    data-calendar-url="{{ url('/admin/cmspro/webos/api/calendar') }}"
     data-wallpaper-url="{{ asset('apps/cmspro.webos/images/webos-wallpaper.png') }}"
+    data-wallpapers-url="{{ url('/admin/cmspro/webos/api/wallpapers') }}"
     data-login-url="{{ route('admin.login') }}"
     data-market-base-url="{{ $marketBaseUrl }}"
     data-taskbar-position="bottom"
@@ -38,14 +42,14 @@
                     <span>WebOS 管理桌面</span>
                 </div>
             </div>
+            <div class="start-search-wrap">
+                <i class="fa fa-search" aria-hidden="true"></i>
+                <input id="start-search" type="search" placeholder="搜索菜单与应用" autocomplete="off">
+            </div>
             <button class="icon-button" type="button" data-action="close-start" aria-label="关闭开始菜单">
                 <i class="fa fa-times" aria-hidden="true"></i>
             </button>
         </header>
-        <div class="start-search-wrap">
-            <i class="fa fa-search" aria-hidden="true"></i>
-            <input id="start-search" type="search" placeholder="搜索菜单与应用" autocomplete="off">
-        </div>
         <div class="start-columns">
             <nav id="start-categories" class="start-categories" aria-label="菜单分组"></nav>
             <div class="start-content">
@@ -90,7 +94,7 @@
         </header>
         <div class="calendar-toolbar">
             <button class="icon-button" type="button" data-calendar-nav="prev" aria-label="上个月"><i class="fa fa-chevron-left"></i></button>
-            <button class="text-button" type="button" data-calendar-today>回到今天</button>
+            <button class="text-button" type="button" id="calendar-today" data-calendar-today hidden>回到今天</button>
             <button class="icon-button" type="button" data-calendar-nav="next" aria-label="下个月"><i class="fa fa-chevron-right"></i></button>
         </div>
         <div class="calendar-weekdays" aria-hidden="true">
@@ -102,11 +106,7 @@
     <section id="account-panel" class="webos-panel account-panel" aria-label="账号菜单" hidden>
         <div class="account-card">
             <span class="account-avatar" aria-hidden="true">
-                @if($admin->avatar)
-                    <img src="{{ $admin->avatar }}" alt="">
-                @else
-                    <i class="fa fa-user" aria-hidden="true"></i>
-                @endif
+                <img src="{{ $admin->avatar ?: asset('Admin/images/avatar.png') }}" alt="">
             </span>
             <div>
                 <strong>{{ $admin->name ?: $admin->username }}</strong>
@@ -183,7 +183,6 @@
             <footer class="dialog-footer" id="action-dialog-footer"></footer>
         </div>
     </section>
-    <input id="app-package-input" type="file" accept=".zip" hidden>
 
     <section id="lock-screen" class="lock-screen" hidden>
         <div class="lock-time" id="lock-time">00:00</div>
@@ -209,11 +208,7 @@
         <span class="taskbar-divider" aria-hidden="true"></span>
         <button id="account-button" class="account-button" type="button" aria-label="打开账号菜单" aria-expanded="false">
             <span class="taskbar-avatar">
-                @if($admin->avatar)
-                    <img src="{{ $admin->avatar }}" alt="">
-                @else
-                    <i class="fa fa-user" aria-hidden="true"></i>
-                @endif
+                <img src="{{ $admin->avatar ?: asset('Admin/images/avatar.png') }}" alt="">
             </span>
             <span>{{ $admin->name ?: $admin->username }}</span>
         </button>
@@ -245,7 +240,26 @@
 window.CMSPRO_WEBOS = {{ Illuminate\Support\Js::from($webosRuntime) }};
 </script>
 <script src="{{ asset('CmsProUi/component/layui/layui.js') }}"></script>
+{{-- 路由模式（_component）片段与桌面页共享同一文档，须对齐传统后台 layouts/admin.blade.php 的 layui 环境：
+     pear.js 设置 layui.config({ base }) 与 extend 映射，缺失时片段内 layui.use 的扩展模块会去 layui.js
+     同级目录解析并返回 404。pear.js 仅做配置，无 DOM 副作用。 --}}
+<script src="{{ asset('CmsProUi/component/pear/pear.js') }}"></script>
+<script>
+// 预热片段高频依赖且在 define 阶段无 DOM 副作用的模块。
+// 刻意不预热 admin / menu / tabPage / page / menuSearch / messageCenter 等框架级模块，
+// 它们会连带初始化后台侧栏与选项卡框架，与 WebOS 自身的窗口体系冲突。
+layui.use(['element', 'form', 'jquery', 'layer', 'toast', 'button', 'popup'], function () {});
+</script>
 <script src="{{ asset('CmsProUi/component/marked/marked.min.js') }}"></script>
+{{-- 应用文档预览所需的代码高亮，语言包清单与传统后台 admin/app/index.blade.php 一致 --}}
+<script src="{{ asset('CmsProUi/component/highlight.js/highlight.min.js') }}"></script>
+<script src="{{ asset('CmsProUi/component/highlight.js/languages/bash.min.js') }}"></script>
+<script src="{{ asset('CmsProUi/component/highlight.js/languages/css.min.js') }}"></script>
+<script src="{{ asset('CmsProUi/component/highlight.js/languages/javascript.min.js') }}"></script>
+<script src="{{ asset('CmsProUi/component/highlight.js/languages/json.min.js') }}"></script>
+<script src="{{ asset('CmsProUi/component/highlight.js/languages/php.min.js') }}"></script>
+<script src="{{ asset('CmsProUi/component/highlight.js/languages/sql.min.js') }}"></script>
+<script src="{{ asset('CmsProUi/component/highlight.js/languages/xml.min.js') }}"></script>
 <script src="{{ asset('apps/cmspro.webos/js/webos.js') }}"></script>
 </body>
 </html>
