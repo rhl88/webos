@@ -3,6 +3,9 @@
 namespace App\Apps\CmsproWebos\Tests\Feature;
 
 use App\Apps\CmsproWebos\Tests\WebosTestCase;
+use App\Models\AdminMenu;
+use App\Models\AdminUser;
+use Illuminate\Support\Facades\DB;
 
 class WebosWorkspaceApiTest extends WebosTestCase
 {
@@ -16,13 +19,18 @@ class WebosWorkspaceApiTest extends WebosTestCase
     {
         $this->actingAdmin();
 
-        $this->get('/admin/cmspro/webos')
-            ->assertOk()
-            ->assertSee('CMSPRO WebOS')
+        $response = $this->get('/admin/cmspro/webos');
+        $response->assertOk()
             ->assertSee('webos-desktop')
             ->assertSee('个人设置')
             ->assertSee('修改密码')
             ->assertSee('data-taskbar-position="bottom"', false);
+
+        // 桌面标题动态携带系统与 WebOS 双版本号（WebOS 版本读应用 manifest）
+        $this->assertMatchesRegularExpression('/<title>CMSPRO v\d+\.\d+\.\d+ · WebOS v\d+\.\d+\.\d+<\/title>/', $response->getContent());
+        // 开始菜单系统操作区版权：与框架后台页脚一致（版本号与年份动态读取）
+        $response->assertSee('start-copyright', false)
+            ->assertSee('&copy; 2015-' . date('Y') . ' Copyright by', false);
     }
 
     public function test_all_todos_api_returns_full_list_with_read_state(): void
@@ -137,6 +145,28 @@ class WebosWorkspaceApiTest extends WebosTestCase
             ->assertJsonPath('code', 40201);
     }
 
+    /** 桌面图标三档尺寸（右键「查看」切换）：控制器验证必须保留 icon_size 键并持久化（回归：无规则时 $validated 丢弃导致勾选回退中图标） */
+    public function test_workspace_api_persists_icon_size_preference(): void
+    {
+        $this->actingAdmin();
+
+        $this->putJson('/admin/cmspro/webos/api/workspace', [
+            'preferences' => ['icon_size' => 'large'],
+        ])->assertOk()
+            ->assertJsonPath('code', 0)
+            ->assertJsonPath('data.preferences.icon_size', 'large');
+
+        // 再次读取验证持久化，非法值回退中图标
+        $this->getJson('/admin/cmspro/webos/api/workspace')
+            ->assertOk()
+            ->assertJsonPath('data.preferences.icon_size', 'large');
+
+        $this->putJson('/admin/cmspro/webos/api/workspace', [
+            'preferences' => ['icon_size' => 'giant'],
+        ])->assertUnprocessable()
+            ->assertJsonPath('code', 40201);
+    }
+
     public function test_workspace_api_persists_override_admin_home_preference(): void
     {
         $this->actingAdmin();
@@ -180,21 +210,35 @@ class WebosWorkspaceApiTest extends WebosTestCase
             'preferences' => ['override_admin_home' => true, 'taskbar_position' => 'top'],
         ])->assertOk();
 
-        // 重置：桌面/任务栏恢复初始默认布局（仅保留「应用中心」内置入口），偏好全部回默认
+        // 重置：非超管（actingAdmin 无 super_admin 角色）桌面/任务栏为空（应用中心仅超管可用），偏好全部回默认
         // （覆盖传统后台关闭、任务栏回底部）
         $this->postJson('/admin/cmspro/webos/api/workspace/reset')
             ->assertOk()
             ->assertJsonPath('code', 0)
-            ->assertJsonPath('data.desktop_items.0.id', 'webos-app-center')
-            ->assertJsonPath('data.desktop_items.0.title', '应用中心')
-            ->assertJsonPath('data.taskbar_items.0.id', 'webos-app-center')
+            ->assertJsonPath('data.desktop_items', [])
+            ->assertJsonPath('data.taskbar_items', [])
             ->assertJsonPath('data.preferences.override_admin_home', false)
             ->assertJsonPath('data.preferences.taskbar_position', 'bottom');
 
         $this->getJson('/admin/cmspro/webos/api/workspace')
             ->assertOk()
-            ->assertJsonPath('data.desktop_items.0.id', 'webos-app-center')
+            ->assertJsonPath('data.desktop_items', [])
             ->assertJsonPath('data.preferences.taskbar_position', 'bottom');
+    }
+
+    /** 超级管理员重置工作区：桌面/任务栏恢复初始「应用中心」固定项 */
+    public function test_super_admin_reset_pins_application_center(): void
+    {
+        $admin = $this->actingAdmin();
+        $superRole = \App\Models\AdminRole::create(['name' => '超级管理员', 'code' => 'super_admin', 'status' => 1]);
+        DB::table('admin_user_roles')->insert(['user_id' => $admin->id, 'role_id' => $superRole->id]);
+
+        $this->postJson('/admin/cmspro/webos/api/workspace/reset')
+            ->assertOk()
+            ->assertJsonPath('code', 0)
+            ->assertJsonPath('data.desktop_items.0.id', 'webos-app-center')
+            ->assertJsonPath('data.desktop_items.0.title', '应用中心')
+            ->assertJsonPath('data.taskbar_items.0.id', 'webos-app-center');
     }
 
     public function test_taskbar_pinned_items_are_independent_from_desktop_and_draggable(): void
@@ -203,9 +247,9 @@ class WebosWorkspaceApiTest extends WebosTestCase
 
         $this->assertIsString($script);
 
-        // 任务栏固定项独立数据源（不再取桌面项前 4 位；仅旧数据兜底保留一处）
+        // 任务栏固定项独立数据源（不再取桌面项前 4 位；仅旧数据兜底保留一处），渲染前按已分配入口过滤
         $this->assertStringContainsString('function taskbarItems()', $script);
-        $this->assertStringContainsString('var pinned = taskbarItems();', $script);
+        $this->assertStringContainsString('var pinned = taskbarItems().filter(function (item) {', $script);
         $this->assertStringContainsString('return new Set(taskbarItems().map(', $script);
         $this->assertSame(1, substr_count($script, 'desktop_items.slice(0, 4)'));
         // 任务栏固定/解除固定动作不再写桌面列表；固定后重绘运行区避免重复图标
@@ -308,6 +352,170 @@ class WebosWorkspaceApiTest extends WebosTestCase
         $this->assertStringNotContainsString('flex-basis: 176px;', $stylesheet);
     }
 
+    /** 应用窗口标题栏前台菜单下拉框：仅有前台（home）菜单的应用注入，点击菜单项新标签页打开前台地址 */
+    public function test_window_home_menu_dropdown_injected_when_app_has_home_menus(): void
+    {
+        $script = file_get_contents(dirname(__DIR__, 2) . '/Assets/js/webos.js');
+        $stylesheet = file_get_contents(dirname(__DIR__, 2) . '/Assets/css/webos.css');
+
+        $this->assertIsString($script);
+        $this->assertIsString($stylesheet);
+        // 数据链路：系统菜单树接口按前台终端过滤，前端按窗口应用 app_id 筛选叶子
+        $this->assertStringContainsString("api('/api/admin/menus/tree?terminal_type=home')", $script);
+        $this->assertStringContainsString('function loadWindowHomeMenu', $script);
+        $this->assertStringContainsString('function collectHomeMenuLeaves', $script);
+        $this->assertStringContainsString('function windowHomeMenuMarkup', $script);
+        // 挂载点：打开窗口与切换入口后均同步前台菜单下拉框
+        $this->assertStringContainsString('loadWindowHomeMenu(state.windows.get(key));', $script);
+        $this->assertStringContainsString('loadWindowHomeMenu(windowState);', $script);
+        // 交互：触发器切换展开/收起，菜单项携带前台地址新标签页打开
+        $this->assertStringContainsString("data-window-action=\"toggle-home-menu\"", $script);
+        $this->assertStringContainsString("window.open(homeMenuItem.dataset.homeUrl, '_blank', 'noopener');", $script);
+        $this->assertStringContainsString('[data-home-url]', $script);
+        // 样式与注入标记
+        $this->assertStringContainsString('.window-home-menu-list', $stylesheet);
+        $this->assertStringContainsString('.window-home-menu-item', $stylesheet);
+    }
+
+    /** 与框架权限对齐：非超管仅授权应用子菜单而未授权父级分组时，menus/user 需补全祖先链（否则 WebOS 目录丢失整个应用） */
+    public function test_user_menus_completes_missing_parent_chain_for_role_granted_children(): void
+    {
+        $admin = AdminUser::create([
+            'username' => 'webos_orphan_' . uniqid(),
+            'password' => bcrypt('123456'),
+            'name' => '非超管测试账号',
+            'status' => 1,
+        ]);
+
+        $role = \App\Models\AdminRole::create([
+            'name' => '中医治疗师',
+            'code' => 'childrehab_tester_' . uniqid(),
+            'status' => 1,
+        ]);
+        DB::table('admin_user_roles')->insert(['user_id' => $admin->id, 'role_id' => $role->id]);
+
+        // 三层菜单：祖父分组 → 应用分组 → 应用子菜单；仅把子菜单授予角色
+        $root = AdminMenu::create(['name' => '管理', 'parent_id' => 0, 'terminal_type' => 'admin', 'status' => 1, 'visible' => 1, 'sort' => 1]);
+        $group = AdminMenu::create(['name' => '儿康管理', 'parent_id' => $root->id, 'app_id' => 'cmspro.childrehab', 'terminal_type' => 'admin', 'status' => 1, 'visible' => 1, 'sort' => 2]);
+        $leaf = AdminMenu::create(['name' => '工作台', 'parent_id' => $group->id, 'app_id' => 'cmspro.childrehab', 'path' => '/admin/childrehab/dashboard', 'terminal_type' => 'admin', 'status' => 1, 'visible' => 1, 'sort' => 3]);
+        AdminMenu::create(['name' => '未授权菜单', 'parent_id' => 0, 'path' => '/admin/other', 'terminal_type' => 'admin', 'status' => 1, 'visible' => 1, 'sort' => 4]);
+
+        DB::table('admin_role_menus')->insert(['role_id' => $role->id, 'menu_id' => $leaf->id]);
+
+        $this->actingAs($admin, 'admin');
+
+        $tree = $this->getJson('/api/admin/menus/user')
+            ->assertOk()
+            ->assertJsonPath('code', 0)
+            ->json('data');
+
+        $names = collect($tree)->pluck('name')->all();
+        $this->assertNotContains('未授权菜单', $names, '未授权的菜单不应出现在目录中');
+        $this->assertContains('管理', $names, '补全后的祖父分组应出现在菜单树根部');
+
+        $rootNode = collect($tree)->firstWhere('id', $root->id);
+        $this->assertNotNull($rootNode, '补全后的祖父分组节点存在');
+        $groupNode = collect($rootNode['children'] ?? [])->firstWhere('id', $group->id);
+        $this->assertNotNull($groupNode, '补全后的父级分组应出现在菜单树中');
+        $this->assertEquals([$leaf->id], collect($groupNode['children'] ?? [])->pluck('id')->all(), '授权叶子挂在补全的父级之下');
+    }
+
+    /** 桌面/任务栏图标按「已分配」过滤：特殊入口保留，未分配的应用快捷方式与菜单入口不再渲染 */
+    public function test_workspace_icons_filtered_by_assigned_entries(): void
+    {
+        $script = file_get_contents(dirname(__DIR__, 2) . '/Assets/js/webos.js');
+
+        $this->assertIsString($script);
+        // 可见应用集合：从当前用户菜单目录递归收集 app_id，作为应用快捷方式的分配口径
+        $this->assertStringContainsString('function visibleAppIds', $script);
+        $this->assertStringContainsString('collect(state.catalog.menus);', $script);
+        // 分配判断：特殊入口永远保留；菜单入口须在 flatMenus；应用快捷方式须目录中仍有该应用菜单
+        $this->assertStringContainsString('function entryAssigned', $script);
+        $this->assertStringContainsString("entryId.indexOf(appPrefix) === 0", $script);
+        // 桌面与任务栏渲染前过滤未分配入口
+        $this->assertStringContainsString('state.workspace.desktop_items.filter(function (item) {', $script);
+        $this->assertStringContainsString('return entryAssigned(item.id);', $script);
+        $this->assertStringContainsString('taskbarItems().filter(function (item) {', $script);
+        // 菜单目录刷新后同步重绘桌面与任务栏
+        $this->assertMatchesRegularExpression('/renderDesktop\(\);\s*[\r\n]+\s*renderPinnedApps\(\);/', $script);
+    }
+
+    /** 停用应用桌面图标不占位：可见集合统一过滤，布局归一化让重新启用的图标自动落到空白格 */
+    public function test_disabled_app_icons_do_not_occupy_grid_cells(): void
+    {
+        $script = file_get_contents(dirname(__DIR__, 2) . '/Assets/js/webos.js');
+
+        $this->assertIsString($script);
+        // 可见桌面项统一出口：渲染/拖拽占用/找空行都基于已分配集合
+        $this->assertStringContainsString('function assignedDesktopItems', $script);
+        $this->assertMatchesRegularExpression('/return state\.workspace\.desktop_items\.filter\(function \(item\) \{\s*[\r\n]+\s*return entryAssigned\(item\.id\);/', $script);
+        // 拖拽落点占用集合仅统计可见图标（未分配入口的格子可移入）
+        $this->assertStringContainsString('var occupied = new Set(assignedDesktopItems().filter(function (entry) {', $script);
+        // 新增入口找空行仅统计可见图标
+        $this->assertStringContainsString('var occupied = assignedDesktopItems().map(function (item) { return Number(item.y) || 0; });', $script);
+        // 布局归一化：坐标冲突的重新启用图标按 (y,x) 顺序下移到第一个空白格并静默保存
+        $this->assertStringContainsString('function normalizeDesktopLayout', $script);
+        $this->assertStringContainsString('while (occupied.has(x + \',\' + y) && guard < 200) {', $script);
+        $this->assertStringContainsString('if (changed) { saveWorkspace(false).catch(function () {}); }', $script);
+        // 目录刷新与首次渲染前均执行归一化
+        $this->assertSame(2, substr_count($script, 'normalizeDesktopLayout();'));
+    }
+
+    /** 桌面右键「查看」子菜单切换大/中/小图标：三档格子换算、偏好持久化与后端白名单校验 */
+    public function test_desktop_view_submenu_switches_icon_size(): void
+    {
+        $script = file_get_contents(dirname(__DIR__, 2) . '/Assets/js/webos.js');
+        $stylesheet = file_get_contents(dirname(__DIR__, 2) . '/Assets/css/webos.css');
+        $service = file_get_contents(dirname(__DIR__, 2) . '/Services/WorkspaceService.php');
+
+        $this->assertIsString($script);
+        $this->assertIsString($stylesheet);
+        $this->assertIsString($service);
+        // 三档格子常量（中档与历史布局 102x104 完全一致，保证默认中图标与现状相同）
+        $this->assertStringContainsString('var DESKTOP_ICON_SIZES = {', $script);
+        $this->assertStringContainsString('large: { cellW: 128, cellH: 130, iconW: 112, iconH: 122 }', $script);
+        $this->assertStringContainsString('medium: { cellW: 102, cellH: 104, iconW: 88, iconH: 96 }', $script);
+        $this->assertStringContainsString('small: { cellW: 86, cellH: 88, iconW: 72, iconH: 78 }', $script);
+        $this->assertStringContainsString('function desktopIconSize', $script);
+        // 渲染与拖拽落点按档位换算（renderDesktop 与拖拽 move 各一处）
+        $this->assertSame(2, substr_count($script, 'var size = desktopIconSize();'));
+        $this->assertStringContainsString('var dropSize = desktopIconSize();', $script);
+        $this->assertStringContainsString('root.dataset.iconSize = ', $script);
+        // 右键「查看」子菜单与切档动作（当前档位勾选）
+        $this->assertStringContainsString("['查看', 'fa-th-large', '', '', sizeChildren]", $script);
+        $this->assertStringContainsString("action === 'icon-large' || action === 'icon-medium' || action === 'icon-small'", $script);
+        $this->assertStringContainsString('desktop-context-submenu', $stylesheet);
+        $this->assertStringContainsString('.webos-desktop[data-icon-size="large"] .desktop-icon-badge', $stylesheet);
+        // 偏好默认中图标 + 后端白名单与枚举校验
+        $this->assertStringContainsString("icon_size: 'medium',", $script);
+        $this->assertStringContainsString("'icon_size' => 'medium',", $service);
+        $this->assertStringContainsString("in_array(\$preferences['icon_size'] ?? '', ['small', 'medium', 'large'], true)", $service);
+    }
+
+    /** 应用中心与 WebOS 升级提醒仅对超级管理员生效：runtime 注入超管标记，前端控制初始预置/图标过滤/升级提醒 */
+    public function test_app_center_and_self_update_are_super_admin_only(): void
+    {
+        $script = file_get_contents(dirname(__DIR__, 2) . '/Assets/js/webos.js');
+        $controller = file_get_contents(dirname(__DIR__, 2) . '/Controllers/Admin/WebosController.php');
+        $service = file_get_contents(dirname(__DIR__, 2) . '/Services/WorkspaceService.php');
+
+        $this->assertIsString($script);
+        $this->assertIsString($controller);
+        $this->assertIsString($service);
+        // 后端 runtime 注入超管标记
+        $this->assertStringContainsString("'is_super_admin' => \$admin->isSuperAdmin(),", $controller);
+        // 前端读取超管标记
+        $this->assertStringContainsString('var isSuperAdmin = !!(runtime.admin && runtime.admin.is_super_admin);', $script);
+        // 初始预置：非超管不固定应用中心
+        $this->assertStringContainsString('var selected = isSuperAdmin ? [applicationCenterEntry()] : [];', $script);
+        // 图标过滤：非超管的桌面/任务栏不显示应用中心（含历史工作区数据）
+        $this->assertStringContainsString("if (entryId === 'webos-app-center') { return isSuperAdmin; }", $script);
+        // 升级提醒：非超管跳过 WebOS 自身版本检测
+        $this->assertStringContainsString('if (!isSuperAdmin) { return; }', $script);
+        // 重置：非超管重置后桌面/任务栏为空
+        $this->assertStringContainsString('$isSuperAdmin ? [$defaultEntry] : []', $service);
+    }
+
     public function test_window_brand_uses_application_icon_and_keeps_system_logo(): void
     {
         $script = file_get_contents(dirname(__DIR__, 2) . '/Assets/js/webos.js');
@@ -400,9 +608,10 @@ class WebosWorkspaceApiTest extends WebosTestCase
         $this->assertStringContainsString('.webos-button.danger:disabled {', $stylesheet);
         // 安装勾选创建桌面快捷方式时，快捷方式标题使用应用名称而非菜单名称
         $this->assertStringContainsString("addDesktopEntry(Object.assign({}, entry, { title: target.name || entry.title }));", $script);
-        // 卸载执行期间显示加载图标（无文字）；删除显示加载层进度提示
+        // 卸载/删除执行期间均只显示加载特效（无文字提示）
         $this->assertStringContainsString('var loadIndex = layer.load(2, { time: 0 });', $script);
-        $this->assertStringContainsString("layer.load(2, { content: '正在删除「' + appName + '」的应用文件...', time: 0 });", $script);
+        $this->assertStringContainsString('var loadIndex = layer.load(2);' . "\n" . '        api(', $script);
+        $this->assertStringNotContainsString("layer.load(2, { content:", $script);
     }
 
     public function test_notification_center_and_records_ux(): void
@@ -1026,7 +1235,56 @@ class WebosWorkspaceApiTest extends WebosTestCase
         $this->assertStringContainsString('function syncUpdateBadge()', $script);
         $this->assertStringContainsString('state.updateCount = state.updateApps.length;', $script);
         $this->assertStringContainsString('function dropUpdatedApp(appId)', $script);
-        $this->assertMatchesRegularExpression("/toast\('应用更新完成'\);\s*\n\s*dropUpdatedApp\(appId\);/", $script);
+
+        // 更新列表等无图标数据的记录：合并目录应用图标（icon_url 全局规则 icon.svg→icon.png，icon 为 manifest 兜底）
+        $this->assertStringContainsString('if (!app.icon_url && !app.icon) {' . "\n" . '            var catalogApp = findCatalogApp(app.app_id);', $script);
+        $this->assertStringContainsString('app = Object.assign({}, catalogApp, app);', $script);
+
+        // 底层窗口 iframe 点击聚焦：未聚焦窗口 iframe 覆盖透明遮罩，点击遮罩冒泡聚焦窗口后移除
+        $this->assertStringContainsString('function syncWindowShields()', $script);
+        $this->assertStringContainsString('shield.className = \'window-frame-shield\';', $script);
+        $this->assertStringContainsString('syncWindowShields();' . "\n" . '        renderTaskbarWindows();', $script);
+
+        // OS 设置窗口宽度固定 1000px（小屏收窄避免溢出），高度仍按默认比例
+        $this->assertStringContainsString("if (key === 'webos-settings') {" . "\n" . '            return {' . "\n" . '                width: Math.max(MIN_WINDOW_WIDTH, Math.min(1000, Math.round(rect.width) - 40)),', $script);
+
+        // 个人设置窗口宽度固定 680px；修改密码弹窗宽度固定 480px
+        $this->assertStringContainsString("if (entry.path === '/admin/account') {" . "\n" . '            size.width = Math.max(MIN_WINDOW_WIDTH, Math.min(680, Math.round(layerRect.width) - 40));', $script);
+        $this->assertStringContainsString("width: '480px',", $script);
+
+        // 进入桌面时检查 WebOS 自身新版本：确认后打开应用中心并自动触发升级
+        $this->assertStringContainsString('function checkWebosSelfUpdate()', $script);
+        $this->assertStringContainsString("openEntry(applicationCenterEntry());" . "\n" . "                    // 打开应用中心后自动进入 WebOS 自身的升级流程（启用拦截 → 版本选择弹窗）" . "\n" . "                    upgradeApp('cmspro.webos');", $script);
+        $this->assertStringContainsString('checkWebosSelfUpdate();' . "\n" . '            root.classList.remove(\'is-loading\');', $script);
+
+        // 桌面「应用中心」图标右上角的可更新数量角标：renderDesktop 按检查结果渲染，syncUpdateBadge 同步
+        $this->assertStringContainsString("item.id === 'webos-app-center' && state.updateApps.length", $script);
+        $this->assertStringContainsString("'<span class=\"desktop-update-badge\">' + state.updateApps.length + '</span>'", $script);
+        $this->assertStringContainsString('rerenderWindowNav(state.windows.get(windowKey(applicationCenterEntry())));' . "\n" . '        // 桌面「应用中心」图标右上角的可更新数量角标随检查结果同步' . "\n" . '        renderDesktop();', $script);
+
+        // 升级交互复刻传统后台：layui 弹窗选版本 + 启用拦截 + 逐级自动升级，
+        // 成功后清除待升级记录、刷新目录并询问启用
+        $this->assertStringContainsString('function upgradeApp(appId)', $script);
+        $this->assertStringContainsString('function openUpgradeDialog(appId, availableVersions)', $script);
+        $this->assertStringContainsString('function doUpgrade(appId, targetVersion)', $script);
+        $this->assertStringContainsString('function startAutoUpgrade(appId, versions)', $script);
+        $this->assertStringContainsString('btn: [\'我已备份，确认升级\', \'先去备份\', \'取消\'],', $script);
+        $this->assertStringContainsString('dropUpdatedApp(appId);', $script);
+        $this->assertStringContainsString('promptEnableAfterUpgrade(appId);', $script);
+
+        // 升级链路停留在当前 Tab：reloadAppCenterCurrent 按当前 Tab 渲染（不切到已安装），
+        // 更新 Tab 用本地数据渲染（updateChecked），升级成功 dropUpdatedApp 后列表即时移除该项
+        $this->assertStringContainsString('function reloadAppCenterCurrent()', $script);
+        $this->assertStringContainsString('updateChecked: false,', $script);
+        $this->assertStringContainsString('state.updateChecked = true;', $script);
+        $this->assertStringContainsString("if (state.updateChecked) {", $script);
+        $this->assertStringContainsString('promptEnableApp(appId, app.name, \'升级成功，当前版本 v\' + app.version, true);', $script);
+
+        // 桌面图标右键重命名：仅修改工作区桌面项 title，渲染与保存均走桌面工作区数据
+        $this->assertStringContainsString("items.push(['重命名', 'fa-pencil', 'rename']);", $script);
+        $this->assertStringContainsString('function renameDesktopIcon(iconId)', $script);
+        $this->assertStringContainsString('item.title = name;', $script);
+        $this->assertStringContainsString('renderDesktop();' . "\n" . '            saveWorkspace(false);', $script);
 
         // 角标绝对定位在按钮右上角，定位上下文只给 updates 按钮，不影响菜单树按钮
         $this->assertMatchesRegularExpression(
@@ -1165,6 +1423,15 @@ class WebosWorkspaceApiTest extends WebosTestCase
         $this->assertStringNotContainsString('升级包已上传，应用将完成升级', $script);
         $this->assertStringContainsString('promptEnableAfterUpgrade', $script);
         $this->assertStringContainsString('是否现在启用当前应用？', $script);
+
+        // WebOS 自身升级特殊优化：禁用拦截附桌面可用说明；启用成功后引导刷新加载新版桌面（其它应用保持通用提示）
+        $this->assertStringContainsString("if (appId === 'cmspro.webos') {" . "\n" . '                disableNotice +=', $script);
+        $this->assertStringContainsString('升级期间当前桌面与已打开的窗口可继续正常操作，不受影响', $script);
+        $this->assertStringContainsString('WebOS 管理桌面已升级并启用至新版本，刷新页面后加载新版桌面。', $script);
+        $this->assertStringContainsString("window.location.reload();", $script);
+
+        // 安装流程依赖检测对齐传统后台：失败走 showErrorDialog 长弹窗（含依赖应用市场引导），不再 toast 一闪而过
+        $this->assertStringContainsString('showErrorDialog(error.message);' . "\n" . '        }).finally(function () {' . "\n" . '            elements.confirmInstall.disabled = false;', $script);
         // 打开对话框不再自动触发系统文件选择框
         $this->assertStringNotContainsString('elements.packageInput.click()', $script);
         $this->assertStringContainsString('.app-upload-zone {', $stylesheet);
@@ -1266,13 +1533,14 @@ class WebosWorkspaceApiTest extends WebosTestCase
         $this->assertStringNotContainsString('<i class="fa fa-user" aria-hidden="true"></i>', $view);
     }
 
-    /** 初始数据：首次进入桌面只固定「应用中心」，不再自动塞系统菜单 */
+    /** 初始数据：超管首次进入桌面只固定「应用中心」；非超管不预置（应用中心仅超管可用） */
     public function test_initial_desktop_pins_only_application_center(): void
     {
         $script = file_get_contents(dirname(__DIR__, 2) . '/Assets/js/webos.js');
 
         $this->assertIsString($script);
-        $this->assertStringContainsString('var selected = [applicationCenterEntry()];', $script);
+        $this->assertStringContainsString('var selected = isSuperAdmin ? [applicationCenterEntry()] : [];', $script);
+        $this->assertStringContainsString('if (isSuperAdmin && !state.workspace.taskbar_items.length) {', $script);
         $this->assertStringNotContainsString("var preferred = ['文件', '内容', '系统'];", $script);
         $this->assertStringNotContainsString('selected = selected.slice(0, 3);', $script);
     }

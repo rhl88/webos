@@ -129,6 +129,24 @@ textarea:focus-visible,
     pointer-events: none;
 }
 
+/* 桌面「应用中心」图标右上角的可更新数量角标（指针事件由 .desktop-icon span 规则屏蔽） */
+.desktop-update-badge {
+    position: absolute;
+    top: 2px;
+    right: 8px;
+    min-width: 17px;
+    height: 17px;
+    padding: 0 4px;
+    border-radius: 9px;
+    color: #fff;
+    background: #ef5a62;
+    font-size: 10px;
+    font-style: normal;
+    line-height: 17px;
+    text-align: center;
+    box-shadow: 0 1px 3px rgba(0, 24, 58, 0.45);
+}
+
 .desktop-icon:hover,
 .desktop-icon:focus-visible {
     border-color: rgba(255, 255, 255, 0.42);
@@ -371,6 +389,71 @@ textarea:focus-visible,
     color: #087f75;
 }
 
+/* 窗口标题栏前台菜单下拉：应用安装了前台（home）菜单时显示 */
+.window-home-menu {
+    position: relative;
+    display: flex;
+    align-items: center;
+}
+
+.window-home-menu .home-menu-trigger {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 3px;
+    width: 58px;
+    height: 100%;
+    color: #087f75;
+}
+
+.window-home-menu .home-menu-trigger .fa-caret-down {
+    font-size: 10px;
+    opacity: 0.7;
+}
+
+.window-home-menu-list {
+    position: absolute;
+    top: calc(100% - 2px);
+    left: 0;
+    z-index: 30;
+    min-width: 168px;
+    max-height: 260px;
+    overflow-y: auto;
+    padding: 4px;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    background: var(--webos-surface);
+    border: 1px solid var(--webos-line);
+    border-radius: 8px;
+    box-shadow: var(--webos-shadow);
+}
+
+/* display:flex 会覆盖 hidden 属性的浏览器默认 display:none，需显式声明保证收起生效 */
+.window-home-menu-list[hidden] {
+    display: none;
+}
+
+.window-home-menu-item {
+    display: flex;
+    align-items: center;
+    padding: 7px 10px;
+    border: 0;
+    border-radius: 5px;
+    background: transparent;
+    color: var(--webos-text);
+    font-size: 12px;
+    text-align: left;
+    cursor: pointer;
+    white-space: nowrap;
+}
+
+.window-home-menu-item:hover,
+.window-home-menu-item:focus-visible {
+    background: var(--webos-soft);
+    color: var(--webos-primary-dark);
+}
+
 .window-body {
     display: flex;
     flex: 1 1 auto;
@@ -502,9 +585,22 @@ textarea:focus-visible,
 
 /* 窗口内容区页面容器：_iframe 承载 iframe，_component 直接注入 HTML 片段，两者共用同一充满区域 */
 .window-page-host {
+    position: relative;
     width: 100%;
     height: 100%;
     overflow-y: auto;
+    /* 桌面全局禁选（防框选图标误选文字），路由模式注入的 HTML 在父文档内会继承，
+       在内容区恢复文本可选，保证 _component 渲染的内容可选中复制 */
+    user-select: text;
+}
+
+/* 非聚焦窗口 iframe 上的透明遮罩：iframe 内容点击不冒泡到窗口元素，
+   先由遮罩承接 pointerdown 聚焦窗口（冒泡至窗口元素触发 focusWindow 并移除遮罩） */
+.window-frame-shield {
+    position: absolute;
+    inset: 0;
+    z-index: 5;
+    background: transparent;
 }
 
 /* 窗口 8 方向调整手柄：四边 + 四角（置于窗口内侧，透明无视觉干扰） */
@@ -1178,6 +1274,26 @@ textarea:focus-visible,
     gap: 6px;
     border-top: 1px solid var(--webos-line);
     background: #fbfcfd;
+}
+
+/* 开始菜单系统操作区版权：与框架后台页脚文案一致（系统版本号与年份动态读取） */
+.start-copyright {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 12px;
+    color: #8798ab;
+    text-align: center;
+}
+
+.start-copyright a {
+    color: #61748a;
+}
+
+.start-copyright a:hover {
+    color: #087f75;
 }
 
 .start-system-actions button {
@@ -2488,6 +2604,25 @@ textarea:focus-visible,
     color: #49617a;
     background: #f2f6f9;
     font-size: 12px;
+}
+
+/* 应用更新状态栏刷新按钮：图标可点击，悬停高亮 */
+.updates-refresh-button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    height: 24px;
+    border: 0;
+    border-radius: 4px;
+    background: transparent;
+    color: inherit;
+    cursor: pointer;
+    transition: background 0.15s ease;
+}
+.updates-refresh-button:hover,
+.updates-refresh-button:focus-visible {
+    background: rgba(18, 140, 128, 0.14);
 }
 
 .app-center-status.is-error {
@@ -4036,6 +4171,84 @@ textarea:focus-visible,
 .desktop-context-item i {
     width: 14px;
     text-align: center;
+}
+
+/* 右键菜单分组容器：为「查看」等带子菜单的项提供定位锚点 */
+.desktop-context-group {
+    position: relative;
+    display: grid;
+}
+
+.desktop-context-group > .desktop-context-item {
+    width: 100%;
+}
+
+/* 有子菜单的项尾部展开箭头 */
+.desktop-context-item.has-children::after {
+    content: '\f105';
+    margin-left: auto;
+    font-family: FontAwesome;
+    font-size: 12px;
+    opacity: 0.55;
+}
+
+/* 子菜单（查看 > 大/中/小图标）：hover 父项或子菜单本身时保持展开 */
+.desktop-context-submenu {
+    position: absolute;
+    top: -6px;
+    left: calc(100% + 4px);
+    z-index: 1;
+    display: none;
+    min-width: 132px;
+    padding: 6px;
+    border: 1px solid #d4dfe8;
+    border-radius: 8px;
+    background: #fff;
+    box-shadow: 0 14px 30px rgba(10, 34, 59, 0.16);
+}
+
+.desktop-context-group:hover > .desktop-context-submenu,
+.desktop-context-submenu:hover {
+    display: grid;
+    gap: 2px;
+}
+
+.desktop-context-item.is-checked {
+    color: #087f75;
+    font-weight: 600;
+}
+
+/* 桌面图标三档尺寸（右键「查看」切换；data-icon-size 由 renderDesktop 同步，格子换算在 JS DESKTOP_ICON_SIZES） */
+.webos-desktop[data-icon-size="large"] .desktop-icon {
+    width: 112px;
+    min-height: 122px;
+}
+
+.webos-desktop[data-icon-size="large"] .desktop-icon-badge {
+    width: 68px;
+    height: 68px;
+    margin-bottom: 8px;
+    border-radius: 14px;
+    font-size: 32px;
+}
+
+.webos-desktop[data-icon-size="small"] .desktop-icon {
+    width: 72px;
+    min-height: 78px;
+    padding: 6px 3px;
+}
+
+.webos-desktop[data-icon-size="small"] .desktop-icon-badge {
+    width: 40px;
+    height: 40px;
+    margin-bottom: 4px;
+    border-radius: 9px;
+    font-size: 18px;
+}
+
+.webos-desktop[data-icon-size="small"] .desktop-icon-label {
+    font-size: 12px;
+    line-height: 16px;
 }
 
 /* 应用操作弹窗 */

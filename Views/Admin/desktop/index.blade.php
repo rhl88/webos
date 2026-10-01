@@ -4,7 +4,7 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="csrf-token" content="{{ csrf_token() }}">
-    <title>CMSPRO WebOS</title>
+    <title>CMSPRO v{{ $cmsproVersion }} · WebOS v{{ $webosVersion }}</title>
     <link rel="stylesheet" href="{{ asset('CmsProUi/component/pear/css/pear.css') }}">
     <link rel="stylesheet" href="{{ asset('CmsProUi/font-awesome/4.7.0/css/font-awesome.min.css') }}">
     <link rel="stylesheet" href="{{ asset('Admin/css/admin.css') }}">
@@ -64,6 +64,10 @@
         </div>
         <footer class="start-system-actions" aria-label="系统操作">
             <button type="button" data-action="lock-desktop"><i class="fa fa-lock"></i>锁定</button>
+            {{-- 版权信息与框架后台页脚（layouts/admin.blade.php）一致：系统版本号与年份动态读取 --}}
+            <span class="start-copyright">
+                <a href="http://www.cmspro.cn" target="_blank" rel="noopener">CMSPRO</a> v{{ $cmsproVersion }} &copy; 2015-{{ date('Y') }} Copyright by <a href="http://www.renhuali.cn" target="_blank" rel="noopener">Holley</a>
+            </span>
             <button type="button" data-action="logout"><i class="fa fa-sign-out"></i>退出登录</button>
             <button type="button" class="os-settings" data-open-webos-settings><i class="fa fa-cog"></i>OS 设置</button>
         </footer>

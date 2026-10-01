@@ -35,12 +35,17 @@ class WebosController extends Controller
                     'name' => $admin->name ?: $admin->username,
                     'username' => $admin->username,
                     'avatar' => $admin->avatar,
+                    // 应用中心与 WebOS 升级提醒仅对超级管理员开放
+                    'is_super_admin' => $admin->isSuperAdmin(),
                 ],
                 'csrfToken' => csrf_token(),
                 'baseUrl' => url('/'),
             ],
             'marketBaseUrl' => $this->marketBaseUrl(),
             'webosAssetVersion' => $this->assetVersion(),
+            // 桌面标题与开始菜单版权：系统版本号动态读取（与框架后台页脚一致），WebOS 版本号读应用 manifest
+            'cmsproVersion' => system_version(),
+            'webosVersion' => $this->manifestVersion(),
         ]);
     }
 
@@ -84,6 +89,22 @@ class WebosController extends Controller
         }
 
         return $version;
+    }
+
+    /**
+     * WebOS 版本号：读取应用 manifest.json 的 version 字段（桌面标题展示）。
+     */
+    protected function manifestVersion(): string
+    {
+        $manifestPath = app_path('Apps/CmsproWebos/manifest.json');
+        if (is_file($manifestPath)) {
+            $manifest = json_decode((string) file_get_contents($manifestPath), true);
+            if (is_array($manifest) && !empty($manifest['version'])) {
+                return (string) $manifest['version'];
+            }
+        }
+
+        return '';
     }
 
     /**
@@ -145,6 +166,8 @@ class WebosController extends Controller
             'preferences' => ['sometimes', 'array'],
             'preferences.wallpaper' => ['sometimes', 'in:webos-default,deep-blue'],
             'preferences.wallpaper_url' => ['sometimes', 'nullable', 'string', 'max:200'],
+            // 桌面图标三档尺寸（右键「查看」切换）：无规则声明时 $validated 会丢弃该键，导致勾选回退中图标
+            'preferences.icon_size' => ['sometimes', 'in:small,medium,large'],
             'preferences.taskbar_alignment' => ['sometimes', 'in:left,center'],
             'preferences.taskbar_position' => ['sometimes', 'in:top,bottom,left,right'],
             'preferences.clock_format' => ['sometimes', 'in:12h,24h'],

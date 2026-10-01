@@ -4,6 +4,7 @@ namespace App\Apps\CmsproWebos\Services;
 
 use App\Apps\CmsproWebos\Models\WebosWorkspace;
 use Illuminate\Support\Arr;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Str;
 use InvalidArgumentException;
 
@@ -12,6 +13,7 @@ class WorkspaceService
     public const DEFAULT_PREFERENCES = [
         'wallpaper' => 'webos-default',
         'wallpaper_url' => '',
+        'icon_size' => 'medium',
         'taskbar_alignment' => 'left',
         'taskbar_position' => 'bottom',
         'clock_format' => '24h',
@@ -128,6 +130,10 @@ class WorkspaceService
             ? $preferences['wallpaper']
             : self::DEFAULT_PREFERENCES['wallpaper'];
         $preferences['wallpaper_url'] = $this->sanitizeWallpaperUrl((string) ($preferences['wallpaper_url'] ?? ''));
+        // 桌面图标三档尺寸（右键「查看」切换）：非法值回退中图标
+        $preferences['icon_size'] = in_array($preferences['icon_size'] ?? '', ['small', 'medium', 'large'], true)
+            ? $preferences['icon_size']
+            : self::DEFAULT_PREFERENCES['icon_size'];
         $preferences['taskbar_alignment'] = in_array($preferences['taskbar_alignment'], ['left', 'center'], true)
             ? $preferences['taskbar_alignment']
             : self::DEFAULT_PREFERENCES['taskbar_alignment'];
@@ -154,15 +160,15 @@ class WorkspaceService
     }
 
     /**
-     * 重置工作区：桌面/任务栏恢复初始默认布局（仅保留「应用中心」内置入口），偏好恢复默认
+     * 重置工作区：桌面/任务栏恢复初始默认布局，偏好恢复默认
      * （不影响已上传的自定义壁纸文件）。返回重置后的工作区模型。
+     * 超级管理员初始固定「应用中心」；非超管桌面/任务栏为空（应用中心仅超管可用，与前端初始化一致）。
      */
     public function resetForAdmin(int $adminUserId): WebosWorkspace
     {
         $workspace = $this->getForAdmin($adminUserId);
+        $isSuperAdmin = (bool) Auth::guard('admin')->user()?->isSuperAdmin();
 
-        // 重置为初始默认布局：仅固定「应用中心」内置入口（与前端首次初始化逻辑一致），
-        // 避免重置后桌面/任务栏空置、内置应用中心入口丢失；偏好恢复默认，自定义壁纸文件保留
         $defaultEntry = [
             'id' => 'webos-app-center',
             'menu_id' => null,
@@ -174,9 +180,9 @@ class WorkspaceService
             'x' => 0,
             'y' => 0,
         ];
-        $workspace->desktop_items = [$defaultEntry];
+        $workspace->desktop_items = $isSuperAdmin ? [$defaultEntry] : [];
         // 任务栏项结构与桌面项一致但无坐标
-        $workspace->taskbar_items = [Arr::except($defaultEntry, ['x', 'y'])];
+        $workspace->taskbar_items = $isSuperAdmin ? [Arr::except($defaultEntry, ['x', 'y'])] : [];
         $workspace->preferences = self::DEFAULT_PREFERENCES;
         $workspace->save();
 

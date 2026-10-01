@@ -107,6 +107,34 @@ CmsproWebos/
 
 | 版本 | 日期 | 说明 |
 |---|---|---|
+| 1.9.67 | 2026-10-01 | 修复右键「查看」勾选不跟随（用户反馈：选大图标后再右键勾选仍在中图标）：根因——WebosController::updateWorkspace 的验证规则未声明 `preferences.icon_size`，Laravel `$validated` 只保留有规则声明的键，前端发来的 icon_size 在控制器层被丢弃 → sanitizePreferences 白名单里 incoming 无此键 → 存量 medium 原样入库 → saveWorkspace 响应覆盖 state → 勾选回退。修复：验证规则补充 `'preferences.icon_size' => ['sometimes', 'in:small,medium,large']`（1.9.65 后端只补了 WorkspaceService 白名单/校验与 DEFAULT_PREFERENCES，漏了控制器规则层）。测试：新增 test_workspace_api_persists_icon_size_preference（HTTP PUT large 持久化 + 再读验证 + 非法值 giant 40201 拒绝）；108 测试 978 断言通过。 |
+| 1.9.66 | 2026-10-01 | 版权信息与动态版本标题：① WebosController 新增 `manifestVersion()`（读应用 manifest.json version），index 视图数据加 `cmsproVersion => system_version()`（框架动态版本函数）与 `webosVersion`；② 桌面标题改为 `CMSPRO v{系统版本} · WebOS v{应用版本}`；③ 开始菜单系统操作区锁定与退出登录之间插入 `.start-copyright` 版权行（CMSPRO/www.cmspro.cn 链接 + 系统版本 + 2015-当年动态年份 + Holley/www.renhuali.cn 链接，与 layouts/admin.blade.php#L203 页脚一致），CSS 弹性居中省略号；④ 测试：test_admin_can_open_webos_desktop 增加标题双版本正则与版权年份断言（真实渲染验证）。 |
+| 1.9.65 | 2026-10-01 | 桌面右键「查看」子菜单（大/中/小图标）：① JS 新增 `DESKTOP_ICON_SIZES` 三档格子常量（large 128x130 / medium 102x104 / small 86x88，中档与历史布局一致保证默认不变）与 `desktopIconSize()` 档位取值；renderDesktop 布局与拖拽落点换算按档位计算，`root.dataset.iconSize` 驱动 CSS 视觉覆盖（badge/按钮盒/字号三档）；② `menuMarkupInto` 支持 item[4] 子菜单（`.desktop-context-group` 包裹 + `has-children` 尾箭头 + hover 展开 `.desktop-context-submenu`，当前档位 `is-checked` 勾选）；③ 空白右键菜单新增「查看 > 大/中/小图标」，`runDesktopContextAction` 的 icon-large/medium/small 分支更新 `preferences.icon_size` 并持久化重排；④ 后端 `DEFAULT_PREFERENCES` 加 icon_size=medium，`sanitizePreferences` 枚举校验（非法值回退中档）。 |
+| 1.9.64 | 2026-10-01 | 停用应用图标不占位（用户反馈：停用图标隐藏了但仍占格，其它图标无法移入）：① 新增 `assignedDesktopItems()` 统一出口——渲染/拖拽占用/找空行全部基于已分配可见集合，隐藏项的格子可移入、新增入口可落在其空行；② 新增 `normalizeDesktopLayout()` 布局归一化——可见图标坐标冲突时（停用期间格子被占后重新启用）按 (y,x) 顺序下移到第一个空白格并静默保存，未冲突保持原位；③ 在 `refreshCatalog`（目录刷新后）与 `initialize`（首次渲染前）两个时机执行归一化。隐藏项原始坐标保留不动。 |
+| 1.9.63 | 2026-10-01 | 应用中心与升级提醒仅超级管理员可用：① WebosController webosRuntime.admin 注入 is_super_admin；② 前端 isSuperAdmin 变量——bootstrapDesktopItems 非超管不预置应用中心（桌面/任务栏空）、entryAssigned 对 webos-app-center 返回 isSuperAdmin（历史工作区数据的图标同样过滤）、checkWebosSelfUpdate 非超管直接跳过；③ WorkspaceService::resetForAdmin 非超管重置后桌面/任务栏为空（与前端初始化一致）。 |
+| 1.9.62 | 2026-10-01 | 权限对齐框架（用户反馈：sunzy 框架后台有「儿康管理」菜单而 WebOS 无）：① 系统框架 `MenuService::userMenus()` 补全父级菜单链——非超管授权子菜单未授权父级时（孤儿节点），自动补全所有祖先（与 `ConfigController::menus` 的 menus.json 补全逻辑一致），修复 WebOS 目录/开始菜单/窗口侧栏整体丢失应用的问题；② WebOS 桌面/任务栏图标按「已分配」过滤——新增 `visibleAppIds()`（从当前用户菜单目录递归收集 app_id）与 `entryAssigned(id)`（特殊入口保留/菜单入口须在 flatMenus/应用快捷方式须目录中仍有该应用菜单），`renderDesktop`、`renderPinnedApps` 渲染前过滤，`refreshCatalog` 刷新目录后同步重绘，角色收回授权后幽灵图标不再显示。 |
+| 1.9.61 | 2026-10-01 | 前台菜单触发按钮样式调整：地球图标（fa-globe）改为文字「前台」+ fa-caret-down 下拉箭头；按钮尺寸固定 width: 58px / height: 100%（撑满标题栏，justify-content 居中）。 |
+| 1.9.60 | 2026-10-01 | 前台菜单下拉项去掉 FontAwesome 图标仅显示菜单名称：windowHomeMenuMarkup 菜单项移除 `<i class="fa ...">`；collectHomeMenuLeaves 叶子不再收集 icon 字段；CSS 移除 .window-home-menu-item .fa 样式与 gap 间距。 |
+| 1.9.59 | 2026-10-01 | 前台菜单下拉框修复与位置调整：① 新增 `.window-home-menu-list[hidden] { display: none; }`——修复 display:flex 覆盖 hidden 属性浏览器默认样式导致列表默认展开且切换无效的问题；② 下拉列表定位由 right:0（右对齐）改为 left:0（左侧靠齐触发图标下方展开）。 |
+| 1.9.58 | 2026-10-01 | 应用窗口标题栏前台菜单下拉框：在「收起左侧菜单」左侧注入前台菜单触发器（地球+下拉箭头图标）；数据源为系统菜单树接口 `/api/admin/menus/tree?terminal_type=home`（安装时 manifest home_menus 已写入 admin_menus），前端按窗口应用的 app_id 递归筛选菜单叶子（collectHomeMenuLeaves）并缓存（homeMenusCache，同应用跨窗口复用）；点击菜单项 `window.open(path, '_blank', 'noopener')` 新标签页打开前台地址并收起下拉；应用无前台菜单时不注入任何元素；支持外部点击关闭、多窗口展开互斥、aria-expanded 无障碍状态。 |
+| 1.9.57 | 2026-10-01 | 安装应用依赖检测对齐传统后台：安装失败改用 showErrorDialog 长错误弹窗（依赖应用未安装/未启用时附「到应用市场搜索安装并启用」引导），不再 toast 一闪而过；依赖校验本身由系统安装接口统一执行（checkDependencies：dependencies.app_ids 未装 50004 / 已装未启用 50017）。 |
+| 1.9.56 | 2026-10-01 | 桌面「应用中心」可更新数量角标样式调整：定位改为 top: 2px / right: 8px（图标右上角内侧）。 |
+| 1.9.55 | 2026-10-01 | WebOS 自身升级特殊优化：禁用拦截提示附「升级期间桌面与已开窗口可继续操作」说明；升级并启用成功后引导「立即刷新」加载新版桌面（其它应用保持通用提示不变）。 |
+| 1.9.54 | 2026-10-01 | 每次进入 WebOS 桌面自动检查应用市场中 WebOS 自身是否有更高版本：有则弹出确认提示，确认「立即升级」后打开应用中心窗口并自动触发升级流程（启用拦截 → 版本选择弹窗）；无新版本或检查失败时静默。 |
+| 1.9.53 | 2026-10-01 | 修改密码弹窗宽度由 430px 调整为 480px。 |
+| 1.9.52 | 2026-10-01 | 个人设置窗口宽度固定 680px（小屏收窄避免溢出）；修改密码弹窗宽度固定 430px（openActionDialog 传入 width）。 |
+| 1.9.51 | 2026-10-01 | OS 设置窗口宽度固定 1000px（不再随屏幕宽度按百分比拉伸；小屏自动收窄避免溢出，高度仍按默认比例 80%）。 |
+| 1.9.50 | 2026-10-01 | 修复路由模式（_component）窗口内容无法选中复制：桌面全局 user-select:none 防框选误选，路由模式注入父文档的 HTML 继承禁选；窗口内容区 .window-page-host 恢复 user-select:text，iframe 页面与标题栏/侧栏行为不变。 |
+| 1.9.49 | 2026-10-01 | 修复多窗口堆叠时点击底层窗口 iframe 内容无法切换聚焦的问题：未聚焦窗口的 iframe 覆盖透明遮罩（iframe 内点击不冒泡到父页面），点击遮罩即冒泡聚焦该窗口并移除遮罩，第二次点击直接操作 iframe 内容；聚焦状态变化由 focusWindow/renderWindowPage 统一同步。 |
+| 1.9.48 | 2026-10-01 | 应用更新列表的应用图标遵循全局规则：更新记录不含图标数据时合并本地目录应用图标——icon_url 由服务端按 icon.svg → icon.png 顺序解析，catalog.icon（manifest.json 的 icon）兜底，目录缺失时回退默认方块图标。 |
+| 1.9.47 | 2026-10-01 | 桌面「应用中心」图标右上角显示可更新应用数量角标（红色圆底白字，与侧栏角标同风格）：检查更新结果变化时由 syncUpdateBadge 同步重渲染桌面，升级成功/刷新检查后数量即时收敛，无更新时不显示。 |
+| 1.9.46 | 2026-10-01 | 「应用更新」状态栏刷新图标改为可点击按钮：点击后强制全量检查更新（绕过 lazy 缓存口径）并重渲染更新列表，检查中显示加载特效、完成后提示；状态栏文案统一（发现 N 个可用更新 / 暂无可用更新），悬停有高亮反馈。 |
+| 1.9.45 | 2026-10-01 | 应用升级全链路停留在当前 Tab（不再切换到已安装）：新增 reloadAppCenterCurrent 按当前 Tab 刷新；「应用更新」Tab 改为本地数据渲染（updateChecked 标记，规避服务端 24h 缓存旧数据），升级成功 dropUpdatedApp 后更新列表即时移除已升级应用。 |
+| 1.9.44 | 2026-10-01 | 应用中心全部 `layer.load(2, {content: '…'})` 统一改为 `layer.load(2)` 纯加载特效（覆盖：升级包下载、一键升级各步、删除应用文件、备份准备下载、备份文件上传、应用文档加载），执行期间不再显示文字提示。 |
+| 1.9.43 | 2026-10-01 | 应用包上传执行（手动升级/上传安装共用弹层）时仅显示加载特效，不再显示「正在处理」文字提示。 |
+| 1.9.42 | 2026-10-01 | 桌面图标右键菜单新增「重命名」：layui 输入框修改桌面显示名称（保存到工作区 desktop_items[].title），应用名称、系统菜单等应用本身数据不受影响；支持空值/超长校验（≤60 字符），修改后即时重渲染并静默保存工作区。 |
+| 1.9.41 | 2026-09-30 | 「修改密码」弹窗改为 layui 风格白底弹窗（plain 模式，与「管理入口」弹窗一致），不再使用毛玻璃效果。 |
+| 1.9.40 | 2026-09-30 | 应用升级交互完整复刻传统后台：启用中的应用先禁用（确认后自动继续）→ 获取可用版本列表 → layui 弹窗选择升级版本（单步/跳跃/直接最新/一键升级到最新版 + 备份提醒 +「先去备份」直达备份管理）→ 下载升级包安装（loading 进度提示）→ 成功后清除待升级记录、刷新目录并询问是否启用；一键升级逐级执行、任一步失败即停止。 |
 | 1.9.39 | 2026-09-30 | ① 重置工作区改为恢复初始默认布局（仅保留「应用中心」内置入口，桌面+任务栏），不再清空桌面；② 卷页入口方向修正：白纸沿「右上→左下」对角折痕翻起（折起区在右下角），悬停时纸张沿折痕动态拉开（白纸收拢到左上角、纸背面翻走）露出深蓝「进入 WebOS」内容页。 |
 | 1.9.38 | 2026-09-30 | 「进入 WebOS」入口改为卷页（page peel）效果：静态为右下角白色卷页折角（对角折痕 + 卷筒阴影渐变 + 圆润页角），悬停时书页翻开、卷角翻走，露出深蓝底「进入 WebOS」内容页；贴屏幕右下角，升级按钮出现时上移避让。 |
 | 1.9.37 | 2026-09-30 | 修复「进入 WebOS」入口仍显示白色：entry.js 改为全部关键样式内联（内联优先级最高，彻底杜绝后台主题覆盖），悬停翻页改由 mouseenter/mouseleave 驱动，不依赖外部 CSS 加载。 |

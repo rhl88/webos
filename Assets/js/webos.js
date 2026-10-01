@@ -7,6 +7,21 @@
     }
 
     var runtime = window.CMSPRO_WEBOS || {};
+    // 应用中心与 WebOS 升级提醒仅对超级管理员开放（后端注入）
+    var isSuperAdmin = !!(runtime.admin && runtime.admin.is_super_admin);
+
+    // 桌面图标三档尺寸：格子尺寸用于布局定位与拖拽落点换算（iconW/iconH 为按钮盒尺寸，与 CSS [data-icon-size] 覆盖样式一一对应）
+    var DESKTOP_ICON_SIZES = {
+        large: { cellW: 128, cellH: 130, iconW: 112, iconH: 122 },
+        medium: { cellW: 102, cellH: 104, iconW: 88, iconH: 96 },
+        small: { cellW: 86, cellH: 88, iconW: 72, iconH: 78 }
+    };
+
+    /** 当前桌面图标尺寸档位（非法值回退中图标默认档） */
+    function desktopIconSize() {
+        var size = state.workspace.preferences.icon_size;
+        return DESKTOP_ICON_SIZES[size] || DESKTOP_ICON_SIZES.medium;
+    }
     var state = {
         workspace: {
             desktop_items: [],
@@ -35,6 +50,7 @@
         marketApps: new Map(),
         marketPager: { category: '', keyword: '', page: 0, lastPage: 1, total: 0, loading: false, failed: false, token: 0 },
         updateApps: [],
+        updateChecked: false,
         updateCount: null,
         appCenterTab: 'market',
         docAppId: '',
@@ -452,13 +468,13 @@
             return Promise.resolve();
         }
 
-        // 初始数据只固定「应用中心」，系统菜单由用户按需从入口管理添加
-        var selected = [applicationCenterEntry()];
+        // 初始数据：超级管理员只固定「应用中心」，非超管不预置（应用中心仅超管可用）；系统菜单由用户按需从入口管理添加
+        var selected = isSuperAdmin ? [applicationCenterEntry()] : [];
         state.workspace.desktop_items = selected.map(function (item, index) {
             return Object.assign({}, item, { x: 0, y: index });
         });
         // 任务栏初始同样固定「应用中心」（两列表相互独立，仅初始默认值相同）
-        if (!state.workspace.taskbar_items.length) {
+        if (isSuperAdmin && !state.workspace.taskbar_items.length) {
             state.workspace.taskbar_items = [Object.assign({}, applicationCenterEntry())];
         }
 
@@ -526,13 +542,26 @@
     }
 
     function renderDesktop() {
-        elements.desktopIcons.innerHTML = state.workspace.desktop_items.map(function (item) {
-            var left = 4 + Math.max(0, Number(item.x) || 0) * 102;
-            var top = 4 + Math.max(0, Number(item.y) || 0) * 104;
+        // 图标尺寸档位：格子尺寸驱动布局，data-icon-size 驱动 CSS 视觉（badge/字号/按钮盒）
+        var size = desktopIconSize();
+        root.dataset.iconSize = state.workspace.preferences.icon_size === 'large' || state.workspace.preferences.icon_size === 'small'
+            ? state.workspace.preferences.icon_size
+            : 'medium';
+        elements.desktopIcons.innerHTML = state.workspace.desktop_items.filter(function (item) {
+            // 与框架权限对齐：入口未分配（菜单/应用被收回授权）时桌面不再显示对应图标
+            return entryAssigned(item.id);
+        }).map(function (item) {
+            var left = 4 + Math.max(0, Number(item.x) || 0) * size.cellW;
+            var top = 4 + Math.max(0, Number(item.y) || 0) * size.cellH;
+            // 桌面「应用中心」图标右上角显示可更新应用数量（无更新时不渲染）
+            var updateBadge = item.id === 'webos-app-center' && state.updateApps.length
+                ? '<span class="desktop-update-badge">' + state.updateApps.length + '</span>'
+                : '';
             return '<button class="desktop-icon' + (state.desktopSelection.has(item.id) ? ' is-selected' : '') + '" type="button" data-desktop-id="' + escapeHtml(item.id) + '"'
                 + ' style="left:' + left + 'px;top:' + top + 'px" title="' + escapeHtml(item.title) + '">'
                 + entryIconMarkup(findEntry(item.id) || item, 'desktop-icon-badge')
                 + '<span class="desktop-icon-label">' + escapeHtml(item.title) + '</span>'
+                + updateBadge
                 + '</button>';
         }).join('');
         renderTaskbarWindows();
@@ -563,7 +592,10 @@
     }
 
     function renderPinnedApps() {
-        var pinned = taskbarItems();
+        var pinned = taskbarItems().filter(function (item) {
+            // 与桌面一致：未分配的入口不在任务栏固定区显示
+            return entryAssigned(item.id);
+        });
         elements.taskbarPinned.innerHTML = pinned.map(function (item) {
             var entry = findEntry(item.id) || item;
             var windowKey = runningWindowKeyByApp(entry);
@@ -775,7 +807,8 @@
             toast('该入口已经在桌面上');
             return;
         }
-        var occupied = state.workspace.desktop_items.map(function (item) { return Number(item.y) || 0; });
+        // 找空行时仅统计可见图标：停用应用不再占位，新图标可以落在其格子
+        var occupied = assignedDesktopItems().map(function (item) { return Number(item.y) || 0; });
         var row = 0;
         while (occupied.indexOf(row) >= 0) {
             row += 1;
@@ -909,6 +942,8 @@
 
     function desktopContextMenuItems(context) {
         var items = [[context.entry && context.entry.app_id ? '打开应用' : '打开', 'fa-external-link', 'open']];
+        // 重命名仅修改桌面显示名称（工作区数据），不影响应用本身的名称与菜单
+        items.push(['重命名', 'fa-pencil', 'rename']);
         // 应用中心为内置入口，不允许删除，右键不提供删除项
         if (!context.entry || context.entry.id !== 'webos-app-center') {
             items.push(['删除图标', 'fa-thumb-tack', 'remove']);
@@ -939,16 +974,26 @@
         return Boolean(target.closest('#desktop-icons')) && !target.closest('[data-desktop-id]');
     }
 
-    /** 桌面空白处右键菜单：刷新、设置背景、个性设置、显示桌面 */
+    /** 桌面空白处右键菜单：刷新、查看（图标大小子菜单）、设置背景、个性设置、显示桌面 */
     function openDesktopBlankContextMenu(clientX, clientY) {
         closeDesktopContextMenu();
         closeTaskbarContextMenu();
         closeAppRowMenus();
+        // 查看 > 图标大小子菜单：当前档位带勾选标记（默认中图标）
+        var currentSize = ['large', 'small'].indexOf(state.workspace.preferences.icon_size) >= 0
+            ? state.workspace.preferences.icon_size
+            : 'medium';
+        var sizeChildren = [
+            { label: '大图标', action: 'icon-large', checked: currentSize === 'large' },
+            { label: '中图标', action: 'icon-medium', checked: currentSize === 'medium' },
+            { label: '小图标', action: 'icon-small', checked: currentSize === 'small' }
+        ];
         var items = [
-            ['刷新', 'fa-refresh', 'refresh', ''],
-            ['设置背景', 'fa-picture-o', 'wallpaper', ''],
-            ['个性设置', 'fa-sliders', 'personalize', ''],
-            ['显示桌面', 'fa-eye', 'show-desktop', '']
+            ['刷新', 'fa-refresh', 'refresh', '', null],
+            ['查看', 'fa-th-large', '', '', sizeChildren],
+            ['设置背景', 'fa-picture-o', 'wallpaper', '', null],
+            ['个性设置', 'fa-sliders', 'personalize', '', null],
+            ['显示桌面', 'fa-eye', 'show-desktop', '', null]
         ];
         menuMarkupInto('#desktop-context-menu', 'desktop-context-menu', items, '');
         positionDesktopMenu(clientX, clientY);
@@ -960,9 +1005,21 @@
         menu.className = className;
         menu.setAttribute('role', 'menu');
         menu.innerHTML = items.map(function (item) {
-            return '<button class="desktop-context-item ' + (item[3] ? 'is-danger' : '') + '" type="button" role="menuitem"'
-                + ' data-desktop-action="' + item[2] + '" data-desktop-id="' + escapeHtml(iconId) + '">'
-                + '<i class="fa ' + item[1] + '"></i>' + item[0] + '</button>';
+            // item[4] 为子菜单（查看 > 大/中/小图标等）：父项仅作 hover 展开，不挂 action
+            var children = Array.isArray(item[4]) && item[4].length
+                ? '<div class="desktop-context-submenu" role="menu">' + item[4].map(function (child) {
+                    return '<button class="desktop-context-item' + (child.checked ? ' is-checked' : '') + '" type="button" role="menuitem"'
+                        + ' data-desktop-action="' + child.action + '" data-desktop-id="' + escapeHtml(iconId) + '">'
+                        + '<i class="fa ' + (child.checked ? 'fa-check' : 'fa-circle-o') + '"></i>' + child.label + '</button>';
+                }).join('') + '</div>'
+                : '';
+            return '<div class="desktop-context-group">'
+                + '<button class="desktop-context-item ' + (item[3] ? 'is-danger' : '') + (children ? ' has-children' : '') + '" type="button" role="menuitem"'
+                + (item[2] ? ' data-desktop-action="' + item[2] + '"' : '')
+                + ' data-desktop-id="' + escapeHtml(iconId) + '">'
+                + '<i class="fa ' + item[1] + '"></i>' + item[0] + '</button>'
+                + children
+                + '</div>';
         }).join('');
         if (!menu.parentNode) {
             root.appendChild(menu);
@@ -983,6 +1040,13 @@
 
     function runDesktopContextAction(action, iconId) {
         var context = desktopIconContext(iconId);
+        // 查看 > 图标大小：切档后持久化偏好并按新格子尺寸重排桌面
+        if (action === 'icon-large' || action === 'icon-medium' || action === 'icon-small') {
+            state.workspace.preferences.icon_size = action.slice('icon-'.length);
+            saveWorkspace(false);
+            renderDesktop();
+            return;
+        }
         if (action === 'open') {
             openEntry(context.entry || findDesktopItem(iconId));
             return;
@@ -991,8 +1055,19 @@
             removeDesktopEntry(iconId);
             return;
         }
+        if (action === 'rename') {
+            renameDesktopIcon(iconId);
+            return;
+        }
         if (action === 'refresh') {
             refreshWorkspace();
+            return;
+        }
+        if (action === 'icon-large' || action === 'icon-medium' || action === 'icon-small') {
+            // 查看 > 图标大小：保存偏好并按新档位重排（格子尺寸随档位变化）
+            state.workspace.preferences.icon_size = action.replace('icon-', '');
+            saveWorkspace(false);
+            renderDesktop();
             return;
         }
         if (action === 'show-desktop') {
@@ -1126,6 +1201,42 @@
         return state.workspace.desktop_items.find(function (item) { return item.id === id; });
     }
 
+    /**
+     * 重命名桌面图标：仅修改工作区中该桌面项的显示名称（desktop_items[].title），
+     * 应用名称、系统菜单、开始菜单等应用本身数据不受影响。
+     * 修改后即时重渲染桌面并静默保存工作区。
+     */
+    function renameDesktopIcon(iconId) {
+        var item = findDesktopItem(iconId);
+        if (!item) {
+            return;
+        }
+        layuiLayer().prompt({
+            title: '重命名「' + escapeHtml(item.title) + '」',
+            formType: 0,
+            value: item.title,
+            maxlength: 60
+        }, function (value, index) {
+            var name = String(value || '').trim();
+            if (!name) {
+                layuiLayer().msg('名称不能为空', { icon: 2 });
+                return;
+            }
+            if (name.length > 60) {
+                layuiLayer().msg('名称不能超过 60 个字符', { icon: 2 });
+                return;
+            }
+            layuiLayer().close(index);
+            if (name === item.title) {
+                return;
+            }
+            item.title = name;
+            renderDesktop();
+            saveWorkspace(false);
+            layuiLayer().msg('已重命名', { icon: 1, time: 1200 });
+        });
+    }
+
     function desktopEntryFromStart(startItem) {
         if (!startItem) {
             return null;
@@ -1189,6 +1300,74 @@
             + ' aria-controls="window-sidebar-' + key + '" aria-expanded="' + (!collapsed) + '"'
             + ' aria-label="' + label + '" title="' + label + '">'
             + '<i class="fa ' + (collapsed ? 'fa-indent' : 'fa-outdent') + '"></i></button>';
+    }
+
+    /** 应用前台菜单叶子缓存（appId → 叶子数组）：home 菜单树同一应用跨窗口复用，无菜单不缓存以便后续重试 */
+    var homeMenusCache = new Map();
+
+    /** 窗口标题栏前台菜单下拉框：仅在应用声明并安装了前台（home）菜单时由 loadWindowHomeMenu 注入 */
+    function windowHomeMenuMarkup(leaves) {
+        var items = leaves.map(function (leaf) {
+            return '<button type="button" class="window-home-menu-item" data-home-url="' + escapeHtml(leaf.path) + '">'
+                + '<span>' + escapeHtml(leaf.name) + '</span></button>';
+        }).join('');
+
+        return '<div class="window-home-menu" data-window-home-menu>'
+            + '<button class="window-control home-menu-trigger" type="button" data-window-action="toggle-home-menu"'
+            + ' aria-haspopup="true" aria-expanded="false" title="前台菜单">'
+            + '前台 <i class="fa fa-caret-down" aria-hidden="true"></i></button>'
+            + '<nav class="window-home-menu-list" hidden>' + items + '</nav></div>';
+    }
+
+    /** 递归收集应用在前台终端（home）的菜单叶子：app_id 匹配且具备访问路径的节点 */
+    function collectHomeMenuLeaves(nodes, appId) {
+        var leaves = [];
+        (Array.isArray(nodes) ? nodes : []).forEach(function (node) {
+            if (!node || typeof node !== 'object') { return; }
+            var children = Array.isArray(node.children) ? node.children : [];
+            if (children.length) {
+                leaves = leaves.concat(collectHomeMenuLeaves(children, appId));
+                return;
+            }
+            if (String(node.app_id || '') !== String(appId) || !node.path || !node.name) { return; }
+            leaves.push({ name: node.name, path: node.path });
+        });
+
+        return leaves;
+    }
+
+    /**
+     * 加载窗口对应应用的前台菜单并在「收起左侧菜单」左侧注入下拉框。
+     * 数据源：系统菜单树接口 terminal_type=home（安装时 home_menus 已写入 admin_menus 表），
+     * 前端按窗口应用的 app_id 筛选叶子；应用没有前台菜单时不注入任何元素。
+     */
+    function loadWindowHomeMenu(windowState) {
+        if (!windowState || !windowState.entry) { return; }
+        var entry = windowState.entry;
+        var appId = entry.app_id;
+        var application = appId ? findApplication(appId) : null;
+        if (!appId || (application && application.is_system)) { return; }
+
+        var inject = function (leaves) {
+            if (!leaves || !leaves.length || !document.contains(windowState.element)) { return; }
+            var controls = windowState.element.querySelector('.window-controls');
+            if (!controls) { return; }
+            var existing = controls.querySelector('.window-home-menu');
+            if (existing) { existing.remove(); }
+            controls.insertAdjacentHTML('afterbegin', windowHomeMenuMarkup(leaves));
+        };
+
+        if (homeMenusCache.has(appId)) {
+            inject(homeMenusCache.get(appId));
+            return;
+        }
+        api('/api/admin/menus/tree?terminal_type=home').then(function (payload) {
+            var leaves = collectHomeMenuLeaves(Array.isArray(payload) ? payload : [], appId);
+            if (leaves.length) { homeMenusCache.set(appId, leaves); }
+            inject(leaves);
+        }).catch(function () {
+            // 前台菜单获取失败静默：不显示下拉框，不影响窗口本身
+        });
     }
 
     /** 已展开的侧栏菜单分组，key 取菜单自身标识，跨窗口共享不会串台 */
@@ -1390,13 +1569,16 @@
     /** 重绘应用中心侧栏，使「应用更新」角标与 state.updateCount 保持一致；窗口未打开时无需处理 */
     function syncUpdateBadge() {
         rerenderWindowNav(state.windows.get(windowKey(applicationCenterEntry())));
+        // 桌面「应用中心」图标右上角的可更新数量角标随检查结果同步
+        renderDesktop();
     }
 
     /** 静默检查可用更新数量：服务端 lazy 模式 24h 内直接返回缓存，失败时不提示也不显示角标 */
     function loadUpdateCount() {
-        api('/api/admin/apps/check-updates?lazy=1', { method: 'POST' }).then(function (payload) {
+        return api('/api/admin/apps/check-updates?lazy=1', { method: 'POST' }).then(function (payload) {
             state.updateApps = extractCollection(payload);
             state.updateCount = state.updateApps.length;
+            state.updateChecked = true;
             syncUpdateBadge();
         }).catch(function () {
             // 检查失败保持原状，用户仍可进入「应用更新」Tab 手动重试
@@ -1410,6 +1592,39 @@
         });
         state.updateCount = state.updateApps.length;
         syncUpdateBadge();
+    }
+
+    /** 进入桌面时检查 WebOS 自身是否有更高版本：有则弹提示，确认后打开应用中心并自动触发升级流程 */
+    function checkWebosSelfUpdate() {
+        // 升级提醒仅对超级管理员生效（非超管桌面无应用中心，升级操作属于超管职责）
+        if (!isSuperAdmin) { return; }
+        var ensure = state.updateChecked
+            ? Promise.resolve()
+            : loadUpdateCount();
+        ensure.then(function () {
+            var self = state.updateApps.find(function (app) { return app.app_id === 'cmspro.webos'; });
+            if (!self) {
+                return;
+            }
+            var currentVersion = self.current_version || '-';
+            var latestVersion = self.latest_version || '';
+            if (!latestVersion || latestVersion === currentVersion) {
+                return;
+            }
+            var layer = layuiLayer();
+            layer.confirm(
+                '发现 WebOS 管理桌面新版本 <b>v' + escapeHtml(latestVersion) + '</b>（当前 v' + escapeHtml(currentVersion) + '），是否前往升级？',
+                { icon: 3, title: '应用更新', btn: ['立即升级', '稍后再说'] },
+                function (index) {
+                    layer.close(index);
+                    openEntry(applicationCenterEntry());
+                    // 打开应用中心后自动进入 WebOS 自身的升级流程（启用拦截 → 版本选择弹窗）
+                    upgradeApp('cmspro.webos');
+                }
+            );
+        }).catch(function () {
+            // 检查失败静默：用户仍可从应用中心手动检查更新
+        });
     }
 
     /** 手风琴互斥：收起与当前分组同级的其他分组 */
@@ -1728,6 +1943,14 @@
         var widthRatio = clampWindowRatio(preferences.window_width, 78);
         var heightRatio = clampWindowRatio(preferences.window_height, 80);
 
+        // OS 设置窗口宽度固定 1000px（小屏收窄避免溢出），高度仍按默认比例
+        if (key === 'webos-settings') {
+            return {
+                width: Math.max(MIN_WINDOW_WIDTH, Math.min(1000, Math.round(rect.width) - 40)),
+                height: Math.max(MIN_WINDOW_HEIGHT, Math.round(rect.height * heightRatio / 100))
+            };
+        }
+
         return {
             width: Math.max(MIN_WINDOW_WIDTH, Math.round(rect.width * widthRatio / 100)),
             height: Math.max(MIN_WINDOW_HEIGHT, Math.round(rect.height * heightRatio / 100))
@@ -1887,6 +2110,8 @@
         }
         host.innerHTML = '<iframe src="' + escapeHtml(entry.path) + '" title="'
             + escapeHtml(entry.title) + '"></iframe>';
+        // iframe 重建后遮罩丢失，按当前聚焦状态补挂
+        syncWindowShields();
     }
 
     function openEntry(entry) {
@@ -1918,6 +2143,10 @@
         var offset = state.windows.size % 5;
         var layerRect = elements.windowLayer.getBoundingClientRect();
         var size = defaultWindowSize(key);
+        // 个人设置窗口宽度固定 680px（小屏收窄避免溢出）
+        if (entry.path === '/admin/account') {
+            size.width = Math.max(MIN_WINDOW_WIDTH, Math.min(680, Math.round(layerRect.width) - 40));
+        }
         windowElement.style.left = Math.max(24, (layerRect.width - size.width) / 2 + offset * 18) + 'px';
         windowElement.style.top = Math.max(20, (layerRect.height - size.height) / 2 + offset * 14) + 'px';
         windowElement.style.width = size.width + 'px';
@@ -1925,6 +2154,8 @@
         elements.windowLayer.appendChild(windowElement);
         state.windows.set(key, { entry: entry, element: windowElement, minimized: false, maximized: false });
         renderWindowPage(state.windows.get(key), entry);
+        // 应用有前台（home）菜单时在「收起左侧菜单」左侧注入前台菜单下拉框
+        loadWindowHomeMenu(state.windows.get(key));
         focusWindow(key);
         bindWindowGestures(key);
         renderTaskbarWindows();
@@ -1951,6 +2182,8 @@
         renderWindowPage(windowState, entry);
         windowState.entry = entry;
         rerenderWindowNav(windowState, true);
+        // 切换入口后按新应用同步前台菜单下拉框（缓存命中无开销）
+        loadWindowHomeMenu(windowState);
         windowState.element.querySelector('.window-brand strong').innerHTML = escapeHtml(identity.title)
             + '<small>' + escapeHtml(identity.subtitle) + '</small>';
         renderTaskbarWindows();
@@ -1965,7 +2198,35 @@
         state.windows.forEach(function (windowState) { windowState.element.classList.remove('is-focused'); });
         target.element.classList.add('is-focused');
         target.element.style.zIndex = state.zIndex;
+        syncWindowShields();
         renderTaskbarWindows();
+    }
+
+    /**
+     * 同步各窗口 iframe 上的透明遮罩：iframe 内部点击的 pointerdown 不会冒泡到父页面，
+     * 未聚焦窗口的 iframe 被遮罩覆盖后，点击遮罩可冒泡聚焦窗口，第二次点击才操作 iframe 内容
+     * （与 Windows「先激活再交互」一致）；聚焦窗口与 _component 窗口不遮罩。
+     */
+    function syncWindowShields() {
+        state.windows.forEach(function (windowState) {
+            var host = windowState.element.querySelector('[data-window-page-host]');
+            if (!host || !host.querySelector('iframe')) {
+                return;
+            }
+            var shield = host.querySelector('[data-window-shield]');
+            if (windowState.element.classList.contains('is-focused')) {
+                if (shield) {
+                    shield.remove();
+                }
+                return;
+            }
+            if (!shield) {
+                shield = document.createElement('div');
+                shield.className = 'window-frame-shield';
+                shield.dataset.windowShield = '1';
+                host.appendChild(shield);
+            }
+        });
     }
 
     function restoreWindow(key) {
@@ -2308,11 +2569,20 @@
             return;
         }
         if (tab === 'updates') {
+            // 服务端检查结果缓存 24h，重新请求仍会返回刚升级的应用；
+            // 已检查过（updateChecked）时优先用本地 state.updateApps 渲染
+            // （升级成功后 dropUpdatedApp 已移除对应项，刷新列表即不再显示）
+            if (state.updateChecked) {
+                renderUpdatesStatus(status);
+                content.innerHTML = renderApplicationCards(state.updateApps, 'updates');
+                return;
+            }
             api('/api/admin/apps/check-updates?lazy=1', { method: 'POST' }).then(function (payload) {
                 state.updateApps = extractCollection(payload);
                 state.updateCount = state.updateApps.length;
+                state.updateChecked = true;
                 syncUpdateBadge();
-                status.innerHTML = '<i class="fa fa-refresh"></i>发现 ' + state.updateApps.length + ' 个可用更新';
+                renderUpdatesStatus(status);
                 content.innerHTML = renderApplicationCards(state.updateApps, 'updates');
             }).catch(function (error) {
                 status.classList.add('is-error');
@@ -2326,6 +2596,37 @@
             loadMarketTab(content, status);
             return;
         }
+    }
+
+    /** 应用更新状态栏：刷新按钮（点击重新检查更新）+ 数量文案 */
+    function renderUpdatesStatus(status) {
+        status.innerHTML = '<button type="button" class="updates-refresh-button" data-updates-refresh title="重新检查更新" aria-label="重新检查更新"><i class="fa fa-refresh"></i></button>'
+            + (state.updateApps.length
+                ? '发现 ' + state.updateApps.length + ' 个可用更新'
+                : '暂无可用更新，应用已是最新');
+    }
+
+    /** 点击刷新：强制全量检查更新（不带 lazy 缓存口径）并重渲染更新列表 */
+    function refreshAppUpdates(center) {
+        var status = center.querySelector('[data-app-status]');
+        var content = center.querySelector('[data-app-content]');
+        if (!status || !content) {
+            return;
+        }
+        status.classList.remove('is-error');
+        status.innerHTML = '<i class="fa fa-circle-o-notch fa-spin"></i>正在检查更新';
+        api('/api/admin/apps/check-updates', { method: 'POST' }).then(function (payload) {
+            state.updateApps = extractCollection(payload);
+            state.updateCount = state.updateApps.length;
+            state.updateChecked = true;
+            syncUpdateBadge();
+            renderUpdatesStatus(status);
+            content.innerHTML = renderApplicationCards(state.updateApps, 'updates');
+            toast('检查更新完成');
+        }).catch(function (error) {
+            status.classList.add('is-error');
+            status.innerHTML = '<i class="fa fa-exclamation-circle"></i>' + escapeHtml(error.message);
+        });
     }
 
     /** 应用市场 Tab：分类 Tab 条 + 应用列表滚动分页加载（远程不可用时降级本地可安装应用） */
@@ -2534,6 +2835,14 @@
     }
 
     function cardIconMarkup(app, className) {
+        // 更新列表等不含图标数据的记录：合并本地目录应用的图标——icon_url 由服务端
+        // 按全局规则 icon.svg → icon.png 解析，catalog.icon 为 manifest.json 的 icon 兜底
+        if (!app.icon_url && !app.icon) {
+            var catalogApp = findCatalogApp(app.app_id);
+            if (catalogApp) {
+                app = Object.assign({}, catalogApp, app);
+            }
+        }
         if (app.icon_url) {
             return applicationIconMarkup(app, className);
         }
@@ -3740,7 +4049,8 @@
             // 与传统后台应用管理一致：安装成功后询问是否立即启用
             promptEnableApp(target.app_id, target.name);
         }).catch(function (error) {
-            toast(error.message, 'error');
+            // 与传统后台一致：依赖检测等长错误信息用弹窗展示（依赖应用未安装/未启用时附市场引导），不再一闪而过
+            showErrorDialog(error.message);
         }).finally(function () {
             elements.confirmInstall.disabled = false;
             elements.confirmInstall.innerHTML = '<i class="fa fa-download"></i>安装';
@@ -3759,7 +4069,12 @@
         // 升级前检查应用状态：启用中的应用需先禁用（与卸载拦截一致），禁用成功后自动继续升级
         var cachedApp = findCatalogApp(appId);
         if (cachedApp && Number(cachedApp.status) === 1) {
-            layer.confirm('「' + escapeHtml(appDisplayName(cachedApp)) + '」当前仍处于启用状态，请先禁用应用再进行升级操作。', {
+            // WebOS 自身升级的特殊说明：禁用只影响服务端接口，当前页面内存中的桌面照常可用（其它应用保持通用文案）
+            var disableNotice = '「' + escapeHtml(appDisplayName(cachedApp)) + '」当前仍处于启用状态，请先禁用应用再进行升级操作。';
+            if (appId === 'cmspro.webos') {
+                disableNotice += '<br><span style="color:#999;font-size:12px;">WebOS 说明：升级期间当前桌面与已打开的窗口可继续正常操作，不受影响；升级完成并启用后服务端功能恢复。</span>';
+            }
+            layer.confirm(disableNotice, {
                 icon: 0,
                 title: '操作提示',
                 btn: ['禁用并继续升级', '取消']
@@ -3772,7 +4087,7 @@
                     success: function (res) {
                         layer.close(loadIndex);
                         if (res.code === 0) {
-                            reloadInstalledAppCenter();
+                            reloadAppCenterCurrent();
                             layer.msg('已禁用应用，正在继续升级', { icon: 1, time: 1200 }, function () {
                                 upgradeApp(appId);
                             });
@@ -3809,6 +4124,7 @@
                 // 全量检查结果重建待升级记录（与后台 pendingUpdates 行为一致）
                 state.updateApps = Array.isArray(res.data) ? res.data : [];
                 state.updateCount = state.updateApps.length;
+                state.updateChecked = true;
                 syncUpdateBadge();
                 var info = state.updateApps.find(function (item) { return item.app_id === appId; });
                 if (!info) {
@@ -3898,7 +4214,7 @@
     /** 执行升级（下载升级包并安装指定版本） */
     function doUpgrade(appId, targetVersion) {
         var layer = layuiLayer();
-        var loadIndex = layer.load(2, { content: '正在下载升级包 v' + targetVersion + '...', time: 0 });
+        var loadIndex = layer.load(2);
         legacyAjax({
             url: '/api/admin/apps/' + encodeURIComponent(appId) + '/upgrade?version=' + encodeURIComponent(targetVersion),
             type: 'POST',
@@ -3907,7 +4223,7 @@
                 if (res.code === 0) {
                     dropUpdatedApp(appId);
                     layer.msg('升级成功，当前版本：v' + targetVersion, { icon: 1 }, function () {
-                        reloadInstalledAppCenter();
+                        reloadAppCenterCurrent();
                         promptEnableAfterUpgrade(appId);
                     });
                 } else {
@@ -3936,13 +4252,13 @@
         if (step >= versions.length) {
             dropUpdatedApp(appId);
             layer.msg('已升级到最新版本', { icon: 1 }, function () {
-                reloadInstalledAppCenter();
+                reloadAppCenterCurrent();
                 promptEnableAfterUpgrade(appId);
             });
             return;
         }
         var targetVersion = versions[step].version;
-        var loadIndex = layer.load(2, { content: '正在自动升级（' + (step + 1) + '/' + versions.length + '）到 v' + targetVersion + '...', time: 0 });
+        var loadIndex = layer.load(2);
         legacyAjax({
             url: '/api/admin/apps/' + encodeURIComponent(appId) + '/upgrade?version=' + encodeURIComponent(targetVersion),
             type: 'POST',
@@ -3955,20 +4271,20 @@
                     // 已升级到最新版，后端提示无可用更新，视为升级完成
                     dropUpdatedApp(appId);
                     layer.msg('已升级到最新版本', { icon: 1 }, function () {
-                        reloadInstalledAppCenter();
+                        reloadAppCenterCurrent();
                         promptEnableAfterUpgrade(appId);
                     });
                 } else {
                     // 任一步失败即停止并报错
                     layer.msg('自动升级在第 ' + (step + 1) + ' 步（v' + targetVersion + '）失败：' + (res.message || '未知错误'), { icon: 2 }, function () {
-                        reloadInstalledAppCenter();
+                        reloadAppCenterCurrent();
                     });
                 }
             },
             error: function () {
                 layer.close(loadIndex);
                 layer.msg('自动升级在第 ' + (step + 1) + ' 步（v' + targetVersion + '）失败：网络错误', { icon: 2 }, function () {
-                    reloadInstalledAppCenter();
+                    reloadAppCenterCurrent();
                 });
             }
         });
@@ -4001,7 +4317,10 @@
     }
 
     function openPasswordDialog() {
+        // 与「管理入口」弹窗一致：layui 风格白底弹窗（plain），不使用毛玻璃效果
         openActionDialog({
+            plain: true,
+            width: '480px',
             kicker: '账号安全',
             title: '修改密码',
             body: '<form class="password-form" novalidate>'
@@ -4086,6 +4405,14 @@
         });
     }
 
+    /** 升级链路刷新：停留在当前 Tab 重渲染（不强制切到已安装），升级成功后更新列表即时移除已升级项 */
+    function reloadAppCenterCurrent() {
+        return refreshCatalog().then(function () {
+            renderAppCenter(state.appCenterTab || 'installed');
+            renderDesktop();
+        });
+    }
+
     /** afterSuccess：状态保存成功后的回调；trigger：发起操作的状态按钮，可选 */
     function toggleAppStatus(appId, enable, afterSuccess, trigger) {
         setStatusToggleBusy(trigger, true);
@@ -4159,8 +4486,9 @@
         });
     }
 
-    /** 应用安装/升级成功后，询问是否现在启用当前应用（点击「是」则启用，否则不做任何操作） */
-    function promptEnableApp(appId, appName, actionText) {
+    /** 应用安装/升级成功后，询问是否现在启用当前应用（点击「是」则启用，否则不做任何操作）；
+     *  keepTab 为 true 时刷新停留在当前 Tab（升级链路），否则回已安装 Tab（安装链路） */
+    function promptEnableApp(appId, appName, actionText, keepTab) {
         var layer = layuiLayer();
         layer.confirm('「' + appName + '」' + (actionText || '安装成功') + '，是否现在启用当前应用？', {
             icon: 0,
@@ -4175,11 +4503,27 @@
                 success: function (res) {
                     layer.close(loadIndex);
                     if (res.code === 0) {
-                        layer.msg('应用已启用', { icon: 1 });
+                        if (appId === 'cmspro.webos') {
+                            // WebOS 自身升级完成：当前页面内存中仍是旧版 JS，引导刷新加载新版本桌面
+                            layer.confirm('WebOS 管理桌面已升级并启用至新版本，刷新页面后加载新版桌面。', {
+                                icon: 1,
+                                title: '升级完成',
+                                btn: ['立即刷新', '稍后手动刷新']
+                            }, function (confirmIndex) {
+                                layer.close(confirmIndex);
+                                window.location.reload();
+                            });
+                        } else {
+                            layer.msg('应用已启用', { icon: 1 });
+                        }
                     } else {
                         layer.msg(res.message || '启用失败', { icon: 2 });
                     }
-                    reloadInstalledAppCenter();
+                    if (keepTab) {
+                        reloadAppCenterCurrent();
+                    } else {
+                        reloadInstalledAppCenter();
+                    }
                 }
             });
         });
@@ -4215,7 +4559,7 @@
                 if (!app || app.status === 1) {
                     return;
                 }
-                promptEnableApp(appId, app.name, '升级成功，当前版本 v' + app.version);
+                promptEnableApp(appId, app.name, '升级成功，当前版本 v' + app.version, true);
             }
         });
     }
@@ -4349,7 +4693,8 @@
         Object.keys(context.extraData || {}).forEach(function (key) {
             form.append(key, context.extraData[key]);
         });
-        var loadIndex = context.layer.load(2, { content: '正在处理，请耐心等待...', time: 0 });
+        // 执行时仅显示加载特效，不带文字提示
+        var loadIndex = context.layer.load(2);
         legacyAjax({
             url: context.submitUrl,
             type: 'POST',
@@ -4569,7 +4914,7 @@
     function runDeleteFiles(appId, appName) {
         // 删除应用文件耗时较长，立即显示加载层反馈进度
         var layer = layuiLayer();
-        var loadIndex = layer.load(2, { content: '正在删除「' + appName + '」的应用文件...', time: 0 });
+        var loadIndex = layer.load(2);
         api('/api/admin/apps/' + encodeURIComponent(appId) + '/delete', { method: 'POST' }).then(function () {
             layer.close(loadIndex);
             closeActionDialog();
@@ -4949,7 +5294,7 @@
 
     function downloadAppBackup(backupId) {
         var layer = layuiLayer();
-        var loadIndex = layer.load(2, { content: '正在准备下载...', time: 0 });
+        var loadIndex = layer.load(2);
         legacyAjax({
             url: '/api/admin/apps/backups/' + backupId + '/download',
             type: 'GET',
@@ -5130,7 +5475,7 @@
                 var formData = new FormData();
                 formData.append('package', selectedFile);
 
-                var uploadLoadIndex = layer.load(2, { content: '正在上传文件...', time: 0 });
+                var uploadLoadIndex = layer.load(2);
                 legacyAjax({
                     url: '/api/admin/apps/' + encodeURIComponent(appId) + '/backups/upload-file',
                     type: 'POST',
@@ -5391,7 +5736,7 @@
     function openAppDocs(appId) {
         var layer = layuiLayer();
         state.docAppId = appId;
-        var loadIndex = layer.load(2, { content: '加载文档...', time: 0 });
+        var loadIndex = layer.load(2);
         legacyAjax({
             url: '/api/admin/apps/' + encodeURIComponent(appId) + '/docs',
             type: 'GET',
@@ -5795,6 +6140,16 @@
             return;
         }
 
+        // 应用更新状态栏刷新按钮：强制重新检查更新并刷新列表
+        var updatesRefresh = event.target.closest('[data-updates-refresh]');
+        if (updatesRefresh) {
+            var updatesCenter = updatesRefresh.closest('[data-app-center]');
+            if (updatesCenter) {
+                refreshAppUpdates(updatesCenter);
+            }
+            return;
+        }
+
         var passwordSubmit = event.target.closest('[data-password-submit]');
         if (passwordSubmit) { submitPasswordChange(); return; }
 
@@ -5884,6 +6239,80 @@
         return filtered;
     }
 
+    /** 当前用户菜单目录中出现过 app_id 的应用集合：应用图标按「已分配」过滤的口径来源 */
+    function visibleAppIds() {
+        var ids = new Set();
+
+        function collect(items) {
+            (items || []).forEach(function (menu) {
+                if (!menu || typeof menu !== 'object') { return; }
+                if (menu.app_id) { ids.add(String(menu.app_id)); }
+                collect(menu.children);
+            });
+        }
+
+        collect(state.catalog.menus);
+        return ids;
+    }
+
+    /**
+     * 工作区入口是否仍对当前管理员分配：角色收回菜单/应用授权后，桌面与任务栏不再显示对应图标。
+     * 应用中心仅超级管理员可用；OS 设置始终可用；菜单入口须存在于当前用户菜单目录；
+     * 应用快捷方式须目录中仍有该应用的菜单。
+     */
+    function entryAssigned(id) {
+        var entryId = String(id || '');
+        if (entryId === 'webos-app-center') { return isSuperAdmin; }
+        if (entryId === 'webos-settings') { return true; }
+        if (state.flatMenus.some(function (item) { return item.id === entryId; })) { return true; }
+
+        var appPrefix = 'app:';
+        if (entryId.indexOf(appPrefix) === 0) {
+            return visibleAppIds().has(entryId.slice(appPrefix.length));
+        }
+
+        return false;
+    }
+
+    /** 当前已分配（可显示）的桌面项：未分配入口不参与渲染、网格占用与找空位，但保留原始坐标待恢复 */
+    function assignedDesktopItems() {
+        return state.workspace.desktop_items.filter(function (item) {
+            return entryAssigned(item.id);
+        });
+    }
+
+    /**
+     * 桌面布局归一化：应用停用期间其格子被其它图标占用后，重新启用时坐标冲突的图标
+     * 自动按 (y,x) 顺序下移到第一个空白格（未冲突则保持原位），布局有变化时静默保存。
+     * 隐藏（未分配）项不参与网格占用，原始坐标保留不动。
+     */
+    function normalizeDesktopLayout() {
+        var items = assignedDesktopItems().slice().sort(function (a, b) {
+            return (Number(a.y) || 0) - (Number(b.y) || 0) || (Number(a.x) || 0) - (Number(b.x) || 0);
+        });
+        if (!items.length) { return; }
+
+        var occupied = new Set();
+        var changed = false;
+        items.forEach(function (item) {
+            var x = Math.max(0, Math.min(99, Number(item.x) || 0));
+            var y = Math.max(0, Math.min(99, Number(item.y) || 0));
+            var guard = 0;
+            while (occupied.has(x + ',' + y) && guard < 200) {
+                y += 1;
+                guard += 1;
+            }
+            occupied.add(x + ',' + y);
+            if (item.x !== x || item.y !== y) {
+                item.x = x;
+                item.y = y;
+                changed = true;
+            }
+        });
+
+        if (changed) { saveWorkspace(false).catch(function () {}); }
+    }
+
     /**
      * 应用中心/开始菜单目录：直接复用系统接口作为数据源（与传统后台应用管理同一数据源，便于统一维护）
      * 已安装应用列表：GET /api/admin/apps；后台菜单目录：GET /api/admin/menus/user
@@ -5905,6 +6334,11 @@
     function refreshCatalog() {
         return loadCatalog().then(function () {
             renderStartMenu();
+            // 菜单目录刷新后同步重绘桌面与任务栏（角色授权/应用启停变化后图标即时过滤，
+            // 归一化让重新启用的图标在坐标被占用时自动落到空白格）
+            normalizeDesktopLayout();
+            renderDesktop();
+            renderPinnedApps();
         });
     }
 
@@ -6562,10 +6996,11 @@
             }
             var deltaX = moveEvent.clientX - startX;
             var deltaY = moveEvent.clientY - startY;
+            var size = desktopIconSize();
             dragButtons.forEach(function (entryButton, index) {
                 var base = initialPositions[index];
-                entryButton.style.left = Math.max(4, Math.min(elements.desktopIcons.clientWidth - 88, base.left + deltaX)) + 'px';
-                entryButton.style.top = Math.max(4, Math.min(elements.desktopIcons.clientHeight - 96, base.top + deltaY)) + 'px';
+                entryButton.style.left = Math.max(4, Math.min(elements.desktopIcons.clientWidth - size.iconW, base.left + deltaX)) + 'px';
+                entryButton.style.top = Math.max(4, Math.min(elements.desktopIcons.clientHeight - size.iconH, base.top + deltaY)) + 'px';
             });
         }
         function cleanup() {
@@ -6583,18 +7018,19 @@
         function end() {
             cleanup();
             if (moved) {
-                // 网格落点 + 冲突探测：占用集合为未参与拖动的图标，拖动项按视觉位置排序逐个落格
+                // 网格落点 + 冲突探测：占用集合为未参与拖动的可见图标（未分配入口不占位，可移入其原格子）
                 var selectedIds = new Set(dragItems.map(function (entry) { return entry.id; }));
-                var occupied = new Set(state.workspace.desktop_items.filter(function (entry) {
+                var occupied = new Set(assignedDesktopItems().filter(function (entry) {
                     return !selectedIds.has(entry.id);
                 }).map(function (entry) {
                     return (Number(entry.x) || 0) + ',' + (Number(entry.y) || 0);
                 }));
+                var dropSize = desktopIconSize();
                 var placed = dragButtons.map(function (entryButton, index) {
                     return {
                         item: dragItems[index],
-                        gridX: Math.max(0, Math.round((entryButton.offsetLeft - 4) / 102)),
-                        gridY: Math.max(0, Math.round((entryButton.offsetTop - 4) / 104))
+                        gridX: Math.max(0, Math.round((entryButton.offsetLeft - 4) / dropSize.cellW)),
+                        gridY: Math.max(0, Math.round((entryButton.offsetTop - 4) / dropSize.cellH))
                     };
                 }).sort(function (a, b) {
                     return a.gridY - b.gridY || a.gridX - b.gridX;
@@ -6851,6 +7287,15 @@
         });
 
         document.addEventListener('click', function (event) {
+            // 点击前台菜单下拉框外部时收起所有已展开的前台菜单
+            if (!event.target.closest('[data-window-home-menu]')) {
+                document.querySelectorAll('.window-home-menu-list:not([hidden])').forEach(function (openList) {
+                    openList.hidden = true;
+                    var trigger = openList.parentElement.querySelector('.home-menu-trigger');
+                    if (trigger) { trigger.setAttribute('aria-expanded', 'false'); }
+                });
+            }
+
             var action = event.target.closest('[data-action]');
             if (action) {
                 var name = action.dataset.action;
@@ -6933,9 +7378,37 @@
                 if (windowAction.dataset.windowAction === 'toggle-sidebar') {
                     toggleWindowSidebar(windowElement, windowAction);
                 }
+                if (windowAction.dataset.windowAction === 'toggle-home-menu') {
+                    // 展开当前前台菜单前先收起其它窗口已展开的下拉，保持全局互斥
+                    document.querySelectorAll('.window-home-menu-list:not([hidden])').forEach(function (openList) {
+                        if (openList.parentElement !== windowAction.parentElement) {
+                            openList.hidden = true;
+                            var otherTrigger = openList.parentElement.querySelector('.home-menu-trigger');
+                            if (otherTrigger) { otherTrigger.setAttribute('aria-expanded', 'false'); }
+                        }
+                    });
+                    var homeMenuList = windowAction.parentElement.querySelector('.window-home-menu-list');
+                    if (homeMenuList) {
+                        var willOpen = homeMenuList.hidden;
+                        homeMenuList.hidden = !willOpen;
+                        windowAction.setAttribute('aria-expanded', willOpen ? 'true' : 'false');
+                    }
+                }
                 if (windowAction.dataset.windowAction === 'minimize') { minimizeWindow(key); }
                 if (windowAction.dataset.windowAction === 'maximize') { maximizeWindow(key); }
                 if (windowAction.dataset.windowAction === 'close') { closeWindow(key); }
+            }
+
+            // 前台菜单项：新标签页打开前台地址并收起下拉
+            var homeMenuItem = event.target.closest('[data-home-url]');
+            if (homeMenuItem) {
+                window.open(homeMenuItem.dataset.homeUrl, '_blank', 'noopener');
+                var homeList = homeMenuItem.closest('.window-home-menu-list');
+                if (homeList) {
+                    homeList.hidden = true;
+                    var homeTrigger = homeList.parentElement.querySelector('.home-menu-trigger');
+                    if (homeTrigger) { homeTrigger.setAttribute('aria-expanded', 'false'); }
+                }
             }
 
             var windowNavBranch = event.target.closest('[data-window-nav-branch]');
@@ -7417,6 +7890,7 @@
     function normalizePreferences(preferences) {
         return Object.assign({
             wallpaper: 'webos-default',
+            icon_size: 'medium',
             taskbar_alignment: 'left',
             taskbar_position: 'bottom',
             clock_format: '24h',
@@ -7446,9 +7920,13 @@
             applyWorkspacePreferences();
             return bootstrapDesktopItems();
         }).then(function () {
+            // 首次渲染前归一化：应用启停/授权变化导致坐标冲突的图标自动落到空白格
+            normalizeDesktopLayout();
             renderDesktop();
             renderStartMenu();
             loadNotifications();
+            // 每次进入 WebOS 页面检查应用市场是否有 WebOS 自身的更高版本
+            checkWebosSelfUpdate();
             root.classList.remove('is-loading');
         }).catch(function (error) {
             root.classList.remove('is-loading');
