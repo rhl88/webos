@@ -1,7 +1,7 @@
 # CmsPro WebOS 管理桌面 · 特性清单
 
-> 文档版本：2.0.7 | 更新日期：2026-10-06
-> 应用版本：2.0.7 | 应用 ID：`cmspro.webos`
+> 文档版本：2.0.8 | 更新日期：2026-10-06
+> 应用版本：2.0.8 | 应用 ID：`cmspro.webos`
 
 ## 一、应用定位
 
@@ -118,6 +118,7 @@ CmsproWebos/
 
 | 版本 | 日期 | 说明 |
 |---|---|---|
+| 2.0.8 | 2026-10-06 | 非应用窗口内容可复制（用户反馈：非 iframe 窗口内容无法复制）：根因是 `.webos-desktop` 全局 `user-select: none` 仅在 `.window-page-host` 恢复，应用中心/设置/通知中心/官网动态等 DOM 注入窗口与窗口侧栏文字均继承禁选；修复为 `.window-body` 整体恢复 `user-select: text`（标题栏为独立 header 天然保持禁选，拖动防误选不受影响）。 |
 | 2.0.7 | 2026-10-06 | 应用中心「未安装」列表改为 3 列（用户需求）：renderApplicationCards 对 mode='local' 追加 `market-app-grid` 类复用 3 列样式——「未安装」视图与市场远程不可用时的降级列表（同为 local）一并 3 列，与市场分类 Tab 保持一致；「全部/更新」视图保持 2 列。 |
 | 2.0.6 | 2026-10-06 | 市场首页区块随机展示（用户需求：推荐应用/装机必备/官方精选/运营推荐/辅助推荐从获取的数据列表中随机显示而非固定）：新增 shuffleArray（Fisher-Yates，返回新数组不改原数组），renderMarketHome 构建分页状态时对 featured 与各推荐位（含 aux）的 apps 打乱后再切片展示——每次进入首页顺序不同，翻页浏览的是打乱后的稳定序列；「不可错过的应用」random 由服务端 inRandomOrder 随机，前端不再处理；cacheMarketApps 仍在打乱前以原始数据写详情缓存（按 app_id 存取，与顺序无关）。 |
 | 2.0.5 | 2026-10-06 | 应用市场分类 Tab 应用列表由 2 列改为 3 列（用户需求）：renderMarketCategoryView 的网格容器追加专属类 `market-app-grid`（webos.js L3110），CSS 以 `.market-app-grid { grid-template-columns: repeat(3, minmax(0,1fr)) }` 覆盖 `.app-grid` 的 2 列——应用中心「全部/更新」视图共用的 `.app-grid` 保持 2 列不受影响。 |

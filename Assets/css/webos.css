@@ -652,11 +652,14 @@ textarea:focus-visible,
     color: var(--webos-primary-dark);
 }
 
+/* 窗口内容主体恢复文本可选：桌面全局禁选仅用于防框选图标/拖动误选，
+   应用中心/设置/通知/官网动态等 DOM 注入窗口与普通应用（window-page-host）内容均需可选中复制 */
 .window-body {
     display: flex;
     flex: 1 1 auto;
     min-height: 0;
     background: #fff;
+    user-select: text;
 }
 
 .window-sidebar {
