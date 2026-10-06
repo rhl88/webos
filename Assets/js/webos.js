@@ -1772,6 +1772,35 @@
         });
     }
 
+    /** 系统框架版本升级提示：桌面就绪后调版本管理检查接口，有新版本且未被跳过时弹提示（仅超管，升级属超管职责） */
+    function checkFrameworkUpdate() {
+        if (!isSuperAdmin) { return; }
+        api('/admin/versionmgr/api/check').then(function (data) {
+            if (!data || !data.has_update || data.is_skipped) { return; }
+            var layer = layuiLayer();
+            layer.confirm(
+                '发现系统框架新版本 <b>v' + escapeHtml(data.latest_version || '') + '</b>（当前 v'
+                    + escapeHtml(data.current_version || '-') + '），是否前往升级？',
+                { icon: 3, title: '系统更新', btn: ['立即升级', '稍后再说'] },
+                function (index) {
+                    layer.close(index);
+                    // 打开版本管理窗口（iframe），升级路径/备份/执行等操作在 Versionmgr 页面内完成
+                    openEntry({
+                        id: 'webos-versionmgr',
+                        title: '版本管理',
+                        path: '/admin/versionmgr',
+                        icon: 'fa fa-cloud-upload',
+                        group_id: 'webos',
+                        group_title: 'WebOS',
+                        group_icon: 'fa fa-desktop'
+                    });
+                }
+            );
+        }).catch(function () {
+            // 版本服务不可用时静默：升级仍可从后台「版本管理」菜单手动进入
+        });
+    }
+
     /** 手风琴互斥：收起与当前分组同级的其他分组 */
     function collapseNavSiblings(container, activeKey) {
         if (!container) {
@@ -9067,6 +9096,8 @@
             }
             // 每次进入 WebOS 页面检查应用市场是否有 WebOS 自身的更高版本
             checkWebosSelfUpdate();
+            // 延迟检查系统框架新版本（Versionmgr）：错开 WebOS 自身的更新提示，避免两个弹窗同时出现
+            setTimeout(checkFrameworkUpdate, 3000);
             root.classList.remove('is-loading');
         }).catch(function (error) {
             root.classList.remove('is-loading');
