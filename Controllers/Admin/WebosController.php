@@ -4,11 +4,12 @@ namespace App\Apps\CmsproWebos\Controllers\Admin;
 
 use App\Apps\CmsproWebos\Services\CalendarService;
 use App\Apps\CmsproWebos\Services\WallpaperService;
+use App\Apps\CmsproWebos\Services\WebosNotificationService;
 use App\Apps\CmsproWebos\Services\WorkspaceService;
 use App\Http\Controllers\Controller;
 use App\Http\Responses\ApiResponse;
+use App\Models\AdminMenu;
 use App\Models\AdminTodoRead;
-use App\Services\NotificationService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -63,15 +64,54 @@ class WebosController extends Controller
         $userId = (int) Auth::guard('admin')->id();
         $seenMap = AdminTodoRead::where('user_id', $userId)->pluck('seen_count', 'todo_key');
 
-        $todos = array_map(function (array $todo) use ($seenMap) {
+        // 全量待办走应用内子类公开（全局服务线上版本无 allTodos 包装方法，子类公开 protected 聚合能力）
+        return response()->json(ApiResponse::success(array_map(function (array $todo) use ($seenMap) {
             $seen = min((int) ($seenMap[$todo['key']] ?? 0), (int) $todo['count']);
             $todo['seen'] = $seen;
             $todo['is_read'] = $seen >= (int) $todo['count'];
 
             return $todo;
-        }, app(NotificationService::class)->allTodos());
+        }, app(WebosNotificationService::class)->allTodos())));
+    }
 
-        return response()->json(ApiResponse::success($todos));
+    /**
+     * 前台菜单 URL 兼容转换：按 app_id 返回其 home 终端菜单的「原始路径 → 访问地址」映射。
+     *
+     * WebOS 前台菜单从系统菜单树接口拿到的是原始存储路径（如论坛 /forum），当应用设置为
+     * 域名绑定模式时该路径在主站不可达，需换算为绑定域名；子域名部署场景还需换算主站绝对地址。
+     * 复用框架 menu_path() 完成转换，与框架后台前台菜单（admin.blade.php）行为完全一致：
+     * 域名绑定应用 → 绑定域名根 URL；普通应用 → main_url 主站地址；外链原样返回。
+     */
+    public function homeMenuUrls(Request $request): JsonResponse
+    {
+        $appIds = collect((array) $request->input('app_ids', []))
+            ->filter(fn ($id): bool => is_string($id) && preg_match('/^[A-Za-z0-9_.-]{1,100}$/', $id) === 1)
+            ->unique()
+            ->values()
+            ->take(50);
+
+        $result = [];
+        if ($appIds->isNotEmpty()) {
+            $menus = AdminMenu::query()
+                ->whereIn('app_id', $appIds->all())
+                ->where('terminal_type', 'home')
+                ->where('status', 1)
+                ->where('visible', 1)
+                ->orderBy('sort')
+                ->get(['app_id', 'path', 'terminal_type']);
+
+            foreach ($menus as $menu) {
+                if (! $menu->path) {
+                    continue;
+                }
+                $result[$menu->app_id][] = [
+                    'path' => $menu->path,
+                    'url' => menu_path($menu->path, $menu),
+                ];
+            }
+        }
+
+        return response()->json(ApiResponse::success($result));
     }
 
     /**
@@ -168,6 +208,10 @@ class WebosController extends Controller
             'preferences.wallpaper_url' => ['sometimes', 'nullable', 'string', 'max:200'],
             // 桌面图标三档尺寸（右键「查看」切换）：无规则声明时 $validated 会丢弃该键，导致勾选回退中图标
             'preferences.icon_size' => ['sometimes', 'in:small,medium,large'],
+            // 应用窗口多选项卡（OS 设置开关）
+            'preferences.window_tabs' => ['sometimes', 'boolean'],
+            // 点击菜单进入（OS 设置开关：默认打开系统菜单面板，开启后直接进入全部功能启动台）
+            'preferences.menu_open_launcher' => ['sometimes', 'boolean'],
             'preferences.taskbar_alignment' => ['sometimes', 'in:left,center'],
             'preferences.taskbar_position' => ['sometimes', 'in:top,bottom,left,right'],
             'preferences.clock_format' => ['sometimes', 'in:12h,24h'],

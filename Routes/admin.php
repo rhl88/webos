@@ -14,4 +14,6 @@ Route::prefix('api')->name('api.')->group(function () {
     Route::delete('/wallpaper', [WebosController::class, 'destroyWallpaper'])->name('wallpaper.destroy');
     Route::get('/calendar', [WebosController::class, 'calendar'])->name('calendar');
     Route::get('/all-todos', [WebosController::class, 'allTodos'])->name('all-todos');
+    // 前台菜单链接兼容转换（域名绑定/子域名部署 → 可直达 URL）
+    Route::get('/home-menu-urls', [WebosController::class, 'homeMenuUrls'])->name('home-menu-urls');
 });

@@ -167,6 +167,149 @@ class WebosWorkspaceApiTest extends WebosTestCase
             ->assertJsonPath('code', 40201);
     }
 
+    /** OS 设置「应用窗口多选项卡」：偏好三层同步、OS 设置开关卡、标题栏选项卡（切换/关闭/页面状态保留） */
+    public function test_window_tabs_preference_and_titlebar_tab_bar(): void
+    {
+        $script = file_get_contents(dirname(__DIR__, 2) . '/Assets/js/webos.js');
+        $stylesheet = file_get_contents(dirname(__DIR__, 2) . '/Assets/css/webos.css');
+        $service = file_get_contents(dirname(__DIR__, 2) . '/Services/WorkspaceService.php');
+        $controller = file_get_contents(dirname(__DIR__, 2) . '/Controllers/Admin/WebosController.php');
+
+        $this->assertIsString($script);
+        $this->assertIsString($stylesheet);
+        $this->assertIsString($service);
+        $this->assertIsString($controller);
+        // 偏好默认关闭 + 三层同步（DEFAULT_PREFERENCES / sanitizePreferences / 验证规则）
+        $this->assertStringContainsString('window_tabs: false,', $script);
+        $this->assertStringContainsString("'window_tabs' => false,", $service);
+        $this->assertStringContainsString("(bool) (\$preferences['window_tabs'] ?? false)", $service);
+        $this->assertStringContainsString("'preferences.window_tabs' => ['sometimes', 'boolean'],", $controller);
+        // OS 设置系统页开关卡
+        $this->assertStringContainsString('data-toggle-webos-setting="window_tabs"', $script);
+        // 「点击菜单进入」偏好：三层同步 + OS 设置开关卡 + 菜单按钮点击分支（开启直接进全部功能启动台）
+        $this->assertStringContainsString('menu_open_launcher: false,', $script);
+        $this->assertStringContainsString("'menu_open_launcher' => false,", $service);
+        $this->assertStringContainsString("(bool) (\$preferences['menu_open_launcher'] ?? false)", $service);
+        $this->assertStringContainsString("'preferences.menu_open_launcher' => ['sometimes', 'boolean'],", $controller);
+        $this->assertStringContainsString('data-toggle-webos-setting="menu_open_launcher"', $script);
+        $this->assertMatchesRegularExpression(
+            '/if \(state\.workspace\.preferences\.menu_open_launcher === true\)\s*\{\s*closePanels\(\);\s*openLauncherDialog\(\);\s*return;\s*\}/',
+            $script
+        );
+        // 选项卡核心：数据/开关判定/标题栏渲染/切换/关闭
+        $this->assertStringContainsString('function makeWindowTab', $script);
+        $this->assertStringContainsString('function windowTabsEnabled', $script);
+        $this->assertStringContainsString('function syncWindowTabsBar', $script);
+        $this->assertStringContainsString('function switchWindowTab', $script);
+        $this->assertStringContainsString('function closeWindowTab', $script);
+        // 窗口创建时启用首个选项卡；菜单点击同路径复用选项卡，否则新开
+        $this->assertStringContainsString('windowState.tabs = [makeWindowTab(entry)];', $script);
+        $this->assertStringContainsString("windowState.tabs.find(function (tab) { return tab.path === entry.path; })", $script);
+        // 页面容器切换显示不重建（hidden 切换保留 iframe 状态）+ 事件委托（先关闭叉后切换）
+        $this->assertStringContainsString("host.querySelectorAll('.window-page').forEach(function (node) {", $script);
+        $this->assertStringContainsString('node.hidden = node.dataset.windowPage !== tab.id;', $script);
+        $this->assertStringContainsString('data-window-tab-close', $script);
+        // 选项卡溢出导航：超出宽度显示左右切换按钮，激活选项卡自动滚入可视区
+        $this->assertStringContainsString('function updateWindowTabsNav', $script);
+        $this->assertStringContainsString('function revealWindowTab', $script);
+        $this->assertStringContainsString('data-window-tabs-scroll', $script);
+        // 品牌区固定显示应用身份：切换/关闭选项卡不重写 window-brand（曾随菜单名变化，用户要求固定应用名）
+        $this->assertStringNotContainsString('syncWindowTabBrand', $script);
+        // 品牌区副标题跟随当前选项卡：仅更新 strong 内 small 文本，应用名固定（切换/相邻切换/全部关闭清空/新开复用共 4 处调用）
+        $this->assertStringContainsString('function syncWindowTabSubtitle', $script);
+        $this->assertSame(5, substr_count($script, 'syncWindowTabSubtitle(windowState,'));
+        // 选项卡右键菜单：复用桌面右键菜单容器（menuMarkupInto + positionDesktopMenu），刷新页面/关闭当前/其它/全部
+        $this->assertStringContainsString('function openWindowTabContextMenu', $script);
+        $this->assertStringContainsString('function runWindowTabContextAction', $script);
+        // 刷新页面：对齐框架后台刷新按钮——清 token 强制重建当前激活页（iframe 重设 src / 组件重新拉取）
+        $this->assertStringContainsString("['刷新页面', 'fa-refresh', 'tab-reload']", $script);
+        $this->assertStringContainsString('function reloadWindowTab(', $script);
+        $this->assertMatchesRegularExpression(
+            "/action === 'tab-reload'\)\s*\{\s*reloadWindowTab\(found\.windowState,\s*found\.tab\);/",
+            $script
+        );
+        // 外层分发白名单必须含 tab-reload，否则点击「刷新页面」被 runDesktopContextAction 丢弃（1.9.88 教训）
+        $this->assertStringContainsString("action === 'tab-reload' || action === 'tab-close'", $script);
+        // 标题栏刷新按钮（仅选项卡模式渲染）：点击复用 reloadWindowTab 刷新当前激活选项卡
+        $this->assertStringContainsString('data-window-action="refresh" aria-label="刷新当前页面"', $script);
+        // 无选项卡的特殊窗口（应用中心/OS 设置/通知中心/官网动态）刷新整页：清页面令牌强制重建并重新触发数据渲染
+        $this->assertStringContainsString("else if (refreshTarget && refreshTarget.entry && refreshTarget.entry.path) {", $script);
+        $this->assertStringContainsString("refreshHost.dataset.pageToken = '';", $script);
+        $this->assertStringContainsString("if (refreshTarget.entry.id === 'webos-settings') {", $script);
+        $this->assertMatchesRegularExpression(
+            "/windowTabsEnabled\(\)\s*\?\s*'<button class=\"window-control window-refresh\" type=\"button\" data-window-action=\"refresh\"/",
+            $script
+        );
+        // 刷新按钮位于品牌区右侧（标题栏直属子元素）：无论有无选项卡条位置恒定，不随控制区右推/选项卡条插序变化
+        $stylesheet = file_get_contents(dirname(__DIR__, 2) . '/Assets/css/webos.css');
+        $this->assertMatchesRegularExpression(
+            '/\.window-refresh\s*\{\s*margin-left:\s*4px;/',
+            $stylesheet
+        );
+        $this->assertMatchesRegularExpression(
+            "/windowAction\.dataset\.windowAction === 'refresh'\)\s*\{\s*\/\/ 标题栏刷新按钮[\s\S]*?reloadWindowTab\(refreshTarget,\s*refreshTab\);/",
+            $script
+        );
+        // iframe 独立文档点击不冒泡到父文档 click 委托：借 window blur 关闭右键菜单（桌面/任务栏/应用行）
+        $this->assertMatchesRegularExpression(
+            "/window\.addEventListener\('blur', function \(\)\s*\{\s*closeDesktopContextMenu\(\);\s*closeTaskbarContextMenu\(\);\s*closeAppRowMenus\(\);\s*\}\);/",
+            $script
+        );
+        $this->assertMatchesRegularExpression(
+            "/page\.dataset\.pageToken = '';\s*\}\s*windowState\.activeTabId = tab\.id;\s*renderWindowPage\(windowState, tab\);/",
+            $script
+        );
+        $this->assertStringContainsString("'tab-close-others'", $script);
+        // 双击标题栏切换最大化还原：dblclick 绑定在拖动标题栏上，控制区按钮（closest('button')）不触发
+        $this->assertMatchesRegularExpression(
+            "/titlebar\.addEventListener\('dblclick', function \(event\) \{\s*if \(event\.target\.closest\('button'\)\) \{\s*return;\s*\}\s*if \(target\.maximized\) \{\s*restoreWindow\(key\);\s*\} else \{\s*maximizeWindow\(key\);\s*\}\s*\}\);/",
+            $script
+        );
+        $this->assertStringContainsString("'tab-close-all'", $script);
+        // 右键监听：closest('[data-window-tab]') 委托 + 右键同时聚焦所在窗口
+        $this->assertStringContainsString("event.target.closest('[data-window-tab]')", $script);
+        $this->assertStringContainsString('focusWindow(host.dataset.windowKey);', $script);
+        // 官网动态窗口：仅超管自动打开、固定 600×500 停靠最右侧、无 page-host 不启用选项卡
+        $this->assertStringContainsString('function officialNewsEntry', $script);
+        $this->assertStringContainsString('function renderOfficialNews', $script);
+        $this->assertStringContainsString('function linkifyOfficialNews', $script);
+        $this->assertStringContainsString("'webos-official-news'", $script);
+        $this->assertStringContainsString('data-official-news', $script);
+        // 图片弹层预览：layer.photos 相册（同组多图可切换），layer 不可用时回退新标签打开
+        $this->assertStringContainsString('layer.photos({', $script);
+        $this->assertStringContainsString("window.open(img.getAttribute('src'), '_blank', 'noopener');", $script);
+        $this->assertStringContainsString('.official-news-shell', $stylesheet);
+        // 事件委托宿主窗口变量不得与全局函数同名（var 提升遮蔽 closeWindow 曾致关闭按钮报错）
+        $this->assertStringContainsString("tabButton.closest('[data-window-key]')", $script);
+        $this->assertStringNotContainsString('var closeWindow =', $script);
+        // 选项卡条从标题栏左侧展开：有选项卡加 has-window-tabs 类取消控制区右推，无选项卡移除恢复
+        $this->assertStringContainsString("classList.add('has-window-tabs')", $script);
+        $this->assertStringContainsString("classList.remove('has-window-tabs')", $script);
+        // 标题栏选项卡样式与页面容器隐藏规则
+        $this->assertStringContainsString('.window-tab.is-active', $stylesheet);
+        $this->assertStringContainsString('.app-window.has-window-tabs .window-controls', $stylesheet);
+        $this->assertStringContainsString('.window-tabs-nav[hidden]', $stylesheet);
+        // 选项卡不收缩（flex: 0 0 auto）：保持自身宽度触发容器溢出，导航按钮才有意义
+        $this->assertMatchesRegularExpression('/\.window-tab\s*\{[^}]*flex: 0 0 auto;/', $stylesheet);
+        $this->assertStringContainsString('.window-page[hidden]', $stylesheet);
+    }
+
+    /** 多选项卡偏好持久化：HTTP 链路 window_tabs=true 保存后再读保持开启 */
+    public function test_workspace_api_persists_window_tabs_preference(): void
+    {
+        $this->actingAdmin();
+
+        $this->putJson('/admin/cmspro/webos/api/workspace', [
+            'preferences' => ['window_tabs' => true],
+        ])->assertOk()
+            ->assertJsonPath('code', 0)
+            ->assertJsonPath('data.preferences.window_tabs', true);
+
+        $this->getJson('/admin/cmspro/webos/api/workspace')
+            ->assertOk()
+            ->assertJsonPath('data.preferences.window_tabs', true);
+    }
+
     public function test_workspace_api_persists_override_admin_home_preference(): void
     {
         $this->actingAdmin();
@@ -187,6 +330,22 @@ class WebosWorkspaceApiTest extends WebosTestCase
             'preferences' => ['override_admin_home' => false],
         ])->assertOk()
             ->assertJsonPath('data.preferences.override_admin_home', false);
+    }
+
+    /** 「点击菜单进入」偏好持久化：HTTP 链路 menu_open_launcher=true 保存后再读保持开启 */
+    public function test_workspace_api_persists_menu_open_launcher_preference(): void
+    {
+        $this->actingAdmin();
+
+        $this->putJson('/admin/cmspro/webos/api/workspace', [
+            'preferences' => ['menu_open_launcher' => true],
+        ])->assertOk()
+            ->assertJsonPath('code', 0)
+            ->assertJsonPath('data.preferences.menu_open_launcher', true);
+
+        $this->getJson('/admin/cmspro/webos/api/workspace')
+            ->assertOk()
+            ->assertJsonPath('data.preferences.menu_open_launcher', true);
     }
 
     public function test_workspace_reset_api_restores_default_layout(): void
@@ -306,6 +465,15 @@ class WebosWorkspaceApiTest extends WebosTestCase
         $this->assertStringContainsString('data-action="lock-desktop"', $view);
         $this->assertStringContainsString('data-action="logout"', $view);
         $this->assertStringContainsString('data-open-webos-settings', $view);
+        // 开始菜单底部栏顺序：锁定 → 退出登录 → 版权（中间撑开）→ OS 设置（仅图标，aria-label 提示）
+        $this->assertMatchesRegularExpression(
+            '/data-action="lock-desktop">[\s\S]{0,120}锁定<\/button>[\s\S]{0,200}data-action="logout">[\s\S]{0,120}退出登录<\/button>/',
+            $view
+        );
+        $this->assertMatchesRegularExpression(
+            '/class="os-settings" data-open-webos-settings aria-label="OS 设置" title="OS 设置"><i class="fa fa-cog"><\/i><\/button>/',
+            $view
+        );
     }
 
     /** 应用中心目录数据直接复用系统接口（与传统后台应用管理同一数据源），不再自建 catalog 接口 */
@@ -316,8 +484,8 @@ class WebosWorkspaceApiTest extends WebosTestCase
 
         $this->assertIsString($script);
         $this->assertIsString($view);
-        $this->assertStringContainsString("api('/api/admin/apps')", $script);
-        $this->assertStringContainsString("api('/api/admin/menus/user')", $script);
+        $this->assertStringContainsString("api('/api/admin/apps' + cacheBust)", $script);
+        $this->assertStringContainsString("api('/api/admin/menus/user' + cacheBust)", $script);
         // 安装记录：按操作类型筛选拉取系统接口
         $this->assertStringContainsString("'/api/admin/app-logs?per_page=30'", $script);
         $this->assertStringContainsString("'&operation=' + encodeURIComponent(state.recordsOperation)", $script);
@@ -365,9 +533,11 @@ class WebosWorkspaceApiTest extends WebosTestCase
         $this->assertStringContainsString('function loadWindowHomeMenu', $script);
         $this->assertStringContainsString('function collectHomeMenuLeaves', $script);
         $this->assertStringContainsString('function windowHomeMenuMarkup', $script);
-        // 挂载点：打开窗口与切换入口后均同步前台菜单下拉框
-        $this->assertStringContainsString('loadWindowHomeMenu(state.windows.get(key));', $script);
+        // 挂载点：打开窗口与切换入口后均以窗口状态注入前台菜单下拉框
         $this->assertStringContainsString('loadWindowHomeMenu(windowState);', $script);
+        // 注入锚点：固定「收起左侧菜单」按钮左侧，与选项卡条/溢出导航的注入时序无关
+        $this->assertStringContainsString("controls.querySelector('.sidebar-toggle')", $script);
+        $this->assertStringContainsString("anchor.insertAdjacentHTML('beforebegin', windowHomeMenuMarkup(leaves));", $script);
         // 交互：触发器切换展开/收起，菜单项携带前台地址新标签页打开
         $this->assertStringContainsString("data-window-action=\"toggle-home-menu\"", $script);
         $this->assertStringContainsString("window.open(homeMenuItem.dataset.homeUrl, '_blank', 'noopener');", $script);
@@ -669,6 +839,16 @@ class WebosWorkspaceApiTest extends WebosTestCase
         $this->assertStringContainsString('.notification-todo.is-read {', $stylesheet);
         $this->assertStringContainsString('public function allTodos(): JsonResponse', file_get_contents(dirname(__DIR__, 2) . '/Controllers/Admin/WebosController.php'));
         $this->assertStringContainsString("Route::get('/all-todos', [WebosController::class, 'allTodos'])", file_get_contents(dirname(__DIR__, 2) . '/Routes/admin.php'));
+        // 全量待办走应用内子类公开（线上全局 NotificationService 无 allTodos 包装方法，避免框架级依赖）
+        $webosNotification = file_get_contents(dirname(__DIR__, 2) . '/Services/WebosNotificationService.php');
+        $this->assertStringContainsString('use App\Services\NotificationService;', $webosNotification);
+        $this->assertStringContainsString('return $this->aggregateTodoEntries();', $webosNotification);
+        // 部署兜底：线上框架服务为旧版（无 aggregateTodoEntries）时降级为 todos()，避免接口 500
+        $this->assertStringContainsString("method_exists(\$this, 'aggregateTodoEntries')", $webosNotification);
+        $this->assertStringContainsString('return $this->todos();', $webosNotification);
+        $controller = file_get_contents(dirname(__DIR__, 2) . '/Controllers/Admin/WebosController.php');
+        $this->assertStringContainsString('app(WebosNotificationService::class)->allTodos()', $controller);
+        $this->assertStringNotContainsString('app(NotificationService::class)->allTodos()', $controller);
 
         // 安装记录：搜索（名称/标识）与类型筛选移至右上角工具区 + 日期分组 + 右侧操作详情
         $this->assertStringContainsString("records: '搜索应用名称或标识'", $script);
@@ -724,6 +904,21 @@ class WebosWorkspaceApiTest extends WebosTestCase
         $this->assertStringContainsString("entryIconMarkup(windowState.entry, 'taskbar-app-icon')", $script);
         $this->assertStringContainsString("entryIconMarkup(item, 'start-app-item-icon')", $script);
         $this->assertStringContainsString('is-app-icon', $stylesheet);
+        // 拖拽应用换顶级分类（整个应用含应用文件夹节点整体移动）：flattenMenus 输出 app_node_id、
+        // 卡片收集优先收节点 id（子树随父节点移动）、超管条件渲染 draggable、drop 复用系统菜单移动接口
+        $this->assertStringContainsString('app_node_id: appNodeId || \'\'', $script);
+        $this->assertStringContainsString("var nextAppNodeId = item.app_id ? String(item.id || '') : (inheritedAppNodeId || '');", $script);
+        $this->assertStringContainsString('if (entry.app_node_id) {', $script);
+        $this->assertStringContainsString('moveIds.indexOf(entry.app_node_id) < 0', $script);
+        $this->assertStringContainsString('moveIds.push(Number(representative.folder_id));', $script);
+        $this->assertStringContainsString('isSuperAdmin && !item.special && item.move_ids && item.move_ids.length', $script);
+        $this->assertStringContainsString('draggable="true" data-move-ids', $script);
+        $this->assertStringContainsString("api('/api/admin/menus/move', { method: 'PUT', body: { ids: moveIds, parent_id: Number(category.dataset.groupId) } })", $script);
+        $this->assertStringContainsString('return refreshCatalog();', $script);
+        // 移动/安装后刷新目录必须拿到实时数据：loadCatalog 的 GET 加时间戳破坏 HTTP 缓存
+        $this->assertStringContainsString("var cacheBust = '?_t=' + Date.now();", $script);
+        $this->assertStringContainsString('.start-category-button.is-drop-target', $stylesheet);
+        $this->assertStringContainsString('.start-app-item[draggable="true"]', $stylesheet);
     }
 
     public function test_market_cards_use_remote_icon_and_install_state(): void
@@ -884,6 +1079,10 @@ class WebosWorkspaceApiTest extends WebosTestCase
         $this->assertIsString($view);
         $this->assertStringContainsString('data-account-path="/admin/account"', $view);
         $this->assertStringContainsString('data-action="open-password-dialog"', $view);
+        // 清除缓存：账号菜单项 + 点击分发复用系统缓存清理接口
+        $this->assertStringContainsString('data-action="clear-cache"', $view);
+        $this->assertStringContainsString("api('/api/admin/cache/clear')", $script);
+        $this->assertStringContainsString('if (name === \'clear-cache\')', $script);
         $this->assertStringContainsString('data-action="lock-desktop"', $view);
         $this->assertStringContainsString('data-action="logout"', $view);
         $this->assertStringContainsString('function openPasswordDialog()', $script);
@@ -1320,8 +1519,11 @@ class WebosWorkspaceApiTest extends WebosTestCase
 
         $this->assertIsString($script);
 
-        // “窗口默认尺寸”只作用于应用窗口；WebOS 内置窗口固定使用出厂默认百分比
-        $this->assertStringContainsString("var BUILTIN_WINDOW_KEYS = ['webos-app-center', 'webos-settings'];", $script);
+        // “窗口默认尺寸”只作用于应用窗口；WebOS 内置窗口固定使用出厂默认（官网动态固定 600×500）
+        $this->assertStringContainsString(
+            "var BUILTIN_WINDOW_KEYS = ['webos-app-center', 'webos-settings', 'webos-official-news'];",
+            $script
+        );
         $this->assertMatchesRegularExpression(
             '/function defaultWindowSize\(key\)\s*\{[\s\S]{0,220}?BUILTIN_WINDOW_KEYS\.indexOf\(key\)/',
             $script
@@ -1580,8 +1782,9 @@ class WebosWorkspaceApiTest extends WebosTestCase
         $this->assertIsString($stylesheet);
         // 树的应用节点存真实应用引用并复用 applicationIconMarkup（icon_url 优先，应用 icon 字段兜底）
         $this->assertStringContainsString('application ? application.name : appId,', $script);
-        $this->assertStringContainsString("applicationIconMarkup(node.application, 'entry-tree-app-icon is-app-icon')", $script);
-        // 桌面入口行与可用菜单叶子/分支复用 entryIconMarkup（应用项自动带 is-app-icon 图片链）
+        $this->assertStringContainsString("applicationIconMarkup(node.application, 'entry-tree-app-icon')", $script);
+        // is-app-icon 已由 applicationIconMarkup 源头声明（img 分支统一携带），渲染位不再外层拼接
+        $this->assertStringContainsString("className + ' is-app-icon\"><img data-app-icon-primary", $script);
         $this->assertStringContainsString("entryIconMarkup(findEntry(item.id) || item, 'entry-row-icon')", $script);
         $this->assertStringContainsString('type: \'leaf\',', $script);
         $this->assertStringContainsString("entryIconMarkup(node, 'entry-row-icon')", $script);
@@ -1597,8 +1800,9 @@ class WebosWorkspaceApiTest extends WebosTestCase
 
         $this->assertIsString($script);
         $this->assertIsString($stylesheet);
-        // 树的应用节点也走 is-app-icon 图片降级链
-        $this->assertStringContainsString("applicationIconMarkup(node.application, 'entry-tree-app-icon is-app-icon')", $script);
+        // 树的应用节点也走 is-app-icon 图片降级链（is-app-icon 由 applicationIconMarkup 源头声明）
+        $this->assertStringContainsString("applicationIconMarkup(node.application, 'entry-tree-app-icon')", $script);
+        $this->assertStringContainsString("className + ' is-app-icon\"><img data-app-icon-primary", $script);
         // img 尺寸约束覆盖入口管理两类容器
         $this->assertStringContainsString('.entry-row .entry-row-icon.is-app-icon img', $stylesheet);
         $this->assertStringContainsString('.entry-tree-toggle .entry-tree-app-icon.is-app-icon img', $stylesheet);
@@ -1701,5 +1905,173 @@ class WebosWorkspaceApiTest extends WebosTestCase
         $this->assertStringContainsString("if (event.key === 'Tab' && activeDialog)", $script);
         $this->assertStringContainsString('hideModalDialog(elements.installDialog);', $script);
         $this->assertStringContainsString('showModalDialog(elements.actionDialog);', $script);
+    }
+
+    /** 前台菜单链接兼容：域名绑定应用的 home 菜单路径换算为绑定域名（复用框架 menu_path），普通应用保持主站地址 */
+    public function test_home_menu_urls_converts_domain_bound_paths(): void
+    {
+        $this->actingAdmin();
+
+        AdminMenu::create([
+            'name' => '论坛', 'parent_id' => 0, 'app_id' => 'cmspro.forum',
+            'path' => '/forum', 'terminal_type' => 'home', 'status' => 1, 'visible' => 1, 'sort' => 1,
+        ]);
+        AdminMenu::create([
+            'name' => '站点', 'parent_id' => 0, 'app_id' => 'cmspro.site',
+            'path' => '/site', 'terminal_type' => 'home', 'status' => 1, 'visible' => 1, 'sort' => 2,
+        ]);
+        // cmspro.site 配置为域名绑定模式并绑定独立域名
+        \App\Models\ConfigItem::create([
+            'group_id' => 0, 'name' => '访问模式', 'code' => 'app_cmspro_site_access_mode',
+            'value' => 'domain', 'type' => 'text', 'status' => \App\Enums\Status::ENABLED,
+        ]);
+        \App\Models\ConfigItem::create([
+            'group_id' => 0, 'name' => '绑定域名', 'code' => 'app_cmspro_site_access_domain',
+            'value' => 'site.example.com', 'type' => 'text', 'status' => \App\Enums\Status::ENABLED,
+        ]);
+
+        $response = $this->getJson('/admin/cmspro/webos/api/home-menu-urls?app_ids[]=cmspro.forum&app_ids[]=cmspro.site&app_ids[]=bad id!');
+
+        $response->assertOk()->assertJsonPath('code', 0);
+        $data = $response->json('data');
+        // 域名绑定应用：menu_path 返回绑定域名根（丢弃原始路径，绑定站点根即应用首页）
+        $this->assertSame('http://site.example.com/', $data['cmspro.site'][0]['url']);
+        // 普通应用：main_url 主站地址（测试环境为主站域名），路径保留
+        $this->assertStringEndsWith('/forum', $data['cmspro.forum'][0]['url']);
+        // 非法 app_id 已被过滤
+        $this->assertArrayNotHasKey('bad id!', $data);
+    }
+
+    /** 前台链接兼容的前端接入：叶子合并 url 字段，转换失败回退原始路径 */
+    public function test_home_menu_url_merge_in_frontend(): void
+    {
+        $script = file_get_contents(dirname(__DIR__, 2) . '/Assets/js/webos.js');
+
+        $this->assertIsString($script);
+        $this->assertStringContainsString('/admin/cmspro/webos/api/home-menu-urls?app_ids[]=', $script);
+        $this->assertStringContainsString("leaf.url = urlMap[leaf.path];", $script);
+        $this->assertStringContainsString("escapeHtml(leaf.url || leaf.path)", $script);
+    }
+
+    /** 选项卡全部关闭后的空状态引导：恢复选项卡时先移除非页面子节点，避免引导残留 */
+    public function test_window_tabs_empty_state_cleared_on_restore(): void
+    {
+        $script = file_get_contents(dirname(__DIR__, 2) . '/Assets/js/webos.js');
+
+        $this->assertIsString($script);
+        $this->assertStringContainsString('选项卡已全部关闭，可从左侧菜单重新打开内容', $script);
+        // renderWindowPage tabs 分支的清理循环：非 .window-page 子节点（空状态）在恢复选项卡前移除
+        $this->assertMatchesRegularExpression(
+            '/if \(windowState\.tabs\)\s*\{\s*var tab = entry;\s*\/\/[^\r\n]*空状态[^\r\n]*\s*Array\.prototype\.forEach\.call\(host\.children, function \(node\)\s*\{\s*if \(node\.classList && !node\.classList\.contains\(\'window-page\'\)\)\s*\{\s*node\.remove\(\);/',
+            $script
+        );
+    }
+
+    /** 图标别名兼容 + 开始菜单「全部功能」启动台 */
+    public function test_start_folder_icon_and_launcher(): void
+    {
+        $script = file_get_contents(dirname(__DIR__, 2) . '/Assets/js/webos.js');
+        $this->assertIsString($script);
+
+        // 目录项 start_icon 优先用目录/分组自身图标，渲染处不再硬编码 fa-folder
+        $this->assertStringContainsString("representative.folder_icon || representative.group_icon || 'fa fa-folder'", $script);
+        $this->assertStringContainsString('safeIcon(item.start_icon)', $script);
+
+        // iconPicker 短代码别名 → layui 类名（与框架 ConfigController::buildMenuTree 一致），safeIcon 统一出口
+        $this->assertStringContainsString('var ICON_ALIASES = {', $script);
+        $this->assertStringContainsString("IconImage: 'layui-icon layui-icon-picture'", $script);
+        $this->assertMatchesRegularExpression('/if \(ICON_ALIASES\[className\]\)\s*\{\s*return ICON_ALIASES\[className\];/', $script);
+
+        // 开始菜单「全部功能」按钮：data-open-special="entries" 特例打开启动台；应用行菜单保持「管理入口」
+        $this->assertMatchesRegularExpression(
+            '/openSpecial === \'entries\'\)\s*\{\s*openLauncherDialog\(\);\s*return;\s*\}/',
+            $script
+        );
+        $this->assertStringContainsString('function openLauncherDialog()', $script);
+        // 启动台与系统菜单同源（菜单树）：按顶级分类逐层进入——文件夹卡片（目录图标优先/文件夹兜底）+ 叶子应用卡片 + 面包屑返回
+        $this->assertStringContainsString('function renderLauncherView(', $script);
+        $this->assertStringContainsString('function launcherFolderMarkup(', $script);
+        $this->assertStringContainsString('function launcherLeafMarkup(', $script);
+        $this->assertStringContainsString('function collectLauncherLeaves(', $script);
+        $this->assertStringContainsString("safeIcon(item.icon || 'fa fa-folder')", $script);
+        // 分组卡片与开始菜单应用聚合卡同标准：带 app_id 走 applicationIconMarkup 应用图片，
+        // 无应用回退 is-folder-icon 底色风格（folder 黄底，与开始菜单目录卡片一致）
+        $this->assertStringContainsString("applicationIconMarkup(application, 'launcher-item-icon')", $script);
+        $this->assertStringContainsString('launcher-item-icon is-folder-icon', $script);
+        // 分组卡片点击行为与开始菜单应用卡一致：有应用关联直接打开应用窗口（应用代表叶子 data-launcher-leaf），
+        // 不再进入子菜单；纯目录分组（无 app_id）保持 data-launcher-folder 进入子目录
+        $this->assertMatchesRegularExpression(
+            "/var representative = application\s*\? state\.flatMenus\.find\(function \(candidate\) \{ return candidate\.app_id === application\.app_id; \}\)\s*: null;/",
+            $script
+        );
+        $this->assertMatchesRegularExpression(
+            "/var action = representative\s*\? ' data-launcher-leaf=\"menu-' \+ escapeHtml\(String\(representative\.menu_id\)\) \+ '\"'\s*: ' data-launcher-folder=\"' \+ escapeHtml\(path\.join\(','\)\) \+ '\"';/",
+            $script
+        );
+        // 叶子卡片图标与开始菜单（系统菜单）同标准：app_id 取 flattenMenus 继承后的值（树原生节点仅顶层带 app_id，
+        // 深层叶子靠祖先继承）+ entryIconMarkup 同一渲染函数（开始菜单应用项同款，findApplication → applicationIconMarkup）
+        $this->assertStringContainsString('function findFlatLeaf(', $script);
+        $this->assertMatchesRegularExpression(
+            '/var leaf = findFlatLeaf\(item\.id\) \|\| \{ app_id: item\.app_id \|\| \'\', icon: item\.icon \};/',
+            $script
+        );
+        $this->assertStringContainsString("entryIconMarkup(leaf, 'launcher-item-icon')", $script);
+        // is-app-icon 由 applicationIconMarkup 源头运行时拼接（JS 字面量单引号闭合在 src=" 后，故断言不带尾引号）
+        $this->assertStringContainsString("className + ' is-app-icon", $script);
+        $this->assertStringContainsString('data-launcher-folder', $script);
+        $this->assertStringContainsString('data-launcher-leaf', $script);
+        $this->assertStringContainsString('data-launcher-crumb', $script);
+        // 右上角关闭按钮：浮层 markup 内 data-launcher-close + 点击委托 closeLauncherDialog
+        $this->assertMatchesRegularExpression(
+            '/<button class="launcher-close" type="button" aria-label="关闭" data-launcher-close><i class="fa fa-times"><\/i><\/button>/',
+            $script
+        );
+        $this->assertMatchesRegularExpression(
+            '/if \(event\.target\.closest\(\'\[data-launcher-close\]\'\)\)\s*\{\s*closeLauncherDialog\(\);\s*return;\s*\}/',
+            $script
+        );
+        // 空白区域点击关闭：非功能卡片（launcher-item）、非搜索框（launcher-search）区域即关闭
+        $this->assertMatchesRegularExpression(
+            '/if \(!event\.target\.closest\(\'\.launcher-item\'\) && !event\.target\.closest\(\'\.launcher-search\'\)\)\s*\{\s*closeLauncherDialog\(\);\s*\}/',
+            $script
+        );
+        // 叶子打开：findEntry → openMenuByType（_blank/_layer）|| openEntry 后关闭浮层
+        $this->assertMatchesRegularExpression(
+            '/var entry = findEntry\(leaf\.dataset\.launcherLeaf\);\s*if \(entry && !openMenuByType\(entry\)\)\s*\{\s*openEntry\(entry\);\s*closeLauncherDialog\(\);\s*\}/',
+            $script
+        );
+        $this->assertStringContainsString("['manage-entry', 'fa-th', '管理入口']", $script);
+
+        // 开始菜单按钮文案（Blade）：data-open-special="entries" 显示为「全部功能」
+        $blade = file_get_contents(dirname(__DIR__, 2) . '/Views/Admin/desktop/index.blade.php');
+        $this->assertIsString($blade);
+        $this->assertStringContainsString('data-open-special="entries">全部功能</button>', $blade);
+
+        $stylesheet = file_get_contents(dirname(__DIR__, 2) . '/Assets/css/webos.css');
+        $this->assertIsString($stylesheet);
+        $this->assertStringContainsString('.launcher-layer', $stylesheet);
+        // 启动台图片图标约束：is-app-icon 由 applicationIconMarkup 源头声明（所有渲染位共享）
+        $this->assertStringContainsString('.webos-desktop .launcher-item-icon.is-app-icon img', $stylesheet);
+        $this->assertMatchesRegularExpression(
+            '/\.launcher-item img\s*\{\s*pointer-events:\s*none;/',
+            $stylesheet
+        );
+        $this->assertMatchesRegularExpression(
+            '/className \+ \' is-app-icon"><img data-app-icon-primary/',
+            $script
+        );
+        // 启动台全屏：浮层纵向铺满、搜索框顶部、网格从顶部排列
+        $this->assertMatchesRegularExpression(
+            '/\.launcher-layer\s*\{[^}]*flex-direction:\s*column;/',
+            $stylesheet
+        );
+        $this->assertMatchesRegularExpression(
+            '/\.launcher-panel\s*\{[^}]*height:\s*100%;/',
+            $stylesheet
+        );
+        $this->assertMatchesRegularExpression(
+            '/\.launcher-grid\s*\{[^}]*align-content:\s*start;/',
+            $stylesheet
+        );
     }
 }

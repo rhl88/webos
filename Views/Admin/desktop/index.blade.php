@@ -57,19 +57,20 @@
                         <strong id="start-group-title">全部应用</strong>
                         <span id="start-group-count">0 个入口</span>
                     </div>
-                    <button type="button" class="text-button" data-open-special="entries">管理入口</button>
+                    <button type="button" class="text-button" data-open-special="entries">全部功能</button>
                 </div>
                 <div id="start-app-grid" class="start-app-grid"></div>
             </div>
         </div>
         <footer class="start-system-actions" aria-label="系统操作">
             <button type="button" data-action="lock-desktop"><i class="fa fa-lock"></i>锁定</button>
+            <button type="button" data-action="logout"><i class="fa fa-sign-out"></i>退出登录</button>
             {{-- 版权信息与框架后台页脚（layouts/admin.blade.php）一致：系统版本号与年份动态读取 --}}
             <span class="start-copyright">
                 <a href="http://www.cmspro.cn" target="_blank" rel="noopener">CMSPRO</a> v{{ $cmsproVersion }} &copy; 2015-{{ date('Y') }} Copyright by <a href="http://www.renhuali.cn" target="_blank" rel="noopener">Holley</a>
             </span>
-            <button type="button" data-action="logout"><i class="fa fa-sign-out"></i>退出登录</button>
-            <button type="button" class="os-settings" data-open-webos-settings><i class="fa fa-cog"></i>OS 设置</button>
+            {{-- OS 设置仅保留图标：文字省略，以 aria-label/title 提供无障碍与悬停提示 --}}
+            <button type="button" class="os-settings" data-open-webos-settings aria-label="OS 设置" title="OS 设置"><i class="fa fa-cog"></i></button>
         </footer>
     </section>
 
@@ -126,6 +127,7 @@
         <nav class="account-actions">
             <button type="button" data-account-path="/admin/account"><i class="fa fa-user-circle-o"></i>个人设置</button>
             <button type="button" data-action="open-password-dialog"><i class="fa fa-key"></i>修改密码</button>
+            <button type="button" data-action="clear-cache"><i class="fa fa-eraser"></i>清除缓存</button>
             <button type="button" data-action="lock-desktop"><i class="fa fa-lock"></i>锁定桌面</button>
             <button type="button" class="danger" data-action="logout"><i class="fa fa-sign-out"></i>退出登录</button>
         </nav>

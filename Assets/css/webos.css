@@ -364,6 +364,204 @@ textarea:focus-visible,
     display: flex;
     align-self: stretch;
     margin-left: auto;
+    min-width: 0;
+}
+
+/* 标题栏刷新按钮：置于品牌区右侧（标题栏直属子元素），无论是否有选项卡条位置恒定；
+   无选项卡时控制区 margin-left:auto 右推不受影响，有选项卡时选项卡条从按钮右侧展开 */
+.window-refresh {
+    margin-left: 4px;
+}
+
+/* 选项卡模式下控制区占满品牌区之后的剩余空间：选项卡条从左侧展开，窗口按钮始终贴最右 */
+.app-window.has-window-tabs .window-controls {
+    margin-left: 0;
+    flex: 1;
+}
+
+/* 应用窗口多选项卡（OS 设置开启后显示在窗口控制区首位）：横向排列可滚动 */
+.window-tabs {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    flex: 1;
+    min-width: 0;
+    padding: 0 6px;
+    overflow-x: auto;
+    scrollbar-width: none;
+}
+
+.window-tabs::-webkit-scrollbar {
+    display: none;
+}
+
+.window-tab {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    /* 不收缩：选项卡保持自身宽度并触发容器溢出滚动（超出宽度显示左右切换按钮） */
+    flex: 0 0 auto;
+    max-width: 168px;
+    min-width: 0;
+    padding: 4px 6px 4px 12px;
+    border: 1px solid var(--webos-line);
+    border-radius: 7px;
+    background: #fff;
+    font-size: 12px;
+    color: #52667a;
+    white-space: nowrap;
+    cursor: pointer;
+}
+
+.window-tab > span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/* 官网动态窗口（仅超管桌面自动打开）：标题行 + 动态列表 */
+.official-news-shell {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    padding: 14px 16px;
+    overflow: hidden;
+}
+
+.official-news-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 10px;
+    flex: 0 0 auto;
+}
+
+.official-news-head h3 {
+    margin: 0;
+    color: #333;
+    font-size: 15px;
+    border-left: 3px solid #5fb878;
+    padding-left: 8px;
+}
+
+.official-news-head a {
+    color: #999;
+    font-size: 13px;
+    text-decoration: none;
+}
+
+.official-news-head a:hover {
+    color: #087f75;
+}
+
+.official-news-list {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    padding-right: 4px;
+}
+
+.official-news-item {
+    padding: 8px 0;
+    border-bottom: 1px dashed #eee;
+}
+
+.official-news-content {
+    color: #333;
+    font-size: 13px;
+    line-height: 1.6;
+    word-break: break-word;
+}
+
+.official-news-content a {
+    color: #1E9FFF;
+    text-decoration: none;
+}
+
+.official-news-content a:hover {
+    text-decoration: underline;
+}
+
+.official-news-images {
+    margin-top: 6px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+}
+
+.official-news-images img {
+    width: 72px;
+    height: 48px;
+    object-fit: cover;
+    border-radius: 4px;
+    cursor: zoom-in;
+}
+
+.official-news-time {
+    color: #999;
+    font-size: 12px;
+    margin-top: 4px;
+}
+
+.official-news-empty {
+    color: #999;
+    margin: 6px 0;
+    font-size: 13px;
+}
+
+/* 选项卡条溢出导航（< 选项卡 … 选项卡 >）：按滚动位置显隐 */
+.window-tabs-nav {
+    display: inline-flex;
+    flex: 0 0 auto;
+    /* 固定高度元素在 controls 的 stretch 布局下顶对齐偏上，居中对齐选项卡条 */
+    align-self: center;
+    align-items: center;
+    justify-content: center;
+    width: 22px;
+    height: 28px;
+    border: 1px solid var(--webos-line);
+    border-radius: 6px;
+    background: #fff;
+    color: #52667a;
+    font-size: 14px;
+    cursor: pointer;
+}
+
+.window-tabs-nav:hover {
+    color: #087f75;
+    border-color: #087f75;
+}
+
+/* 自定义 display 的元素 hidden 属性失效，需显式声明（同 1.9.59 教训） */
+.window-tabs-nav[hidden] {
+    display: none;
+}
+
+.window-tab:hover {
+    color: #1f3348;
+    border-color: #b9c9d8;
+}
+
+.window-tab.is-active {
+    background: #087f75;
+    border-color: #087f75;
+    color: #fff;
+}
+
+.window-tab-close {
+    flex: 0 0 auto;
+    padding: 2px 3px;
+    border-radius: 4px;
+    font-size: 11px;
+    opacity: 0.55;
+}
+
+.window-tab-close:hover {
+    opacity: 1;
+    background: rgba(255, 255, 255, 0.25);
+}
+
+.window-tab:not(.is-active) .window-tab-close:hover {
+    background: rgba(31, 51, 72, 0.12);
 }
 
 .window-control {
@@ -592,6 +790,16 @@ textarea:focus-visible,
     /* 桌面全局禁选（防框选图标误选文字），路由模式注入的 HTML 在父文档内会继承，
        在内容区恢复文本可选，保证 _component 渲染的内容可选中复制 */
     user-select: text;
+}
+
+/* 多选项卡模式的页面容器：与宿主同尺寸充满，hidden 隐藏非激活页（页面状态保留） */
+.window-page {
+    width: 100%;
+    height: 100%;
+}
+
+.window-page[hidden] {
+    display: none;
 }
 
 /* 非聚焦窗口 iframe 上的透明遮罩：iframe 内容点击不冒泡到窗口元素，
@@ -1125,6 +1333,24 @@ textarea:focus-visible,
     background: #e3f5f2;
 }
 
+/* 拖拽应用换顶级分类：拖拽中的卡片半透明，悬停的分类按钮高亮提示可放置 */
+.start-category-button.is-drop-target {
+    color: #fff;
+    background: #087f75;
+}
+
+.start-category-button.is-drop-target i {
+    color: #fff;
+}
+
+.start-app-item[draggable="true"] {
+    cursor: grab;
+}
+
+.start-app-item.is-dragging {
+    opacity: 0.45;
+}
+
 .start-content {
     flex: 1 1 auto;
     min-width: 0;
@@ -1180,7 +1406,8 @@ textarea:focus-visible,
     align-items: center;
     min-width: 0;
     min-height: 70px;
-    padding: 10px 34px 10px 10px;
+    /* 图钉按钮为绝对定位浮动显示，不再预留右侧 34px，应用名可占满卡片宽度 */
+    padding: 10px 10px;
     gap: 10px;
     border: 1px solid transparent;
     border-radius: 8px;
@@ -1235,7 +1462,8 @@ textarea:focus-visible,
     font-size: 11px;
 }
 
-/* 菜单项「+」按钮默认隐藏，悬停/聚焦菜单项时浮动显示；已固定的图钉保持常显作为状态锚点 */
+/* 菜单项「+」/图钉按钮（添加到桌面/从桌面移除）默认隐藏，悬停/聚焦应用项时浮动显示；
+   is-pinned 仅作为状态配色（图钉色），不再常显 */
 .pin-button {
     position: absolute;
     top: 8px;
@@ -1254,8 +1482,7 @@ textarea:focus-visible,
 }
 
 .start-app-item:hover .pin-button,
-.start-app-item:focus-within .pin-button,
-.pin-button.is-pinned {
+.start-app-item:focus-within .pin-button {
     opacity: 1;
     visibility: visible;
     transform: translateX(0);
@@ -1264,6 +1491,11 @@ textarea:focus-visible,
 .pin-button:hover {
     color: var(--webos-primary-dark);
     background: #fff;
+}
+
+/* 已固定到桌面的应用：悬停显示时图钉用主题色，与「添加到桌面」的加号区分 */
+.pin-button.is-pinned {
+    color: var(--webos-primary);
 }
 
 .start-system-actions {
@@ -2731,6 +2963,191 @@ textarea:focus-visible,
     display: none;
 }
 
+/* 市场内部子Tab：首页 / 分类 */
+.market-sub-tabs {
+    display: flex;
+    gap: 8px;
+    margin: 0 0 16px;
+}
+
+.market-sub-tab {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    border: 1px solid var(--webos-line);
+    background: #fff;
+    color: var(--webos-muted);
+    border-radius: 6px;
+    padding: 5px 14px;
+    font-size: 12px;
+    line-height: 1.6;
+    cursor: pointer;
+    transition: color .15s ease, border-color .15s ease, background .15s ease;
+}
+
+.market-sub-tab:hover {
+    color: var(--webos-primary);
+    border-color: var(--webos-primary);
+}
+
+.market-sub-tab.is-active {
+    background: var(--webos-primary);
+    border-color: var(--webos-primary);
+    color: #fff;
+}
+
+/* 市场首页：推荐区块纵排 */
+.market-home {
+    display: flex;
+    flex-direction: column;
+    gap: 22px;
+}
+
+.market-home-title {
+    margin: 0 0 10px;
+    font-size: 15px;
+    font-weight: 600;
+    color: var(--webos-text);
+}
+
+/* 横排网格区块：每行6个，图标+名称 */
+.market-home-grid {
+    display: grid;
+    grid-template-columns: repeat(6, 1fr);
+    gap: 10px 12px;
+}
+
+.market-home-card {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+    padding: 12px 6px 10px;
+    border: 1px solid var(--webos-line);
+    border-radius: 8px;
+    background: #fff;
+    cursor: pointer;
+    transition: border-color .15s ease, box-shadow .15s ease;
+}
+
+.market-home-card:hover {
+    border-color: var(--webos-primary);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, .06);
+}
+
+.market-home-card:hover .market-home-name {
+    color: var(--webos-primary);
+}
+
+.market-home-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 44px;
+    height: 44px;
+    border-radius: 10px;
+    background: #f5f8fb;
+    color: var(--webos-primary);
+    font-size: 20px;
+    overflow: hidden;
+    flex: 0 0 auto;
+}
+
+.market-home-icon img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.market-home-name {
+    max-width: 100%;
+    font-size: 12px;
+    color: var(--webos-text);
+    text-align: center;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/* 推荐位竖列区块：每个推荐位一列 */
+.market-home-columns {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 14px;
+}
+
+.market-home-column {
+    border: 1px solid var(--webos-line);
+    border-radius: 8px;
+    background: #fff;
+    padding: 12px 12px 6px;
+}
+
+/* 推荐位列表条目：图标+名称，换行小字描述（最多2行） */
+.market-home-list-item {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    padding: 7px 6px;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: background .15s ease;
+}
+
+.market-home-list-item:hover {
+    background: #f5f9fc;
+}
+
+.market-home-list-item:hover .market-home-list-info strong {
+    color: var(--webos-primary);
+}
+
+.market-home-list-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 34px;
+    height: 34px;
+    border-radius: 8px;
+    background: #f5f8fb;
+    color: var(--webos-primary);
+    font-size: 16px;
+    overflow: hidden;
+    flex: 0 0 auto;
+}
+
+.market-home-list-icon img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.market-home-list-info {
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.market-home-list-info strong {
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--webos-text);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.market-home-list-info span {
+    font-size: 12px;
+    line-height: 1.5;
+    color: var(--webos-muted);
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+}
+
 /* 市场卡片可点击进入详情：整卡指针 + 名称主色提示 */
 .app-card[data-market-detail] {
     cursor: pointer;
@@ -3649,6 +4066,201 @@ textarea:focus-visible,
     gap: 7px;
 }
 
+/* 启动台：macOS Launchpad 风格全功能浮层（毛玻璃遮罩 + 顶部搜索 + 功能网格） */
+.launcher-layer {
+    position: fixed;
+    inset: 0;
+    z-index: 7500;
+    display: flex;
+    flex-direction: column;
+    padding: 28px 44px 36px;
+    /* 不使用 backdrop-filter 毛玻璃：低配置设备上全屏模糊渲染开销大，易造成卡顿 */
+    background: rgba(9, 20, 30, 0.92);
+    animation: launcher-fade 0.18s ease;
+}
+
+@keyframes launcher-fade {
+    from { opacity: 0; }
+    to { opacity: 1; }
+}
+
+.launcher-panel {
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+    width: 100%;
+    height: 100%;
+}
+
+/* 启动台右上角关闭按钮（Esc/点空白之外的显式关闭入口） */
+.launcher-close {
+    position: absolute;
+    top: 22px;
+    right: 26px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 38px;
+    height: 38px;
+    border: 0;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.08);
+    color: rgba(255, 255, 255, 0.85);
+    font-size: 18px;
+    cursor: pointer;
+    transition: background 0.12s ease, color 0.12s ease;
+}
+
+.launcher-close:hover {
+    background: rgba(255, 255, 255, 0.18);
+    color: #fff;
+}
+
+.launcher-close:focus-visible {
+    outline: 2px solid rgba(255, 255, 255, 0.6);
+    outline-offset: 2px;
+}
+
+/* 启动台分组卡片：无应用关联时与开始菜单目录卡片一致的 folder 底色图标 */
+.launcher-item-icon.is-folder-icon {
+    background: var(--webos-folder);
+    color: #fff;
+}
+
+.launcher-search {
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    width: min(480px, 100%);
+    margin: 0 auto;
+    padding: 10px 16px;
+    border-radius: 10px;
+    background: rgba(255, 255, 255, 0.94);
+    box-shadow: 0 8px 30px rgba(0, 0, 0, 0.25);
+}
+
+/* 启动台面包屑：全部功能 / 一级分组 / 子分组，点击任意层级返回 */
+.launcher-crumbs {
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-wrap: wrap;
+    gap: 4px 8px;
+    color: rgba(255, 255, 255, 0.75);
+    font-size: 13px;
+}
+
+.launcher-crumbs button {
+    border: 0;
+    background: none;
+    padding: 4px 6px;
+    border-radius: 6px;
+    color: inherit;
+    font-size: inherit;
+    cursor: pointer;
+}
+
+.launcher-crumbs button:hover:not(:disabled) {
+    background: rgba(255, 255, 255, 0.14);
+    color: #fff;
+}
+
+.launcher-crumbs button:disabled {
+    color: #fff;
+    font-weight: 600;
+    cursor: default;
+}
+
+.launcher-crumbs .fa-angle-right {
+    opacity: 0.6;
+}
+
+.launcher-search i {
+    color: #64748b;
+}
+
+.launcher-search input {
+    flex: 1;
+    min-width: 0;
+    border: 0;
+    outline: 0;
+    background: transparent;
+    font-size: 14px;
+    color: #1e293b;
+}
+
+.launcher-grid {
+    flex: 1;
+    overflow-y: auto;
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+    align-content: start;
+    gap: 14px;
+    padding: 8px 4px 12px;
+}
+
+.launcher-item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+    padding: 14px 8px 10px;
+    border: 0;
+    border-radius: 12px;
+    background: rgba(255, 255, 255, 0.92);
+    cursor: pointer;
+    text-align: center;
+    transition: transform 0.12s ease, background 0.12s ease;
+}
+
+.launcher-item:hover,
+.launcher-item:focus-visible {
+    background: #fff;
+    transform: translateY(-2px);
+}
+
+.launcher-item-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 44px;
+    height: 44px;
+    border-radius: 10px;
+    background: #eef2f5;
+    color: #087f75;
+    font-size: 18px;
+}
+
+/* 图片图标不接收指针事件：点击目标始终是按钮本身，避免 img 原生拖拽打断点击 */
+.launcher-item img {
+    pointer-events: none;
+}
+
+.launcher-item strong {
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 13px;
+    color: #1e293b;
+}
+
+.launcher-empty {
+    grid-column: 1 / -1;
+    padding: 40px 0;
+    text-align: center;
+    font-size: 13px;
+    color: rgba(255, 255, 255, 0.88);
+}
+
+.launcher-empty i {
+    display: block;
+    margin-bottom: 10px;
+    font-size: 28px;
+}
+
 .lock-screen {
     position: fixed;
     inset: 0;
@@ -3858,7 +4470,8 @@ textarea:focus-visible,
 
 .webos-desktop .desktop-icon-badge.is-app-icon img,
 .webos-desktop .taskbar-app-icon.is-app-icon img,
-.webos-desktop .start-app-item-icon.is-app-icon img {
+.webos-desktop .start-app-item-icon.is-app-icon img,
+.webos-desktop .launcher-item-icon.is-app-icon img {
     width: 100%;
     height: 100%;
     object-fit: contain;

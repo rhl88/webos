@@ -49,6 +49,7 @@
         installRequestId: 0,
         marketApps: new Map(),
         marketPager: { category: '', keyword: '', page: 0, lastPage: 1, total: 0, loading: false, failed: false, token: 0 },
+        marketSubTab: 'home',
         updateApps: [],
         updateChecked: false,
         updateCount: null,
@@ -191,8 +192,19 @@
         });
     }
 
+    /** 图标别名映射：iconPicker 存储的短代码别名 → layui 图标类名（与框架 ConfigController::buildMenuTree 一致） */
+    var ICON_ALIASES = {
+        IconSetting: 'layui-icon layui-icon-set',
+        IconUser: 'layui-icon layui-icon-user',
+        IconShield: 'layui-icon layui-icon-vercode',
+        IconMenu: 'layui-icon layui-icon-menu-fill',
+        IconImage: 'layui-icon layui-icon-picture',
+        IconFile: 'layui-icon layui-icon-file'
+    };
+
     function safeIcon(icon) {
         var className = String(icon || 'fa fa-cube').replace(/[^A-Za-z0-9 _-]/g, '');
+        if (ICON_ALIASES[className]) { return ICON_ALIASES[className]; }
         return className || 'fa fa-cube';
     }
 
@@ -329,12 +341,13 @@
     function flattenMenus(tree) {
         var output = [];
 
-        /** 输出一个可打开菜单叶子（folder 入参仅在没有 app_id 时用于文件夹归属） */
-        function pushLeaf(item, group, appId, folder) {
+        /** 输出一个可打开菜单叶子（folder 入参仅在没有 app_id 时用于文件夹归属；appNodeId 为所属应用文件夹节点 id） */
+        function pushLeaf(item, group, appId, folder, appNodeId) {
             output.push({
                 id: 'menu-' + item.id,
                 menu_id: Number(item.id || 0),
                 app_id: appId,
+                app_node_id: appNodeId || '',
                 title: item.name || '未命名菜单',
                 path: item.path,
                 icon: safeIcon(item.icon),
@@ -348,7 +361,7 @@
             });
         }
 
-        function walk(items, group, inheritedAppId, folder) {
+        function walk(items, group, inheritedAppId, folder, inheritedAppNodeId) {
             (items || []).forEach(function (item) {
                 var isRoot = !group;
                 var nextGroup = group || {
@@ -357,6 +370,9 @@
                     icon: safeIcon(item.icon)
                 };
                 var nextAppId = item.app_id || inheritedAppId || '';
+                // 自带 app_id 的节点即应用文件夹节点：其后代叶子记录该节点 id，
+                // 拖拽换分类时按节点整体移动（子树随父节点），而非散移叶子菜单
+                var nextAppNodeId = item.app_id ? String(item.id || '') : (inheritedAppNodeId || '');
                 var children = Array.isArray(item.children) ? item.children : [];
                 var nextFolder = folder;
                 if (!nextAppId && !nextFolder && !isRoot) {
@@ -370,23 +386,23 @@
                 }
                 if (children.length) {
                     var before = output.length;
-                    walk(children, nextGroup, nextAppId, nextFolder);
+                    walk(children, nextGroup, nextAppId, nextFolder, nextAppNodeId);
                     // 子树中没有任何可打开菜单（如「用户管理」下只挂新增/编辑/删除用户等
                     // 按钮权限项，path 为空会被 openablePath 过滤）且父菜单自身 path 可打开时，
                     // 父菜单自身输出为可打开菜单项，避免整个菜单从 WebOS 中消失
                     if (output.length === before && openablePath(item)) {
-                        pushLeaf(item, nextGroup, nextAppId, nextFolder);
+                        pushLeaf(item, nextGroup, nextAppId, nextFolder, nextAppNodeId);
                     }
                     return;
                 }
                 if (!openablePath(item)) {
                     return;
                 }
-                pushLeaf(item, nextGroup, nextAppId, nextFolder);
+                pushLeaf(item, nextGroup, nextAppId, nextFolder, nextAppNodeId);
             });
         }
 
-        walk(tree || [], null, '', null);
+        walk(tree || [], null, '', null, '');
         return output;
     }
 
@@ -426,6 +442,20 @@
             group_title: 'WebOS',
             group_icon: 'fa fa-desktop',
             special: 'notifications'
+        };
+    }
+
+    /** 官网动态窗口入口：仅超级管理员桌面自动打开并停靠桌面最右侧（数据来自官网公开接口） */
+    function officialNewsEntry() {
+        return {
+            id: 'webos-official-news',
+            title: '官网动态',
+            path: '/admin/cmspro/webos?app=official-news',
+            icon: 'fa fa-bullhorn',
+            group_id: 'webos',
+            group_title: 'WebOS',
+            group_icon: 'fa fa-desktop',
+            special: 'official-news'
         };
     }
 
@@ -652,15 +682,35 @@
             }) : null;
             var applicationIcon = application && typeof application.icon === 'string' && application.icon.indexOf('/') < 0
                 ? application.icon : representative.icon;
+            // 拖拽换顶级分类：整个应用（含应用文件夹节点）整体移动——优先收应用文件夹节点 id
+            //（服务端只改父节点、子树随行），直接挂在分类下的散叶子补自身 id；目录卡片收目录节点 id
+            var moveIds = [];
+            if (!representative.special) {
+                if (representative.app_id) {
+                    entries.forEach(function (entry) {
+                        if (entry.app_node_id) {
+                            if (moveIds.indexOf(entry.app_node_id) < 0) { moveIds.push(Number(entry.app_node_id)); }
+                        } else {
+                            moveIds.push(entry.menu_id);
+                        }
+                    });
+                } else {
+                    moveIds.push(Number(representative.folder_id));
+                }
+            }
             var item = Object.assign({}, representative, {
                 start_key: pair[0],
                 start_kind: representative.app_id ? 'application' : 'folder',
                 start_title: application ? application.name : representative.folder_title,
-                start_icon: application ? safeIcon(applicationIcon) : 'fa fa-folder',
+                // 目录项优先用目录/分组自身设置的图标，无图标时才以文件夹图标兜底
+                start_icon: application
+                    ? safeIcon(applicationIcon)
+                    : (representative.folder_icon || representative.group_icon || 'fa fa-folder'),
                 start_subtitle: entries.length + (application ? ' 个菜单' : ' 个子菜单'),
                 start_search: [application ? application.name : representative.folder_title, entries.map(function (entry) {
                     return entry.title;
-                }).join(' ')].join(' ')
+                }).join(' ')].join(' '),
+                move_ids: moveIds
             });
             if (representative.special) {
                 item.start_kind = 'application';
@@ -741,11 +791,16 @@
             var pinButton = isFolderStartItem(item) ? '' : '<button class="pin-button' + (isPinned ? ' is-pinned' : '') + '" type="button" data-pin-id="'
                 + escapeHtml(item.id) + '" title="' + (isPinned ? '从桌面移除' : '添加到桌面')
                 + '"><i class="fa ' + (isPinned ? 'fa-thumb-tack' : 'fa-plus') + '"></i></button>';
+            // 拖拽换顶级分类：仅超管可见（菜单结构调整影响所有管理员），WebOS 特殊项与无菜单 id 的条目不可拖；
+            // 搜索结果跨分类无单一来源语义，同样不启用
+            var moveIds = isSuperAdmin && !item.special && item.move_ids && item.move_ids.length
+                ? item.move_ids.join(',') : '';
             return '<div class="start-app-item ' + (isFolderStartItem(item) ? 'is-folder' : '')
                 + '" tabindex="0" role="button" data-menu-id="' + escapeHtml(item.id) + '" data-start-kind="'
-                + escapeHtml(item.start_kind) + '">'
+                + escapeHtml(item.start_kind) + '"'
+                + (moveIds ? ' draggable="true" data-move-ids="' + moveIds + '"' : '') + '>'
                 + (isFolderStartItem(item)
-                    ? '<span class="start-app-item-icon"><i class="fa fa-folder"></i></span>'
+                    ? '<span class="start-app-item-icon"><i class="' + safeIcon(item.start_icon) + '"></i></span>'
                     : entryIconMarkup(item, 'start-app-item-icon'))
                 + '<span class="start-app-item-text"><strong>' + escapeHtml(item.start_title) + '</strong><small>'
                 + escapeHtml(item.start_subtitle || '应用') + '</small></span>'
@@ -784,7 +839,8 @@
     }
 
     function recordEntryUsage(entry) {
-        if (!entry || entry.id === 'webos-settings') {
+        // OS 设置与官网动态窗口为内置入口且自动打开，不计入应用使用统计
+        if (!entry || entry.id === 'webos-settings' || entry.id === 'webos-official-news') {
             return;
         }
         var key = usageKey(entry);
@@ -1040,6 +1096,11 @@
 
     function runDesktopContextAction(action, iconId) {
         var context = desktopIconContext(iconId);
+        // 窗口选项卡右键：刷新页面 / 关闭当前 / 关闭其它 / 关闭全部（data-desktop-id 传选项卡 id）
+        if (action === 'tab-reload' || action === 'tab-close' || action === 'tab-close-others' || action === 'tab-close-all') {
+            runWindowTabContextAction(action, iconId);
+            return;
+        }
         // 查看 > 图标大小：切档后持久化偏好并按新格子尺寸重排桌面
         if (action === 'icon-large' || action === 'icon-medium' || action === 'icon-small') {
             state.workspace.preferences.icon_size = action.slice('icon-'.length);
@@ -1092,6 +1153,65 @@
         if (menu) {
             menu.remove();
         }
+    }
+
+    /** 窗口选项卡右键菜单：刷新页面 / 关闭当前 / 关闭其它 / 关闭全部（复用桌面右键菜单容器，data-desktop-id 传选项卡 id） */
+    function openWindowTabContextMenu(tabId, clientX, clientY) {
+        closeDesktopContextMenu();
+        closeTaskbarContextMenu();
+        closeAppRowMenus();
+        menuMarkupInto('#desktop-context-menu', 'desktop-context-menu', [
+            ['刷新页面', 'fa-refresh', 'tab-reload'],
+            ['关闭当前', 'fa-times', 'tab-close'],
+            ['关闭其它', 'fa-columns', 'tab-close-others'],
+            ['关闭全部', 'fa-trash', 'tab-close-all', 'danger']
+        ], tabId);
+        positionDesktopMenu(clientX, clientY);
+    }
+
+    /**
+     * 刷新选项卡：清空页面容器 token 强制重建（iframe 重设 src / 组件重新拉取），
+     * 行为对齐框架后台标题栏刷新按钮（layui-icon-refresh-1，重新加载当前页）。
+     */
+    function reloadWindowTab(windowState, tab) {
+        var host = windowState.element.querySelector('[data-window-page-host]');
+        var page = host && host.querySelector('[data-window-page="' + tab.id + '"]');
+        if (page) { page.dataset.pageToken = ''; }
+        windowState.activeTabId = tab.id;
+        renderWindowPage(windowState, tab);
+        syncWindowTabsBar(windowState);
+    }
+
+    /** 选项卡右键动作：按选项卡 id 反查所在窗口；关闭其它后激活保留的选项卡 */
+    function runWindowTabContextAction(action, tabId) {
+        var found = null;
+        state.windows.forEach(function (windowState) {
+            if (found || !windowState.tabs) { return; }
+            var tab = windowState.tabs.find(function (item) { return item.id === tabId; });
+            if (tab) { found = { windowState: windowState, tab: tab }; }
+        });
+        if (!found) { return; }
+        if (action === 'tab-reload') {
+            reloadWindowTab(found.windowState, found.tab);
+            return;
+        }
+        if (action === 'tab-close') {
+            closeWindowTab(found.windowState, tabId);
+            return;
+        }
+        var ids = found.windowState.tabs.map(function (item) { return item.id; });
+        if (action === 'tab-close-others') {
+            ids.forEach(function (id) {
+                if (id !== tabId) { closeWindowTab(found.windowState, id); }
+            });
+            // 逐个关闭可能切换了激活态，确保保留的选项卡处于激活
+            if (found.windowState.activeTabId !== tabId) {
+                switchWindowTab(found.windowState, tabId);
+            }
+            return;
+        }
+        // 关闭全部：逐个关闭，最后一个（激活页）走既有相邻切换/空状态收尾
+        ids.forEach(function (id) { closeWindowTab(found.windowState, id); });
     }
 
     function taskbarWindowMenuItems(key) {
@@ -1264,6 +1384,9 @@
         if (entry.id === 'webos-settings') {
             return 'webos-settings';
         }
+        if (entry.id === 'webos-official-news') {
+            return 'webos-official-news';
+        }
         var identity = entry.app_id ? 'app-' + entry.app_id : 'folder-' + (entry.folder_id || entry.id || entry.path);
         return String(identity).replace(/[^A-Za-z0-9_-]/g, '-');
     }
@@ -1308,7 +1431,7 @@
     /** 窗口标题栏前台菜单下拉框：仅在应用声明并安装了前台（home）菜单时由 loadWindowHomeMenu 注入 */
     function windowHomeMenuMarkup(leaves) {
         var items = leaves.map(function (leaf) {
-            return '<button type="button" class="window-home-menu-item" data-home-url="' + escapeHtml(leaf.path) + '">'
+            return '<button type="button" class="window-home-menu-item" data-home-url="' + escapeHtml(leaf.url || leaf.path) + '">'
                 + '<span>' + escapeHtml(leaf.name) + '</span></button>';
         }).join('');
 
@@ -1354,6 +1477,12 @@
             if (!controls) { return; }
             var existing = controls.querySelector('.window-home-menu');
             if (existing) { existing.remove(); }
+            // 前台菜单固定锚定「收起左侧菜单」按钮左侧：与选项卡条/溢出导航的注入时序无关，始终紧挨
+            var anchor = controls.querySelector('.sidebar-toggle');
+            if (anchor) {
+                anchor.insertAdjacentHTML('beforebegin', windowHomeMenuMarkup(leaves));
+                return;
+            }
             controls.insertAdjacentHTML('afterbegin', windowHomeMenuMarkup(leaves));
         };
 
@@ -1363,8 +1492,24 @@
         }
         api('/api/admin/menus/tree?terminal_type=home').then(function (payload) {
             var leaves = collectHomeMenuLeaves(Array.isArray(payload) ? payload : [], appId);
-            if (leaves.length) { homeMenusCache.set(appId, leaves); }
-            inject(leaves);
+            if (!leaves.length) { return; }
+            // 前台链接兼容转换：域名绑定应用的原始路径（如 /forum）在主站不可达，需换算为绑定域名；
+            // 转换失败或非绑定应用回退原始路径（url 字段由应用侧 home-menu-urls 接口按 menu_path 生成）
+            api('/admin/cmspro/webos/api/home-menu-urls?app_ids[]=' + encodeURIComponent(appId))
+                .then(function (urls) {
+                    var urlMap = {};
+                    (urls && Array.isArray(urls[appId]) ? urls[appId] : []).forEach(function (item) {
+                        if (item && item.path && item.url) { urlMap[item.path] = item.url; }
+                    });
+                    leaves.forEach(function (leaf) {
+                        if (urlMap[leaf.path]) { leaf.url = urlMap[leaf.path]; }
+                    });
+                })
+                .catch(function () {})
+                .then(function () {
+                    homeMenusCache.set(appId, leaves);
+                    inject(leaves);
+                });
         }).catch(function () {
             // 前台菜单获取失败静默：不显示下拉框，不影响窗口本身
         });
@@ -1666,21 +1811,26 @@
         var isMarket = entry.special === 'market' || entry.id === 'webos-app-center';
         var isSettings = entry.special === 'settings' || entry.id === 'webos-settings';
         var isNotificationCenter = entry.special === 'notifications' || entry.id === 'webos-notification-page';
-        var navTree = isMarket || isSettings || isNotificationCenter ? [] : windowNavTree(entry);
-        var sidebar = isSettings ? '' : windowSidebarMarkup(entry, navTree, true);
+        // 官网动态窗口：无左侧菜单与收起按钮，内容区由 renderOfficialNews 渲染
+        var isOfficialNews = entry.special === 'official-news' || entry.id === 'webos-official-news';
+        var navTree = isMarket || isSettings || isNotificationCenter || isOfficialNews ? [] : windowNavTree(entry);
+        var sidebar = isSettings || isOfficialNews ? '' : windowSidebarMarkup(entry, navTree, true);
         var content = isMarket
             ? '<div class="app-center-shell" data-app-center></div>'
             : (isSettings ? '<div class="webos-settings-shell" data-webos-settings></div>'
                 : (isNotificationCenter ? '<div class="webos-notifications-shell" data-webos-notifications></div>'
-                    : '<div class="window-page-host" data-window-page-host></div>'));
+                    : (isOfficialNews ? '<div class="official-news-shell" data-official-news></div>'
+                        : '<div class="window-page-host" data-window-page-host></div>')));
         var identity = isMarket ? { title: '应用中心', subtitle: 'WebOS' }
             : (isSettings ? { title: 'OS 设置', subtitle: 'WebOS 系统偏好' }
-                : (isNotificationCenter ? { title: '通知中心', subtitle: 'WebOS' } : windowIdentity(entry)));
+                : (isNotificationCenter ? { title: '通知中心', subtitle: 'WebOS' }
+                    : (isOfficialNews ? { title: '官网动态', subtitle: 'CmsPro 官网' } : windowIdentity(entry))));
         var brandIcon = windowBrandIconMarkup(entry);
-        var sidebarCollapsed = !isSettings && !isMarket && !isNotificationCenter && countNavLeaves(navTree) <= 1;
-        var sidebarToggle = isSettings ? '' : windowSidebarToggleMarkup(key, sidebarCollapsed);
-        var windowBody = isSettings
-            ? '<div class="window-body settings-window-body"><section class="window-content">' + content + '</section></div>'
+        var sidebarCollapsed = !isSettings && !isMarket && !isNotificationCenter && !isOfficialNews
+            && countNavLeaves(navTree) <= 1;
+        var sidebarToggle = isSettings || isOfficialNews ? '' : windowSidebarToggleMarkup(key, sidebarCollapsed);
+        var windowBody = isSettings || isOfficialNews
+            ? '<div class="window-body"><section class="window-content">' + content + '</section></div>'
             : '<div class="window-body"><aside class="window-sidebar" id="window-sidebar-' + key + '">'
                 + sidebar + '</aside><section class="window-content">' + content + '</section></div>';
 
@@ -1689,6 +1839,11 @@
             + '<header class="window-titlebar" data-window-drag>'
             + '<div class="window-brand">' + brandIcon + '<strong>'
             + escapeHtml(identity.title) + '<small>' + escapeHtml(identity.subtitle) + '</small></strong></div>'
+            // 选项卡模式标题栏刷新按钮：置于品牌区右侧（标题栏直属，不随选项卡条/控制区布局变化），
+            // 点击刷新当前激活选项卡内容（与选项卡右键「刷新页面」同链路）
+            + (windowTabsEnabled()
+                ? '<button class="window-control window-refresh" type="button" data-window-action="refresh" aria-label="刷新当前页面" title="刷新当前页面"><i class="fa fa-refresh"></i></button>'
+                : '')
             + '<div class="window-controls">'
             + sidebarToggle
             + '<button class="window-control" type="button" data-window-action="minimize" aria-label="最小化"><i class="fa fa-minus"></i></button>'
@@ -1843,6 +1998,16 @@
             + '<button class="settings-toggle" type="button" data-toggle-webos-setting="override_admin_home" aria-pressed="'
             + (preferences.override_admin_home ? 'true' : 'false') + '"><span><strong>后台首页直达 WebOS</strong>'
             + '<small>仅影响后台首页，其它后台页面不受影响</small></span><i></i></button></section>'
+            + '<section class="settings-card"><div class="settings-card-title"><i class="fa fa-clone"></i><div>'
+            + '<strong>应用窗口多选项卡</strong><small>开启后窗口内点击菜单以选项卡方式打开，可在标题栏切换与关闭；切换选项卡不重新加载页面</small></div></div>'
+            + '<button class="settings-toggle" type="button" data-toggle-webos-setting="window_tabs" aria-pressed="'
+            + (preferences.window_tabs ? 'true' : 'false') + '"><span><strong>多选项卡模式</strong>'
+            + '<small>仅对开启后新打开的应用窗口生效，已打开窗口保持原模式</small></span><i></i></button></section>'
+            + '<section class="settings-card"><div class="settings-card-title"><i class="fa fa-hand-pointer-o"></i><div>'
+            + '<strong>点击菜单进入</strong><small>控制点击任务栏「菜单」按钮的行为</small></div></div>'
+            + '<button class="settings-toggle" type="button" data-toggle-webos-setting="menu_open_launcher" aria-pressed="'
+            + (preferences.menu_open_launcher ? 'true' : 'false') + '"><span><strong>直接进入全部功能</strong>'
+            + '<small>开启后点击「菜单」直接打开「全部功能」启动台；关闭时打开当前系统菜单面板（默认）</small></span><i></i></button></section>'
             + '<section class="settings-card"><div class="settings-card-title"><i class="fa fa-undo"></i><div>'
             + '<strong>重置工作区</strong><small>清空桌面与任务栏图标，全部设置恢复默认；自定义壁纸文件保留</small></div></div>'
             + '<div class="settings-reset-row"><button class="webos-button danger" type="button" data-reset-workspace>恢复默认布局</button>'
@@ -1922,7 +2087,8 @@
     var MIN_WINDOW_HEIGHT = 320;
 
     /** WebOS 内置窗口标识，与 windowKey 的固定返回值一致；不参与“窗口默认尺寸”偏好 */
-    var BUILTIN_WINDOW_KEYS = ['webos-app-center', 'webos-settings'];
+    // 内置窗口不读取管理员偏好尺寸：应用中心自适应、OS 设置固定宽度、官网动态固定 600×500
+    var BUILTIN_WINDOW_KEYS = ['webos-app-center', 'webos-settings', 'webos-official-news'];
 
     function clampWindowRatio(value, fallback) {
         var ratio = Number(value);
@@ -1948,6 +2114,14 @@
             return {
                 width: Math.max(MIN_WINDOW_WIDTH, Math.min(1000, Math.round(rect.width) - 40)),
                 height: Math.max(MIN_WINDOW_HEIGHT, Math.round(rect.height * heightRatio / 100))
+            };
+        }
+
+        // 官网动态窗口固定 600×500（仅超管桌面自动打开，停靠桌面最右侧）
+        if (key === 'webos-official-news') {
+            return {
+                width: Math.min(600, Math.max(MIN_WINDOW_WIDTH, Math.round(rect.width) - 48)),
+                height: Math.min(500, Math.max(MIN_WINDOW_HEIGHT, Math.round(rect.height) - 48))
             };
         }
 
@@ -2092,10 +2266,214 @@
         });
     }
 
-    /** 按 open_type 渲染窗口内容区：_iframe 用 iframe 承载，_component 用 AJAX 注入 HTML 片段 */
+    /** 窗口选项卡序号：选项卡为窗口内存态，不持久化到工作区 */
+    var windowTabSeq = 0;
+
+    /** 由入口创建一个窗口选项卡记录（页面类型与路径决定容器内容，复用渲染逻辑） */
+    function makeWindowTab(entry) {
+        windowTabSeq += 1;
+        return {
+            id: 'tab-' + windowTabSeq,
+            title: entry.title,
+            path: entry.path,
+            openType: entry.open_type === '_component' ? '_component' : '_iframe'
+        };
+    }
+
+    /** 多选项卡开关：OS 设置「应用窗口多选项卡」，仅对开启后新打开的窗口生效 */
+    function windowTabsEnabled() {
+        return state.workspace.preferences.window_tabs === true;
+    }
+
+    /** 当前激活的选项卡：无激活记录时回退最后一个 */
+    function windowActiveTab(windowState) {
+        if (!windowState.tabs || !windowState.tabs.length) {
+            return null;
+        }
+        return windowState.tabs.find(function (tab) { return tab.id === windowState.activeTabId; })
+            || windowState.tabs[windowState.tabs.length - 1];
+    }
+
+    /** 选项卡条溢出导航：按滚动位置显隐左右切换按钮（hidden 切换，按钮常驻 DOM） */
+    function updateWindowTabsNav(controls) {
+        if (!controls) {
+            return;
+        }
+        var bar = controls.querySelector('.window-tabs');
+        if (!bar) {
+            return;
+        }
+        var maxScroll = bar.scrollWidth - bar.clientWidth;
+        var navPrev = controls.querySelector('[data-window-tabs-scroll="prev"]');
+        var navNext = controls.querySelector('[data-window-tabs-scroll="next"]');
+        if (navPrev) { navPrev.hidden = bar.scrollLeft <= 1; }
+        if (navNext) { navNext.hidden = maxScroll <= 1 || bar.scrollLeft >= maxScroll - 1; }
+    }
+
+    /** 将激活选项卡滚动到可视区（渲染后调用，保证当前选项卡始终可见） */
+    function revealWindowTab(controls, tabId) {
+        if (!controls) {
+            return;
+        }
+        var bar = controls.querySelector('.window-tabs');
+        var tabEl = bar && bar.querySelector('[data-window-tab="' + tabId + '"]');
+        if (tabEl) {
+            tabEl.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+        }
+        updateWindowTabsNav(controls);
+    }
+
+    /** 标题栏选项卡条：显示在 .window-controls 首位（收起左侧菜单左侧），点击切换、右上叉关闭 */
+    function syncWindowTabsBar(windowState) {
+        var controls = windowState.element.querySelector('.window-controls');
+        if (!controls) {
+            return;
+        }
+        var bar = controls.querySelector('.window-tabs');
+        if (!windowState.tabs || !windowState.tabs.length) {
+            if (bar) { bar.remove(); }
+            // 连同溢出导航按钮一并移除，并恢复控制区右推（margin-left:auto），按钮贴右侧
+            var stalePrev = controls.querySelector('[data-window-tabs-scroll="prev"]');
+            var staleNext = controls.querySelector('[data-window-tabs-scroll="next"]');
+            if (stalePrev) { stalePrev.remove(); }
+            if (staleNext) { staleNext.remove(); }
+            windowState.element.classList.remove('has-window-tabs');
+            return;
+        }
+        // 选项卡模式下取消控制区右推，选项卡条从标题栏左侧展开（flex:1 撑满，按钮自然靠右）
+        windowState.element.classList.add('has-window-tabs');
+        if (!bar) {
+            bar = document.createElement('div');
+            bar.className = 'window-tabs';
+            controls.insertAdjacentElement('afterbegin', bar);
+            bar.addEventListener('scroll', function () { updateWindowTabsNav(controls); });
+        }
+        var active = windowActiveTab(windowState);
+        bar.innerHTML = windowState.tabs.map(function (tab) {
+            return '<button class="window-tab' + (active && tab.id === active.id ? ' is-active' : '') + '" type="button"'
+                + ' data-window-tab="' + tab.id + '" title="' + escapeHtml(tab.title) + '">'
+                + '<span>' + escapeHtml(tab.title) + '</span>'
+                + '<i class="fa fa-times window-tab-close" data-window-tab-close="' + tab.id + '" aria-label="关闭选项卡"></i></button>';
+        }).join('');
+        // 溢出时显示的左右切换按钮：< 选项卡 选项卡 … >
+        if (!controls.querySelector('[data-window-tabs-scroll="prev"]')) {
+            var navPrev = document.createElement('button');
+            navPrev.type = 'button';
+            navPrev.className = 'window-tabs-nav';
+            navPrev.dataset.windowTabsScroll = 'prev';
+            navPrev.setAttribute('aria-label', '向前切换选项卡');
+            navPrev.innerHTML = '<i class="fa fa-angle-left"></i>';
+            controls.insertAdjacentElement('afterbegin', navPrev);
+        }
+        if (!controls.querySelector('[data-window-tabs-scroll="next"]')) {
+            var navNext = document.createElement('button');
+            navNext.type = 'button';
+            navNext.className = 'window-tabs-nav';
+            navNext.dataset.windowTabsScroll = 'next';
+            navNext.setAttribute('aria-label', '向后切换选项卡');
+            navNext.innerHTML = '<i class="fa fa-angle-right"></i>';
+            bar.insertAdjacentElement('afterend', navNext);
+        }
+        // 激活选项卡滚入可视区，并按溢出状态更新左右按钮显隐
+        revealWindowTab(controls, active ? active.id : '');
+    }
+
+    /** 品牌区副标题跟随当前选项卡（菜单名）：主标题应用名固定不随切换变化 */
+    function syncWindowTabSubtitle(windowState, title) {
+        var strong = windowState.element.querySelector('.window-brand strong');
+        if (!strong) {
+            return;
+        }
+        var small = strong.querySelector('small');
+        if (small) {
+            small.textContent = title;
+        }
+    }
+
+    /** 切换到指定选项卡：复用既有容器不重新加载页面（品牌区主标题保持应用身份，副标题跟随菜单） */
+    function switchWindowTab(windowState, tabId) {
+        if (!windowState.tabs) {
+            return;
+        }
+        var tab = windowState.tabs.find(function (item) { return item.id === tabId; });
+        if (!tab) {
+            return;
+        }
+        windowState.activeTabId = tabId;
+        renderWindowPage(windowState, tab);
+        syncWindowTabSubtitle(windowState, tab.title);
+        syncWindowTabsBar(windowState);
+    }
+
+    /** 关闭选项卡：激活页关闭后按相邻优先（先右后左）切换；全部关闭时展示空状态引导 */
+    function closeWindowTab(windowState, tabId) {
+        if (!windowState.tabs) {
+            return;
+        }
+        var index = windowState.tabs.findIndex(function (tab) { return tab.id === tabId; });
+        if (index === -1) {
+            return;
+        }
+        var wasActive = windowState.activeTabId === tabId;
+        windowState.tabs.splice(index, 1);
+        var host = windowState.element.querySelector('[data-window-page-host]');
+        var page = host && host.querySelector('[data-window-page="' + tabId + '"]');
+        if (page) {
+            page.remove();
+        }
+        if (wasActive) {
+            var next = windowState.tabs[Math.min(index, windowState.tabs.length - 1)] || null;
+            windowState.activeTabId = next ? next.id : '';
+            if (next) {
+                renderWindowPage(windowState, next);
+                syncWindowTabSubtitle(windowState, next.title);
+            } else if (host) {
+                host.innerHTML = emptyState('fa-clone', '选项卡已全部关闭，可从左侧菜单重新打开内容');
+                // 全部关闭后副标题清空，品牌区仅保留应用名
+                syncWindowTabSubtitle(windowState, '');
+            }
+        }
+        syncWindowTabsBar(windowState);
+    }
+
     function renderWindowPage(windowState, entry) {
         var host = windowState && windowState.element.querySelector('[data-window-page-host]');
         if (!host) {
+            return;
+        }
+        // 多选项卡模式：每个选项卡独立容器（iframe/组件内容仅首次创建），切换只改变显示，页面状态保留
+        if (windowState.tabs) {
+            var tab = entry;
+            // 「选项卡已全部关闭」空状态引导不是页面容器：恢复选项卡前先移除 host 下非页面子节点
+            Array.prototype.forEach.call(host.children, function (node) {
+                if (node.classList && !node.classList.contains('window-page')) {
+                    node.remove();
+                }
+            });
+            var page = host.querySelector('[data-window-page="' + tab.id + '"]');
+            if (!page) {
+                page = document.createElement('div');
+                page.className = 'window-page';
+                page.dataset.windowPage = tab.id;
+                page.dataset.pageToken = '';
+                host.appendChild(page);
+            }
+            var tabToken = (tab.openType === '_component' ? '_component:' : '_iframe:') + tab.path;
+            if (page.dataset.pageToken !== tabToken) {
+                page.dataset.pageToken = tabToken;
+                if (tab.openType === '_component') {
+                    page.innerHTML = emptyState('fa-circle-o-notch fa-spin', '正在加载页面…');
+                    loadComponentPage(page, tab.path, tabToken);
+                } else {
+                    page.innerHTML = '<iframe src="' + escapeHtml(tab.path) + '" title="'
+                        + escapeHtml(tab.title) + '"></iframe>';
+                }
+            }
+            host.querySelectorAll('.window-page').forEach(function (node) {
+                node.hidden = node.dataset.windowPage !== tab.id;
+            });
+            // iframe 重建后遮罩丢失，按当前聚焦状态补挂
+            syncWindowShields();
             return;
         }
         var token = (entry.open_type === '_component' ? '_component:' : '_iframe:') + entry.path;
@@ -2151,11 +2529,25 @@
         windowElement.style.top = Math.max(20, (layerRect.height - size.height) / 2 + offset * 14) + 'px';
         windowElement.style.width = size.width + 'px';
         windowElement.style.height = size.height + 'px';
+        // 官网动态窗口停靠桌面最右侧、垂直居中（仅超管桌面自动打开）
+        if (entry.id === 'webos-official-news') {
+            windowElement.style.left = Math.max(24, Math.round(layerRect.width) - size.width - 24) + 'px';
+            windowElement.style.top = Math.max(20, Math.round((layerRect.height - size.height) / 2)) + 'px';
+        }
         elements.windowLayer.appendChild(windowElement);
-        state.windows.set(key, { entry: entry, element: windowElement, minimized: false, maximized: false });
-        renderWindowPage(state.windows.get(key), entry);
+        var windowState = { entry: entry, element: windowElement, minimized: false, maximized: false, tabs: null, activeTabId: '' };
+        state.windows.set(key, windowState);
+        // 多选项卡开启时新窗口以首个选项卡承载入口页面（应用中心/OS 设置等特殊窗口无页面区，不启用）
+        if (windowTabsEnabled() && windowElement.querySelector('[data-window-page-host]')) {
+            windowState.tabs = [makeWindowTab(entry)];
+            windowState.activeTabId = windowState.tabs[0].id;
+        }
+        renderWindowPage(windowState, windowState.tabs ? windowState.tabs[0] : entry);
+        if (windowState.tabs) {
+            syncWindowTabsBar(windowState);
+        }
         // 应用有前台（home）菜单时在「收起左侧菜单」左侧注入前台菜单下拉框
-        loadWindowHomeMenu(state.windows.get(key));
+        loadWindowHomeMenu(windowState);
         focusWindow(key);
         bindWindowGestures(key);
         renderTaskbarWindows();
@@ -2171,11 +2563,32 @@
             renderNotificationCenter(notificationCenterState.tab);
             loadNotifications();
         }
+        if (entry.id === 'webos-official-news') {
+            renderOfficialNews();
+        }
     }
 
     function activateWindowEntry(windowState, entry) {
         if (!windowState || entry.id === 'webos-app-center' || entry.id === 'webos-settings'
-            || entry.id === 'webos-notification-page') {
+            || entry.id === 'webos-notification-page' || entry.id === 'webos-official-news') {
+            return;
+        }
+        // 多选项卡模式：同路径复用既有选项卡，否则新开并激活（页面内容按需创建，切换不重载）
+        if (windowState.tabs) {
+            var existing = windowState.tabs.find(function (tab) { return tab.path === entry.path; })
+                || null;
+            if (!existing) {
+                existing = makeWindowTab(entry);
+                windowState.tabs.push(existing);
+            }
+            windowState.activeTabId = existing.id;
+            windowState.entry = entry;
+            rerenderWindowNav(windowState, true);
+            loadWindowHomeMenu(windowState);
+            renderWindowPage(windowState, existing);
+            syncWindowTabSubtitle(windowState, existing.title);
+            syncWindowTabsBar(windowState);
+            renderTaskbarWindows();
             return;
         }
         var identity = windowIdentity(entry);
@@ -2381,6 +2794,18 @@
             titlebar.addEventListener('pointerup', end);
             titlebar.addEventListener('pointercancel', end);
             titlebar.addEventListener('lostpointercapture', end);
+        });
+
+        // 双击标题栏（品牌区/空白处）切换最大化还原（Windows 桌面惯例）；控制区按钮双击不触发
+        titlebar.addEventListener('dblclick', function (event) {
+            if (event.target.closest('button')) {
+                return;
+            }
+            if (target.maximized) {
+                restoreWindow(key);
+            } else {
+                maximizeWindow(key);
+            }
         });
 
         element.querySelectorAll('[data-window-resize]').forEach(function (handle) {
@@ -2629,11 +3054,59 @@
         });
     }
 
-    /** 应用市场 Tab：分类 Tab 条 + 应用列表滚动分页加载（远程不可用时降级本地可安装应用） */
+    /** 应用市场 Tab：顶部子Tab（首页/分类），首页为推荐区块，分类为原分类条+应用列表 */
     function loadMarketTab(content, status) {
-        resetMarketPager('', '');
+        if (!state.marketSubTab) {
+            state.marketSubTab = 'home';
+        }
         status.hidden = true;
-        content.innerHTML = '<nav class="market-tabs" data-market-tabs hidden></nav>'
+        content.innerHTML = '<nav class="market-sub-tabs" data-market-sub-tabs>'
+            + MARKET_SUB_TABS.map(function (tab) {
+                return '<button class="market-sub-tab' + (tab.id === state.marketSubTab ? ' is-active' : '')
+                    + '" type="button" data-market-sub-tab="' + tab.id + '">'
+                    + '<i class="fa ' + safeIcon(tab.icon) + '"></i>' + tab.title + '</button>';
+            }).join('')
+            + '</nav>'
+            + '<div data-market-subbody></div>';
+        renderMarketSubTab(content, status);
+    }
+
+    /** 市场内部子Tab 定义 */
+    var MARKET_SUB_TABS = [
+        { id: 'home', title: '首页', icon: 'fa fa-home' },
+        { id: 'category', title: '分类', icon: 'fa fa-tags' }
+    ];
+
+    /** 切换市场内部子Tab：更新按钮态并重渲染主体 */
+    function switchMarketSubTab(tab, content) {
+        if (state.marketSubTab === tab) {
+            return;
+        }
+        state.marketSubTab = tab;
+        content.querySelectorAll('[data-market-sub-tab]').forEach(function (button) {
+            button.classList.toggle('is-active', button.dataset.marketSubTab === tab);
+        });
+        var status = content.querySelector('[data-app-status]');
+        renderMarketSubTab(content, status);
+    }
+
+    /** 按当前子Tab渲染市场主体 */
+    function renderMarketSubTab(content, status) {
+        var body = content.querySelector('[data-market-subbody]');
+        if (!body) {
+            return;
+        }
+        if (state.marketSubTab === 'category') {
+            renderMarketCategoryView(content, status, body);
+            return;
+        }
+        renderMarketHome(content, status, body);
+    }
+
+    /** 分类视图：分类 Tab 条 + 应用列表滚动分页加载（远程不可用时降级本地可安装应用） */
+    function renderMarketCategoryView(content, status, body) {
+        resetMarketPager('', '');
+        body.innerHTML = '<nav class="market-tabs" data-market-tabs hidden></nav>'
             + '<div class="app-grid" data-market-grid></div>'
             + '<div class="market-sentinel" data-market-sentinel><i class="fa fa-circle-o-notch fa-spin"></i>正在读取应用市场…</div>';
         bindMarketScroll(content, status);
@@ -2644,6 +3117,91 @@
         fetchMarketApps(content).catch(function () {
             loadLocalMarketApps(content, status);
         });
+    }
+
+    /** 首页视图：随机推荐/官方精选/推荐位竖列/辅助推荐，数据来自市场 home 接口 */
+    function renderMarketHome(content, status, body) {
+        cancelMarketRequest();
+        body.innerHTML = '<div class="market-sentinel"><i class="fa fa-circle-o-notch fa-spin"></i>正在读取推荐内容…</div>';
+        api('/api/admin/market/home').then(function (payload) {
+            var data = payload || {};
+            var random = Array.isArray(data.random) ? data.random : [];
+            var featured = Array.isArray(data.featured) ? data.featured : [];
+            var positions = Array.isArray(data.positions) ? data.positions : [];
+            cacheMarketApps(random.concat(featured));
+            positions.forEach(function (position) {
+                cacheMarketApps(position.apps || []);
+            });
+
+            // 推荐位拆分：常规推荐位竖列展示（前5个），辅助推荐(aux)横排网格
+            var columnPositions = positions.filter(function (position) {
+                return position.code !== 'aux' && (position.apps || []).length;
+            });
+            var auxPositions = positions.filter(function (position) {
+                return position.code === 'aux' && (position.apps || []).length;
+            });
+
+            var html = '<div class="market-home">'
+                + marketHomeGridSection('不可错过的应用', random)
+                + marketHomeGridSection('官方精选', featured)
+                + marketHomeColumnsSection(columnPositions)
+                + auxPositions.map(function (position) {
+                    return marketHomeGridSection(position.name, (position.apps || []).slice(0, 12));
+                }).join('')
+                + '</div>';
+            body.innerHTML = html;
+        }).catch(function (error) {
+            body.innerHTML = emptyState('fa-shopping-bag', '暂时无法读取市场首页：' + (error.message || '网络异常'));
+        });
+    }
+
+    /** 首页应用写入市场缓存（供详情层读取），不清空已有缓存 */
+    function cacheMarketApps(apps) {
+        (apps || []).forEach(function (app) {
+            if (app && app.app_id) {
+                app._source = 'market';
+                state.marketApps.set(app.app_id, app);
+            }
+        });
+    }
+
+    /** 首页横排网格区块：每行6个，图标+名称 */
+    function marketHomeGridSection(title, apps) {
+        if (!apps || !apps.length) {
+            return '';
+        }
+        return '<section class="market-home-section"><h3 class="market-home-title">' + escapeHtml(title) + '</h3>'
+            + '<div class="market-home-grid">' + apps.map(marketHomeCardMarkup).join('') + '</div></section>';
+    }
+
+    /** 首页紧凑卡片：图标+名称，整卡点击进入市场详情 */
+    function marketHomeCardMarkup(app) {
+        var id = app.app_id || '';
+        return '<article class="market-home-card" data-market-detail="' + escapeHtml(id)
+            + '" data-app-name="' + escapeHtml((app.name || id).toLowerCase()) + '">'
+            + cardIconMarkup(app, 'market-home-icon')
+            + '<span class="market-home-name">' + escapeHtml(app.name || id) + '</span></article>';
+    }
+
+    /** 首页推荐位竖列区块：每个推荐位一列，列表形式展示（最多5个） */
+    function marketHomeColumnsSection(positions) {
+        if (!positions || !positions.length) {
+            return '';
+        }
+        return '<div class="market-home-columns">' + positions.map(function (position) {
+            return '<div class="market-home-column"><h3 class="market-home-title">' + escapeHtml(position.name || position.code) + '</h3>'
+                + '<div class="market-home-list">' + (position.apps || []).slice(0, 5).map(marketHomeListItemMarkup).join('') + '</div></div>';
+        }).join('') + '</div>';
+    }
+
+    /** 推荐位列表条目：图标+应用名，换行小字显示部分应用描述 */
+    function marketHomeListItemMarkup(app) {
+        var id = app.app_id || '';
+        return '<article class="market-home-list-item" data-market-detail="' + escapeHtml(id)
+            + '" data-app-name="' + escapeHtml((app.name || id).toLowerCase()) + '">'
+            + cardIconMarkup(app, 'market-home-list-icon')
+            + '<div class="market-home-list-info"><strong>' + escapeHtml(app.name || id) + '</strong>'
+            + '<span>' + escapeHtml(app.description || '暂无应用说明') + '</span></div></article>';
     }
 
     /** 拉取当前分类/关键词的下一页市场应用并追加渲染（带请求序号防竞态） */
@@ -2756,8 +3314,11 @@
         });
     }
 
-    /** 市场全量搜索：带 keyword 重新 Ajax 拉取（远程市场搜索参数为 keyword），保留当前分类 */
+    /** 市场全量搜索：带 keyword 重新 Ajax 拉取（远程市场搜索参数为 keyword），保留当前分类；首页态先切到分类视图 */
     function searchMarketApps(content, keyword) {
+        if (state.marketSubTab === 'home') {
+            switchMarketSubTab('category', content);
+        }
         resetMarketPager(state.marketPager.category, keyword);
         var grid = content.querySelector('[data-market-grid]');
         if (grid) {
@@ -2815,7 +3376,8 @@
 
     function applicationIconMarkup(app, className) {
         if (isImageIcon(app.icon_url)) {
-            return '<span class="' + className + '"><img data-app-icon-primary src="'
+            // is-app-icon 统一在源头声明：所有调用位的图片图标共享等比缩放约束，避免新渲染位遗漏
+            return '<span class="' + className + ' is-app-icon"><img data-app-icon-primary src="'
                 + escapeHtml(app.icon_url) + '" decoding="async" alt="">'
                 + appIconFallbackMarkup(app) + '</span>';
         }
@@ -2868,7 +3430,7 @@
     function entryIconMarkup(entry, className) {
         var application = findApplication(entry.app_id);
         if (application) {
-            return applicationIconMarkup(application, className + ' is-app-icon');
+            return applicationIconMarkup(application, className);
         }
 
         return '<span class="' + className + '"><i class="' + safeIcon(entry.icon) + '"></i></span>';
@@ -3908,7 +4470,7 @@
         }
         var expanded = entryTreeExpanded.has(node.key);
         var nodeIcon = node.type === 'app' && node.application
-            ? applicationIconMarkup(node.application, 'entry-tree-app-icon is-app-icon')
+            ? applicationIconMarkup(node.application, 'entry-tree-app-icon')
             : '<span class="start-app-item-icon"><i class="' + node.icon + '"></i></span>';
         return '<button class="entry-tree-toggle"' + indent + ' type="button" data-entry-branch="' + escapeHtml(node.key) + '" aria-expanded="' + (expanded ? 'true' : 'false') + '">'
             + '<i class="fa ' + (expanded ? 'fa-chevron-down' : 'fa-chevron-right') + '"></i>'
@@ -4317,7 +4879,7 @@
     }
 
     function openPasswordDialog() {
-        // 与「管理入口」弹窗一致：layui 风格白底弹窗（plain），不使用毛玻璃效果
+        // 与系统弹窗一致：layui 风格白底弹窗（plain），不使用毛玻璃效果
         openActionDialog({
             plain: true,
             width: '480px',
@@ -6100,6 +6662,188 @@
         });
     }
 
+    /**
+     * 启动台：macOS Launchpad 风格的全功能浮层——全屏遮罩 + 顶部搜索框 + 分类卡片网格。
+     * 与系统菜单同源（state.catalog.menus 菜单树）：按顶级分类逐层进入，
+     * 目录显示为文件夹卡片（目录图标优先、文件夹兜底），叶子显示应用图标卡片；
+     * 搜索时跨层级平铺匹配叶子。点击卡片打开/进入，Esc 或点击空白处关闭。
+     */
+    function openLauncherDialog() {
+        closeLauncherDialog();
+        var layer = document.createElement('div');
+        layer.className = 'launcher-layer';
+        layer.innerHTML = '<button class="launcher-close" type="button" aria-label="关闭" data-launcher-close><i class="fa fa-times"></i></button>'
+            + '<div class="launcher-panel" role="dialog" aria-label="全部功能">'
+            + '<div class="launcher-search"><i class="fa fa-search" aria-hidden="true"></i>'
+            + '<input type="text" placeholder="搜索功能…" aria-label="搜索功能"></div>'
+            + '<div class="launcher-crumbs" hidden></div>'
+            + '<div class="launcher-grid"></div></div>';
+        root.appendChild(layer);
+        renderLauncherView(layer, [], '');
+        var input = layer.querySelector('input');
+        input.addEventListener('input', function () {
+            renderLauncherView(layer, [], input.value.trim().toLowerCase());
+        });
+        // 卡片与面包屑点击：进入文件夹 / 打开叶子 / 返回上级；右上角关闭按钮、点击遮罩空白或按 Esc 关闭
+        layer.addEventListener('click', function (event) {
+            if (event.target.closest('[data-launcher-close]')) {
+                closeLauncherDialog();
+                return;
+            }
+            var folder = event.target.closest('[data-launcher-folder]');
+            var leaf = event.target.closest('[data-launcher-leaf]');
+            var crumb = event.target.closest('[data-launcher-crumb]');
+            if (folder && !folder.disabled) {
+                renderLauncherView(layer, folder.dataset.launcherFolder.split(',').map(Number), '');
+                return;
+            }
+            if (leaf) {
+                var entry = findEntry(leaf.dataset.launcherLeaf);
+                if (entry && !openMenuByType(entry)) {
+                    openEntry(entry);
+                    closeLauncherDialog();
+                }
+                return;
+            }
+            if (crumb && !crumb.disabled) {
+                var crumbPath = crumb.dataset.launcherCrumb;
+                renderLauncherView(layer, crumbPath ? crumbPath.split(',').map(Number) : [], '');
+                return;
+            }
+            // 空白区域点击关闭：非功能卡片（launcher-item）、非搜索框（launcher-search）区域即关闭；
+            // 卡片/面包屑/关闭按钮在上方分支已 return，不会走到这里
+            if (!event.target.closest('.launcher-item') && !event.target.closest('.launcher-search')) {
+                closeLauncherDialog();
+            }
+        });
+        layer.addEventListener('keydown', function (event) {
+            if (event.key === 'Escape') { closeLauncherDialog(); }
+        });
+        input.focus();
+    }
+
+    function closeLauncherDialog() {
+        var layer = root.querySelector('.launcher-layer');
+        if (layer) { layer.remove(); }
+    }
+
+    /** 按菜单 id 取 flattenMenus 平铺叶子：app_id 含祖先继承（开始菜单聚合同源），树原生节点仅顶层带 app_id */
+    function findFlatLeaf(menuId) {
+        var id = Number(menuId || 0);
+        return state.flatMenus.find(function (candidate) {
+            return candidate.menu_id === id;
+        }) || null;
+    }
+
+    /**
+     * 启动台叶子卡片：图标以开始菜单（系统菜单）为标准——app_id 取 flattenMenus
+     * 继承后的值（深层叶子自身无 app_id，靠祖先继承），渲染复用开始菜单同款
+     * entryIconMarkup（findApplication → applicationIconMarkup：icon_url 图片 → icon 字体，
+     * 无应用回退 safeIcon 菜单图标）。
+     */
+    function launcherLeafMarkup(item) {
+        var leaf = findFlatLeaf(item.id) || { app_id: item.app_id || '', icon: item.icon };
+        return '<button class="launcher-item" type="button" data-launcher-leaf="menu-'
+            + escapeHtml(String(item.id || '')) + '" title="' + escapeHtml(item.name || '') + '">'
+            + entryIconMarkup(leaf, 'launcher-item-icon')
+            + '<strong>' + escapeHtml(item.name || '未命名菜单') + '</strong></button>';
+    }
+
+    /**
+     * 启动台分组卡片：与开始菜单应用聚合卡同标准——分组节点带 app_id（如「儿康管理」）
+     * 时走 applicationIconMarkup 显示应用图标图片（icon_url 图片 → icon 字体）；
+     * 无应用关联（如「前台用户」）显示 is-folder-icon 底色风格，与开始菜单目录卡片一致。
+     * 点击行为同样对齐开始菜单：有应用关联的分组直接打开应用窗口（应用代表叶子），
+     * 不再进入子菜单；纯目录分组（无 app_id）保持进入子目录。
+     */
+    function launcherFolderMarkup(item, path) {
+        var leaf = findFlatLeaf(item.id) || { app_id: item.app_id || '', icon: item.icon };
+        var application = leaf.app_id ? findApplication(leaf.app_id) : null;
+        var iconMarkup = application
+            ? applicationIconMarkup(application, 'launcher-item-icon')
+            : '<span class="launcher-item-icon is-folder-icon"><i class="'
+                + safeIcon(item.icon || 'fa fa-folder') + '"></i></span>';
+        var representative = application
+            ? state.flatMenus.find(function (candidate) { return candidate.app_id === application.app_id; })
+            : null;
+        var action = representative
+            ? ' data-launcher-leaf="menu-' + escapeHtml(String(representative.menu_id)) + '"'
+            : ' data-launcher-folder="' + escapeHtml(path.join(',')) + '"';
+        return '<button class="launcher-item" type="button"' + action
+            + ' title="' + escapeHtml(item.name || '') + '">'
+            + iconMarkup
+            + '<strong>' + escapeHtml(item.name || '未命名分组') + '</strong></button>';
+    }
+
+    /** 递归收集菜单树全部可打开叶子（搜索用） */
+    function collectLauncherLeaves(items, output) {
+        (items || []).forEach(function (item) {
+            var children = Array.isArray(item.children) ? item.children : [];
+            if (children.length) {
+                collectLauncherLeaves(children, output);
+                return;
+            }
+            if (openablePath(item)) { output.push(item); }
+        });
+    }
+
+    /** 启动台视图：按顶级分类逐层进入（文件夹卡片 + 应用卡片）；搜索时跨层级平铺叶子 */
+    function renderLauncherView(layer, path, query) {
+        var crumbs = layer.querySelector('.launcher-crumbs');
+        var grid = layer.querySelector('.launcher-grid');
+        var current = state.catalog.menus || [];
+        var nodes = current;
+        for (var i = 0; i < path.length; i++) {
+            nodes = (nodes[path[i]] && nodes[path[i]].children) || [];
+        }
+
+        if (query) {
+            var leaves = [];
+            collectLauncherLeaves(state.catalog.menus || [], leaves);
+            var matched = leaves.filter(function (item) {
+                // 与卡片图标同源：取 flattenMenus 继承后的 app_id 匹配应用名（树原生节点深层叶子无 app_id）
+                var leaf = findFlatLeaf(item.id);
+                var appId = (leaf && leaf.app_id) || item.app_id || '';
+                var application = appId ? findCatalogApp(appId) : null;
+                return String(item.name || '').toLowerCase().indexOf(query) >= 0
+                    || (application && String(application.name || '').toLowerCase().indexOf(query) >= 0);
+            });
+            crumbs.hidden = true;
+            grid.innerHTML = matched.length ? matched.map(launcherLeafMarkup).join('')
+                : '<div class="launcher-empty"><i class="fa fa-search" aria-hidden="true"></i>没有匹配的功能</div>';
+            return;
+        }
+
+        // 面包屑：全部功能 / 一级分组 / 子分组，点击任意层级返回
+        var folders = (state.catalog.menus || []).length ? [['全部功能', []]] : [];
+        (function buildCrumbs(items, trail) {
+            for (var i = 0; i < trail.length; i++) {
+                var node = items[trail[i]];
+                if (!node) { break; }
+                folders.push([node.name || '未命名分组', trail.slice(0, i + 1)]);
+                items = node.children || [];
+            }
+        })(state.catalog.menus || [], path);
+        crumbs.hidden = path.length === 0;
+        crumbs.innerHTML = folders.map(function (crumb, index) {
+            var isLast = index === folders.length - 1;
+            return '<button type="button" data-launcher-crumb="'
+                + escapeHtml(crumb[1].join(',')) + '"' + (isLast ? ' disabled' : '')
+                + '>' + escapeHtml(crumb[0]) + '</button>';
+        }).join('<i class="fa fa-angle-right" aria-hidden="true"></i>');
+
+        var cards = '';
+        nodes.forEach(function (item, index) {
+            var children = Array.isArray(item.children) ? item.children : [];
+            if (children.length) {
+                cards += launcherFolderMarkup(item, path.concat(index));
+                return;
+            }
+            if (openablePath(item)) { cards += launcherLeafMarkup(item); }
+        });
+        grid.innerHTML = cards || '<div class="launcher-empty"><i class="fa fa-folder-open" aria-hidden="true"></i>此分类下没有可打开的功能</div>';
+    }
+
     function toggleEntryOnDesktop(button) {
         var entryId = button.dataset.entryToggle;
         toggleDesktopEntry(entryId);
@@ -6319,9 +7063,12 @@
      * 操作记录不再随目录预取，切换到「安装记录」时按需读取 /api/admin/app-logs
      */
     function loadCatalog() {
+        // GET 请求附时间戳破坏 HTTP 缓存：菜单移动/应用安装后 refreshCatalog 必须拿到实时数据，
+        // 避免个别浏览器对同 URL 短时间内的 GET 复用缓存导致界面显示旧分组
+        var cacheBust = '?_t=' + Date.now();
         return Promise.all([
-            api('/api/admin/apps'),
-            api('/api/admin/menus/user')
+            api('/api/admin/apps' + cacheBust),
+            api('/api/admin/menus/user' + cacheBust)
         ]).then(function (responses) {
             state.catalog.applications = responses[0] || [];
             state.catalog.menus = filterAdminMenus(responses[1]);
@@ -6369,6 +7116,79 @@
             elements.notificationSummary.textContent = '通知读取失败';
             elements.notificationList.innerHTML = emptyState('fa-exclamation-circle', error.message);
         });
+    }
+
+    /** 官网动态正文链接化：http(s) 链接转新窗口 <a>（输入需已 escapeHtml 转义；剥末尾标点，与框架后台 dashboard 一致） */
+    function linkifyOfficialNews(text) {
+        return text.replace(/(https?:\/\/[^\s]+)/g, function (url) {
+            var cleanUrl = url.replace(/[。，,；;！!？?、"')】\]]+$/, '');
+            return '<a href="' + cleanUrl + '" target="_blank" rel="noopener">' + cleanUrl + '</a>';
+        });
+    }
+
+    /**
+     * 官网动态窗口渲染：远程读取官网公开动态接口（与框架后台 dashboard 同一数据源），
+     * 列表含正文（链接化）、图片网格（点击新标签查看原图）与发布时间；窗口关闭后异步返回不再写 DOM。
+     */
+    function renderOfficialNews() {
+        var shell = document.querySelector('[data-official-news]');
+        if (!shell) {
+            return;
+        }
+        shell.innerHTML = '<div class="official-news-head"><h3>官网动态</h3>'
+            + '<a href="https://www.cmspro.cn/news" target="_blank" rel="noopener">更多&nbsp;&gt;&gt;</a></div>'
+            + '<div class="official-news-list" data-official-news-list>'
+            + '<p class="official-news-empty">加载中...</p></div>';
+        var listEl = shell.querySelector('[data-official-news-list]');
+        fetch('https://www.cmspro.cn/api/home/moments/latest?limit=6', { headers: { Accept: 'application/json' } })
+            .then(function (response) { return response.json(); })
+            .then(function (res) {
+                if (!shell.isConnected || !listEl.isConnected) {
+                    return;
+                }
+                var list = res && res.code === 0 && Array.isArray(res.data) ? res.data : [];
+                listEl.innerHTML = list.length ? list.map(function (item) {
+                    var images = Array.isArray(item.images) ? item.images.filter(Boolean) : [];
+                    return '<article class="official-news-item">'
+                        + '<div class="official-news-content">'
+                        + linkifyOfficialNews(escapeHtml(String(item.content || ''))) + '</div>'
+                        + (images.length
+                            ? '<div class="official-news-images">' + images.map(function (img) {
+                                return '<img src="' + escapeHtml(String(img)) + '" loading="lazy" alt="动态图片">';
+                            }).join('') + '</div>'
+                            : '')
+                        + '<div class="official-news-time">' + escapeHtml(String(item.create_time || '')) + '</div>'
+                        + '</article>';
+                }).join('') : '<p class="official-news-empty">暂无动态</p>';
+                // 点击图片弹出大屏预览，同一条动态多张图片可左右切换（layer.photos 内置相册组件，与框架后台一致）
+                listEl.querySelectorAll('.official-news-images').forEach(function (group) {
+                    group.addEventListener('click', function (event) {
+                        var img = event.target.closest('img');
+                        if (!img) {
+                            return;
+                        }
+                        var layer = layuiLayer();
+                        if (!layer) {
+                            window.open(img.getAttribute('src'), '_blank', 'noopener');
+                            return;
+                        }
+                        var photos = [];
+                        group.querySelectorAll('img').forEach(function (node) {
+                            var src = node.getAttribute('src');
+                            photos.push({ src: src, thumb: src });
+                        });
+                        layer.photos({
+                            photos: { title: '', start: Array.prototype.indexOf.call(group.querySelectorAll('img'), img), data: photos },
+                            anim: 5
+                        });
+                    });
+                });
+            })
+            .catch(function () {
+                if (listEl.isConnected) {
+                    listEl.innerHTML = '<p class="official-news-empty">暂无动态</p>';
+                }
+            });
     }
 
     /** 通知中心当前 Tab：todos 待办 / notifications 通知 */
@@ -7144,7 +7964,16 @@
     }
 
     function bindEvents() {
-        elements.startButton.addEventListener('click', function () { togglePanel('start', elements.startPanel, elements.startButton); });
+        elements.startButton.addEventListener('click', function () {
+            // 「点击菜单进入」偏好（OS 设置-系统设置）：开启后点击菜单按钮直接进入「全部功能」启动台，
+            // 默认（关闭）打开当前系统菜单面板
+            if (state.workspace.preferences.menu_open_launcher === true) {
+                closePanels();
+                openLauncherDialog();
+                return;
+            }
+            togglePanel('start', elements.startPanel, elements.startButton);
+        });
         elements.notificationButton.addEventListener('click', function () { togglePanel('notifications', elements.notificationPanel, elements.notificationButton); });
         // 前台首页：浏览器新标签页打开站点首页
         elements.websiteButton.addEventListener('click', function () {
@@ -7286,6 +8115,68 @@
             }
         });
 
+        // 窗口选项卡右键：关闭当前 / 关闭其它 / 关闭全部（右键同时聚焦所在窗口）
+        root.addEventListener('contextmenu', function (event) {
+            var tab = event.target.closest('[data-window-tab]');
+            if (!tab) {
+                return;
+            }
+            event.preventDefault();
+            var host = tab.closest('[data-window-key]');
+            if (host && state.windows.get(host.dataset.windowKey)) {
+                focusWindow(host.dataset.windowKey);
+            }
+            openWindowTabContextMenu(tab.dataset.windowTab, event.clientX, event.clientY);
+        });
+
+        // 系统菜单拖拽应用换顶级分类：拖应用卡片到左侧分类按钮上松手，复用系统菜单移动接口
+        // （PUT /api/admin/menus/move，MenuService::batchMove 服务端已防环形引用并按顶层节点
+        // 移动防止子树拍平）。仅超管卡片才带 data-move-ids；「常用」为虚拟分组不可作为目标
+        var draggingMoveIds = null;
+        var dragOverCategory = null;
+        document.addEventListener('dragstart', function (event) {
+            var card = event.target.closest ? event.target.closest('[data-move-ids]') : null;
+            if (!card) { return; }
+            draggingMoveIds = card.dataset.moveIds.split(',').map(function (id) { return Number(id); }).filter(function (id) { return id > 0; });
+            if (!draggingMoveIds.length) { draggingMoveIds = null; event.preventDefault(); return; }
+            event.dataTransfer.effectAllowed = 'move';
+            try { event.dataTransfer.setData('text/plain', card.dataset.moveIds); } catch (error) { /* 兼容旧浏览器忽略 */ }
+            card.classList.add('is-dragging');
+        });
+        document.addEventListener('dragover', function (event) {
+            if (!draggingMoveIds) { return; }
+            var category = event.target.closest('.start-category-button');
+            if (!category || category.dataset.groupId === 'common') { return; }
+            event.preventDefault();
+            event.dataTransfer.dropEffect = 'move';
+            if (dragOverCategory !== category) {
+                if (dragOverCategory) { dragOverCategory.classList.remove('is-drop-target'); }
+                category.classList.add('is-drop-target');
+                dragOverCategory = category;
+            }
+        });
+        document.addEventListener('drop', function (event) {
+            if (!draggingMoveIds) { return; }
+            event.preventDefault();
+            var category = dragOverCategory;
+            if (dragOverCategory) { dragOverCategory.classList.remove('is-drop-target'); dragOverCategory = null; }
+            var moveIds = draggingMoveIds;
+            draggingMoveIds = null;
+            document.querySelectorAll('.start-app-item.is-dragging').forEach(function (card) { card.classList.remove('is-dragging'); });
+            if (!category || category.dataset.groupId === 'common') { return; }
+            api('/api/admin/menus/move', { method: 'PUT', body: { ids: moveIds, parent_id: Number(category.dataset.groupId) } })
+                .then(function () {
+                    toast('已移动到「' + (category.textContent || '').trim() + '」分类', 'success');
+                    return refreshCatalog();
+                })
+                .catch(function (error) { toast(error.message, 'error'); });
+        });
+        document.addEventListener('dragend', function () {
+            if (dragOverCategory) { dragOverCategory.classList.remove('is-drop-target'); dragOverCategory = null; }
+            draggingMoveIds = null;
+            document.querySelectorAll('.start-app-item.is-dragging').forEach(function (card) { card.classList.remove('is-dragging'); });
+        });
+
         document.addEventListener('click', function (event) {
             // 点击前台菜单下拉框外部时收起所有已展开的前台菜单
             if (!event.target.closest('[data-window-home-menu]')) {
@@ -7302,6 +8193,13 @@
                 if (name === 'close-start') { closePanels(); }
                 if (name === 'close-calendar') { closePanels(); }
                 if (name === 'open-password-dialog') { closePanels(); openPasswordDialog(); }
+                // 清除缓存：复用系统后台缓存清理接口（GET /api/admin/cache/clear，ConfigController::clearCache）
+                if (name === 'clear-cache') {
+                    closePanels();
+                    api('/api/admin/cache/clear').then(function () {
+                        toast('缓存已清除', 'success');
+                    }).catch(function (error) { toast(error.message, 'error'); });
+                }
                 if (name === 'close-install') { hideModalDialog(elements.installDialog); }
                 if (name === 'close-action') { closeActionDialog(); }
                 if (name === 'lock-desktop') { closePanels(); elements.lockScreen.hidden = false; updateClock(); }
@@ -7362,7 +8260,7 @@
             }
 
             var launch = event.target.closest('[data-launch-id]');
-            if (launch) { closeActionDialog(); openEntry(findEntry(launch.dataset.launchId)); }
+            if (launch) { closeActionDialog(); closeLauncherDialog(); openEntry(findEntry(launch.dataset.launchId)); }
 
             var taskWindow = event.target.closest('[data-task-window]');
             if (taskWindow) {
@@ -7394,6 +8292,37 @@
                         windowAction.setAttribute('aria-expanded', willOpen ? 'true' : 'false');
                     }
                 }
+                if (windowAction.dataset.windowAction === 'refresh') {
+                    // 标题栏刷新按钮：多选项卡窗口刷新当前激活选项卡（与选项卡右键「刷新页面」共用 reloadWindowTab）；
+                    // 无选项卡的特殊窗口（应用中心/OS 设置/通知中心/官网动态）刷新整页——
+                    // 页面令牌相同会被 renderWindowPage 跳过，先清空令牌再重建，并重新执行各窗口的数据渲染
+                    var refreshTarget = state.windows.get(key);
+                    if (refreshTarget && refreshTarget.tabs && refreshTarget.tabs.length) {
+                        var refreshTab = refreshTarget.tabs.find(function (item) { return item.id === refreshTarget.activeTabId; })
+                            || refreshTarget.tabs[0];
+                        reloadWindowTab(refreshTarget, refreshTab);
+                    } else if (refreshTarget && refreshTarget.entry && refreshTarget.entry.path) {
+                        var refreshHost = refreshTarget.element.querySelector('[data-window-page-host]');
+                        if (refreshHost) {
+                            refreshHost.dataset.pageToken = '';
+                            renderWindowPage(refreshTarget, refreshTarget.entry);
+                        }
+                        if (refreshTarget.entry.id === 'webos-app-center') {
+                            renderAppCenter(state.appCenterTab);
+                            loadUpdateCount();
+                        }
+                        if (refreshTarget.entry.id === 'webos-settings') {
+                            renderWebosSettings();
+                        }
+                        if (refreshTarget.entry.id === 'webos-notification-page') {
+                            renderNotificationCenter(notificationCenterState.tab);
+                            loadNotifications();
+                        }
+                        if (refreshTarget.entry.id === 'webos-official-news') {
+                            renderOfficialNews();
+                        }
+                    }
+                }
                 if (windowAction.dataset.windowAction === 'minimize') { minimizeWindow(key); }
                 if (windowAction.dataset.windowAction === 'maximize') { maximizeWindow(key); }
                 if (windowAction.dataset.windowAction === 'close') { closeWindow(key); }
@@ -7413,6 +8342,33 @@
 
             var windowNavBranch = event.target.closest('[data-window-nav-branch]');
             if (windowNavBranch) { toggleWindowNavBranch(windowNavBranch); }
+
+            // 窗口标题栏选项卡：先判关闭叉（嵌套在选项卡按钮内），再判选项卡主体切换
+            // 注意：局部变量不得命名为 closeWindow/switchWindowTab 等，var 提升会遮蔽同名全局函数
+            var tabClose = event.target.closest('[data-window-tab-close]');
+            var tabButton = event.target.closest('[data-window-tab]');
+            if (tabClose && tabButton) {
+                var tabHostWindow = tabButton.closest('[data-window-key]');
+                if (tabHostWindow) {
+                    closeWindowTab(state.windows.get(tabHostWindow.dataset.windowKey), tabClose.dataset.windowTabClose);
+                }
+            } else if (tabButton) {
+                var tabHostWindow = tabButton.closest('[data-window-key]');
+                if (tabHostWindow) {
+                    switchWindowTab(state.windows.get(tabHostWindow.dataset.windowKey), tabButton.dataset.windowTab);
+                }
+            }
+
+            // 选项卡条溢出导航：向左/向右滚动约一屏（点击后按钮显隐随 scroll 事件自动更新）
+            var tabsScroll = event.target.closest('[data-window-tabs-scroll]');
+            if (tabsScroll) {
+                var tabsHost = tabsScroll.closest('[data-window-key]');
+                var tabsBar = tabsHost && tabsHost.querySelector('.window-tabs');
+                if (tabsBar) {
+                    var scrollDirection = tabsScroll.dataset.windowTabsScroll === 'prev' ? -1 : 1;
+                    tabsBar.scrollBy({ left: scrollDirection * Math.round(tabsBar.clientWidth * 0.6), behavior: 'smooth' });
+                }
+            }
 
             var windowMenu = event.target.closest('[data-window-menu-id]');
             if (windowMenu) {
@@ -7509,6 +8465,15 @@
                 }
             }
 
+            // 市场内部子Tab切换：首页 / 分类
+            var marketSubTab = event.target.closest('[data-market-sub-tab]');
+            if (marketSubTab) {
+                var subTabContent = marketSubTab.closest('[data-app-content]');
+                if (subTabContent) {
+                    switchMarketSubTab(marketSubTab.dataset.marketSubTab, subTabContent);
+                }
+            }
+
             // 市场卡片整卡可点击进入详情，卡内的安装/更新按钮与链接保持自身行为
             var marketDetail = event.target.closest('[data-market-detail]');
             if (marketDetail && !event.target.closest('button, a, input, select, label')) {
@@ -7554,7 +8519,14 @@
             }
 
             var specialOpen = event.target.closest('[data-open-special]');
-            if (specialOpen) { state.appCenterTab = specialOpen.dataset.openSpecial; openEntry(applicationCenterEntry()); renderAppCenter(state.appCenterTab); }
+            if (specialOpen) {
+                // 「全部功能」：开始菜单按钮直接打开启动台（macOS 风格全功能浮层）；
+                // 其余特殊入口仍走应用中心对应标签页
+                if (specialOpen.dataset.openSpecial === 'entries') { openLauncherDialog(); return; }
+                state.appCenterTab = specialOpen.dataset.openSpecial;
+                openEntry(applicationCenterEntry());
+                renderAppCenter(state.appCenterTab);
+            }
 
             var settingsOpen = event.target.closest('[data-open-webos-settings]');
             if (settingsOpen) { openEntry(webosSettingsEntry()); }
@@ -7573,6 +8545,7 @@
 
             var openApp = event.target.closest('[data-open-app-id]');
             if (openApp) {
+                closeLauncherDialog();
                 var appMenus = state.flatMenus.filter(function (entry) {
                     return entry.app_id === openApp.dataset.openAppId;
                 });
@@ -7707,6 +8680,14 @@
             closeTaskbarContextMenu();
             closeAppRowMenus();
             handleAppCenterAction(event);
+        });
+
+        // iframe 是独立文档，其内部点击不会冒泡到父文档的 click 委托（上方监听收不到），
+        // 导致右键菜单在点击 iframe 内容后残留；点击 iframe 会使父窗口失焦，借 blur 事件关闭
+        window.addEventListener('blur', function () {
+            closeDesktopContextMenu();
+            closeTaskbarContextMenu();
+            closeAppRowMenus();
         });
 
         elements.confirmInstall.addEventListener('click', confirmInstall);
@@ -7890,7 +8871,10 @@
     function normalizePreferences(preferences) {
         return Object.assign({
             wallpaper: 'webos-default',
+            wallpaper_url: '',
             icon_size: 'medium',
+            window_tabs: false,
+            menu_open_launcher: false,
             taskbar_alignment: 'left',
             taskbar_position: 'bottom',
             clock_format: '24h',
@@ -7907,6 +8891,15 @@
         bindEvents();
         updateClock();
         window.setInterval(updateClock, 1000);
+        // 窗口/浏览器尺寸变化后重算各窗口选项卡条的溢出导航显隐（动画帧节流）
+        var tabsResizeFrame = 0;
+        window.addEventListener('resize', function () {
+            if (tabsResizeFrame) { window.cancelAnimationFrame(tabsResizeFrame); }
+            tabsResizeFrame = window.requestAnimationFrame(function () {
+                tabsResizeFrame = 0;
+                document.querySelectorAll('.window-controls').forEach(updateWindowTabsNav);
+            });
+        });
 
         Promise.all([
             api(root.dataset.workspaceUrl),
@@ -7925,6 +8918,10 @@
             renderDesktop();
             renderStartMenu();
             loadNotifications();
+            // 官网动态窗口：仅超级管理员桌面自动打开（固定 600×500，停靠桌面最右侧）
+            if (isSuperAdmin) {
+                openEntry(officialNewsEntry());
+            }
             // 每次进入 WebOS 页面检查应用市场是否有 WebOS 自身的更高版本
             checkWebosSelfUpdate();
             root.classList.remove('is-loading');

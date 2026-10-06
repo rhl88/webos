@@ -14,6 +14,8 @@ class WorkspaceService
         'wallpaper' => 'webos-default',
         'wallpaper_url' => '',
         'icon_size' => 'medium',
+        'window_tabs' => false,
+        'menu_open_launcher' => false,
         'taskbar_alignment' => 'left',
         'taskbar_position' => 'bottom',
         'clock_format' => '24h',
@@ -134,6 +136,10 @@ class WorkspaceService
         $preferences['icon_size'] = in_array($preferences['icon_size'] ?? '', ['small', 'medium', 'large'], true)
             ? $preferences['icon_size']
             : self::DEFAULT_PREFERENCES['icon_size'];
+        // 应用窗口多选项卡（OS 设置开关，默认关闭）
+        $preferences['window_tabs'] = (bool) ($preferences['window_tabs'] ?? false);
+        // 点击菜单进入（OS 设置开关，默认关闭=打开系统菜单面板；开启=直接进入「全部功能」启动台）
+        $preferences['menu_open_launcher'] = (bool) ($preferences['menu_open_launcher'] ?? false);
         $preferences['taskbar_alignment'] = in_array($preferences['taskbar_alignment'], ['left', 'center'], true)
             ? $preferences['taskbar_alignment']
             : self::DEFAULT_PREFERENCES['taskbar_alignment'];

@@ -1,11 +1,37 @@
 # CmsPro WebOS 管理桌面 · 扩展指南
 
-> 文档版本：1.8.3 | 更新日期：2026-09-30
-> 适用应用：CmsproWebos v1.5.5+
+> 文档版本：1.9.79 | 更新日期：2026-10-01
+> 适用应用：CmsproWebos v1.9.79+
 
 ## 一、概述
 
-其他应用无需依赖 WebOS 专用接口即可进入桌面：只要在 `manifest.json` 中声明启用且对管理员可见的后台菜单，WebOS 会通过系统菜单服务自动发现该入口，并使用菜单目录中的 `app_id` 将同一应用的菜单聚合到一个独立窗口。WebOS 开始菜单只消费 `admin` 菜单；`user` 与 `home` 菜单可在安装时配置挂载位置，但不会进入 WebOS 桌面目录。
+其他应用无需依赖 WebOS 专用接口即可进入桌面：只要在 `manifest.json` 中声明启用且对管理员可见的后台菜单，WebOS 会通过系统菜单服务自动发现该入口，并使用菜单目录中的 `app_id` 将同一应用的菜单聚合到一个独立窗口。WebOS 开始菜单只消费 `admin` 菜单；`user` 与 `home` 菜单可在安装时配置挂载位置，但不会进入 WebOS 桌面目录（`home` 菜单用于窗口标题栏的「前台菜单」下拉，见第三章）。
+
+### 应用出现在 WebOS 的完整链路
+
+应用不需要调用任何 WebOS 接口，以下链路全部由框架与应用清单自动完成：
+
+1. **清单声明**：应用在 `manifest.json` 的 `menus` 数组声明后台菜单（含 `title`、`icon`、`path`、`code`、`open_type`、`order`、`children`），并通过 `permissions` 声明权限码。
+2. **安装写库**：安装应用时，框架安装器按安装弹窗选择的挂载位置把菜单写入系统 `admin_menus` 表（`terminal_type=admin`）；`user_menus`、`home_menus` 分别以对应终端写库。
+3. **菜单下发**：系统菜单接口 `GET /api/admin/menus/user` 只返回当前管理员已被授权的菜单；框架 `MenuService` 在「子菜单被授权、父级未授权」时自动补全祖先菜单链，保证树形结构完整（与后台 menus.json 逻辑一致）。
+4. **WebOS 消费**：WebOS 桌面加载时请求 `GET /api/admin/apps` 与 `GET /api/admin/menus/user`，前端按 `terminal_type` 过滤仅保留 `admin` 菜单，再按菜单节点携带的 `app_id` 把同一应用的菜单聚合为一个应用窗口、一个开始菜单卡片与一套桌面/任务栏图标。
+
+应用启用后自动出现，禁用或卸载后桌面/任务栏图标按「当前管理员菜单目录是否仍包含该入口」过滤（`entryAssigned`，见第二章「权限对齐注意事项」），无需应用侧维护。
+
+### 对接点总览
+
+| 对接点 | 机制 | 是否需要应用侧代码 |
+|---|---|---|
+| 出现在开始菜单/桌面/任务栏 | manifest `menus` + 角色分配菜单 | 否（安装即生效） |
+| 应用窗口与左侧菜单树 | 菜单层级 + `app_id` 聚合 + `open_type` | 否 |
+| 应用图标 | 应用根目录 `icon.svg` / `icon.png` / manifest `icon` | 放置图标文件即可 |
+| 窗口标题栏「前台菜单」下拉 | manifest `home_menus`（前台终端菜单） | 声明清单即可 |
+| 通知中心推送通知 | 系统服务 `NotificationService::push()` | 调用框架服务 |
+| 通知中心待办聚合 | HookManager filter `admin.notifications.todos` | 注册 filter 回调 |
+| 应用设置弹窗 | manifest `config_groups` | 声明配置组 |
+| WebOS 个人工作区 API | 工作区/壁纸/日历/全量待办接口（见第五章） | 可选，属用户个人数据，不建议应用直写 |
+
+WebOS 没有面向第三方应用的桌面右键菜单、任务栏或开始菜单扩展点；这些区域全部由系统菜单目录与工作区数据驱动。
 
 ## 二、菜单接入
 
@@ -57,7 +83,55 @@
 - `admin.dark.css` 未加载：其全部选择器以 `.pear-admin-dark` 前缀限定，WebOS 根元素为 `.webos-desktop`，永不匹配。
 - 当前管理员必须拥有对应菜单权限，WebOS 才会展示入口。
 
-## 三、Service 层
+### 菜单可见性与接口权限（两层各自独立）
+
+| 层 | 控制内容 | 机制 |
+|---|---|---|
+| 菜单可见性 | 入口是否出现在 WebOS 开始菜单/桌面/任务栏/应用窗口侧栏 | 系统菜单接口 `GET /api/admin/menus/user` 只返回分配给当前管理员角色的菜单；普通管理员仅授权子菜单而未授权父级分组时，框架 `MenuService` 自动补全祖先菜单链（管理 → 应用分组 → 子菜单），WebOS 与框架后台菜单口径完全一致。角色收回授权后，桌面/任务栏对应图标不再显示 |
+| 接口权限 | 页面与接口本身能否被调用 | 应用控制器使用系统 `CheckPermission` 中间件校验权限码（manifest `permissions` 声明）；菜单可见不代表接口放行，两层各自独立 |
+
+菜单可见性过滤不需要应用参与；应用只需保证控制器上的权限码校验与菜单 `code` 对应。
+
+### 权限对齐注意事项
+
+- 桌面与任务栏图标按「已分配」口径过滤：应用中心的可见性仅限超级管理员（super_admin），非超管工作区重置后桌面为空。
+- 停用（禁用）应用的桌面图标不占桌面格位：其它图标可移入其格子；应用重新启用后若原坐标被占用，自动落到第一个空白格显示。
+- WebOS 自身（`cmspro.webos`）的菜单不出现在系统菜单目录中，应用中心入口由 WebOS 内置提供。
+
+## 三、窗口系统对接
+
+### 普通应用窗口与特殊窗口
+
+| 窗口类型 | 判定 | 结构差异 |
+|---|---|---|
+| 普通应用窗口 | 入口携带 `app_id`（应用窗口）或无 `app_id`（系统菜单按文件夹聚合，`folder_id` 归属） | 标题栏品牌区 + 控制区（收起左侧菜单、前台菜单、选项卡条、最小化/最大化/关闭）+ 可收起的左侧菜单树 + 内容区 `[data-window-page-host]` |
+| WebOS 内置特殊窗口 | 入口 `id` 或 `special` 标记：应用中心 `webos-app-center`（`special: market`）、OS 设置 `webos-settings`（`special: settings`）、通知中心 `webos-notification-page`（`special: notifications`）、官网动态 `webos-official-news`（`special: official-news`） | 内容区为固定 shell 容器（如 `data-app-center`），**没有** `[data-window-page-host]`；OS 设置与官网动态窗口连左侧菜单也没有 |
+
+窗口复用键（`windowKey`）：特殊窗口用自身 `id`；普通应用窗口用 `app-{app_id}`；无 `app_id` 的系统菜单用 `folder-{folder_id}`。同一键的入口只开一个窗口，打开其它菜单在窗口内切换。
+
+特殊窗口是 WebOS 私有实现，**没有开放第三方注册机制**；其它应用不要占用 `webos-` 前缀的入口 `id`。
+
+### 应用窗口多选项卡对页面形态的影响
+
+- 开关：OS 设置 → 系统设置 →「应用窗口多选项卡」（偏好键 `window_tabs`，默认关闭）。仅对**开启后新打开的窗口**生效，已打开窗口保持原模式。
+- 启用判定：`window_tabs` 开启 **且** 窗口内容区存在 `[data-window-page-host]`——因此应用中心/OS 设置/通知中心/官网动态等特殊窗口天然排除；普通应用窗口自动获得选项卡能力，应用侧无需任何改造。
+- 行为：点击左侧菜单以选项卡打开（选项卡条在标题栏左侧、窗口按钮贴最右）；同一路径复用既有选项卡；切换仅切换 `.window-page` 容器显隐，**页面状态保留**（iframe 不重载、表单输入与滚动位置不变）；选项卡溢出时出现 `<` / `>` 导航箭头；选项卡右键提供「关闭当前 / 关闭其它 / 关闭全部」；标题栏品牌区应用名固定，`small` 副标题实时跟随当前选项卡的菜单名。
+- 对 `_component` 片段的额外要求：选项卡模式下同一窗口的多个片段共存于桌面主文档，片段必须用应用前缀类名与命名空间，不得互相覆盖全局变量（单页模式下只有一个片段，风险更低）。
+- `_blank`（新建窗口）与 `_layer`（弹窗网页）菜单不进入选项卡，行为不变。
+
+### 「前台菜单」对接机制（应用如何让窗口内出现前台菜单下拉）
+
+数据流：应用 manifest 声明 `home_menus` → 安装时以 `terminal_type=home` 写入系统 `admin_menus` 表（安装弹窗显示「前端菜单挂载位置」）→ WebOS 打开应用窗口时请求系统菜单树接口 `GET /api/admin/menus/tree?terminal_type=home` → 前端按窗口应用的 `app_id` 递归收集叶子节点（叶子必须具备 `name` 与 `path`）→ 在窗口标题栏「收起左侧菜单」按钮左侧注入「前台」下拉按钮。
+
+行为细节：
+
+- 下拉按钮为固定宽度 58px 的文字按钮「前台 + 下拉箭头」，下拉项只显示菜单名称（不带图标），点击以浏览器新标签页打开前台地址。
+- **链接域名绑定兼容（1.9.80）**：菜单树接口返回的是原始存储路径，域名绑定应用（如论坛绑定 forum.example.com）的路径在主站不可达。前端收集叶子后会请求应用侧接口 `GET /admin/cmspro/webos/api/home-menu-urls?app_ids[]=`（内部复用框架 `menu_path()`）把原始路径换算为可直达 URL——域名绑定应用返回绑定域名根、普通应用返回主站地址（兼容子域名部署）、外链原样返回；转换失败回退原始路径，不阻断菜单显示。应用侧无需任何声明，安装即自动兼容。
+- 应用没有前台菜单时不注入任何元素；系统应用（`is_system`）不注入；接口读取失败静默降级，不影响窗口本身。
+- 每应用的前台菜单叶子按 `app_id` 缓存（`homeMenusCache`，含转换后的 url），重复打开窗口不重复请求。
+- 注意：前台页面自身的访问控制由前台路由与应用自行决定，WebOS 只负责展示与跳转，不做额外校验。
+
+## 四、Service 层
 
 ### `WorkspaceService`
 
@@ -98,17 +172,26 @@ $wallpapers = app(WallpaperService::class)->listFor($adminUserId);
 
 扩展应用不得跨管理员读写壁纸；`url` 一律以相对路径在数据库与偏好中流转，渲染时由前端补前导斜杠。
 
-## 四、工作区接口
+## 五、工作区与 HTTP API 清单
 
-| 方法 | 路径 | 说明 |
-|---|---|---|
-| GET | `/admin/cmspro/webos/api/workspace` | 读取当前管理员工作区 |
-| PUT | `/admin/cmspro/webos/api/workspace` | 保存当前管理员工作区 |
-| POST | `/admin/cmspro/webos/api/wallpaper` | 上传自定义壁纸（`multipart/form-data`，字段 `wallpaper`，jpg/jpeg/png/gif/webp，≤5MB），返回相对路径 `url` |
-| GET | `/admin/cmspro/webos/api/wallpapers` | 读取当前管理员的自定义壁纸列表（`url`、`size`、`uploaded_at`） |
-| DELETE | `/admin/cmspro/webos/api/wallpaper` | 删除自定义壁纸（JSON 字段 `url`），非本人或非法路径返回业务码 `40302` |
+### WebOS 应用自有接口
 
-接口使用后台 Session 认证和 CSRF 保护，返回统一的 `code`、`message`、`data`、`timestamp` 结构。
+路由定义于 `Routes/admin.php`，前缀 `/admin/cmspro/webos`，全部走 `web` + `auth:admin` 中间件（Session 认证 + CSRF），响应为统一 `code`（0 成功）、`message`、`data`、`timestamp` 结构：
+
+| 方法 | 路径 | 参数 | 说明 |
+|---|---|---|---|
+| GET | `/admin/cmspro/webos/api/workspace` | — | 读取当前管理员工作区（桌面项、任务栏项、偏好，含默认偏好补齐） |
+| PUT | `/admin/cmspro/webos/api/workspace` | JSON：`desktop_items`（≤48）、`taskbar_items`（≤12）、`preferences`（键白名单见第八章） | 保存当前管理员工作区；验证失败返回 422 与逐字段 `errors` |
+| POST | `/admin/cmspro/webos/api/workspace/reset` | — | 重置工作区：桌面/任务栏恢复初始默认布局（超管固定「应用中心」，非超管为空），偏好恢复默认；自定义壁纸文件保留 |
+| POST | `/admin/cmspro/webos/api/wallpaper` | `multipart/form-data`，字段 `wallpaper`（jpg/jpeg/png/gif/webp，≤5120KB） | 上传自定义壁纸，返回相对路径 `url` |
+| GET | `/admin/cmspro/webos/api/wallpapers` | — | 读取当前管理员的自定义壁纸列表（`url`、`size`、`uploaded_at`，按上传时间倒序） |
+| DELETE | `/admin/cmspro/webos/api/wallpaper` | JSON 字段 `url`（≤200） | 删除自定义壁纸；非本人或非法路径返回业务码 `40302` |
+| GET | `/admin/cmspro/webos/api/calendar` | 查询参数 `month`（`YYYY-MM` 格式，正则 `^\d{4}-(0[1-9]|1[0-2])$`） | 返回当月日历数据（含农历与二十四节气换算） |
+| GET | `/admin/cmspro/webos/api/all-todos` | — | 全量待办（含已读）：聚合系统待办 hook（含权限过滤/去重/归零过滤），附加 `seen` 与 `is_read`（`seen_count ≥ count` 视为已读）；数据源见第七章 |
+
+工作区数据是**当前管理员的个人数据**，接口强制绑定当前管理员 ID；其它应用没有跨管理员读写他人工作区的合法途径，也不应依赖工作区接口传递业务数据。
+
+### WebOS 复用的系统接口
 
 WebOS 不新增应用管理接口，应用中心的数据与操作全部复用系统已有接口，与传统后台应用管理页面（`resources/views/admin/app/index.blade.php`）保持同一数据源，便于统一维护：
 
@@ -116,8 +199,13 @@ WebOS 不新增应用管理接口，应用中心的数据与操作全部复用�
 |---|---|
 | 已安装应用列表 | `GET /api/admin/apps`（含 `icon_url`、`is_system`、`status`、`manifest` 等完整字段） |
 | 后台菜单目录 | `GET /api/admin/menus/user`，前端按 `terminal_type` 过滤仅保留 `admin` 后台菜单 |
+| 菜单树（任意终端） | `GET /api/admin/menus/tree?terminal_type={admin\|user\|home}`（安装弹窗挂载选择与前台菜单下拉共用） |
 | 操作记录 | `GET /api/admin/app-logs?per_page=30`（分页接口，切换到「安装记录」时按需读取） |
 | 应用操作 | `/api/admin/apps/*`、`/api/admin/market/*`：市场安装、本地安装、启用/禁用、卸载、导出、备份、文档、配置和上传安装 |
+| 市场首页 | `GET /api/admin/market/home`：应用市场「首页」子 Tab 数据源，框架代理远程市场 `GET /api/market/home`（返回 random 随机推荐 / featured 官方精选按下载量补全 / positions 推荐位应用），服务端缓存 60 秒 |
+| 应用图标 | `GET /api/app/{app_id}/icon`：服务端按应用根目录 `icon.svg` → `icon.png` 顺序返回图片（见第九章） |
+| 通知与待办 | `GET /api/admin/notifications/panel`（待办 + 最近 10 条通知 + 未读数）、`GET /api/admin/notifications/badge`（未读 + 待办增量）、`POST /api/admin/notifications/todo-read`（`key` + `count`，记录已见数量）、`POST /api/admin/notifications/read-all`、`POST /api/admin/notifications/{id}/read`、`GET /api/admin/notifications?per_page=15&page=N`（通知分页） |
+| 修改密码 | `PUT /api/admin/auth/password` |
 
 页面同时通过 `data-market-base-url` 把系统应用市场地址（`apps.market.api_url`，协议相对形式）传给前端，用于解析远程市场图标。
 
@@ -133,7 +221,7 @@ WebOS 不新增应用管理接口，应用中心的数据与操作全部复用�
 
 后台靠 `$.ajaxSetup` 全局注入 CSRF，WebOS 无全局 jQuery，因此封装 `legacyAjax(settings)` 在每次请求头写入 `runtime.csrfToken`。后台在备份/恢复各步骤使用 `layer.closeAll()`，WebOS 的应用窗口同样由 `layer.open` 承载，全关会误杀应用窗口，故改用 `backupLayerStack` 数组配合 `pushBackupLayer()` / `closeBackupLayers()` 只关闭自己打开的层级。备份弹窗的工具栏（左「共 N 条备份记录 + 导入恢复」/ 右「立即备份」）与后台一致放在顶部；后台的“导入恢复”（`openImportDialog` / `doLocalRestore`）已照抄移植：上传 Tab 拖拽/点选 `.zip` → `upload-file` 上传成功后走分步恢复，服务器 Tab 懒加载 `local-files` 列表并逐文件确认恢复；隐藏 fileInput 随弹层 `remove` 清理。
 
-## 五、桌面入口结构
+## 六、桌面入口结构
 
 ```json
 {
@@ -149,14 +237,134 @@ WebOS 不新增应用管理接口，应用中心的数据与操作全部复用�
 }
 ```
 
-- `id`：工作区内唯一标识，系统菜单使用 `menu-{菜单ID}`。
-- `app_id`：入口所属应用标识，可为空；用于在应用被禁用、后台菜单不再下发时仍能识别所属应用（右键菜单的应用操作、图标解析）。仅允许字母、数字、下划线、点和短横线。
-- `path`：必须是站内绝对路径，最长 500 字符。
-- `x`、`y`：桌面网格坐标，服务端限制为 0–99。
-- 单个工作区最多保存 48 个入口。
-- WebOS 在加载工作区时会用当前后台菜单补齐缺失的 `app_id` 并静默保存，旧版入口无需手工处理。
+字段与校验规则（`WorkspaceService::sanitizeDesktopItem` + `WebosController::saveWorkspace` 验证规则双层约束，任务栏项结构相同但**无** `x`/`y`）：
 
-## 六、前端扩展原则
+| 字段 | 校验 | 说明 |
+|---|---|---|
+| `id` | 必填，仅 `A-Za-z0-9_-`，截断 80 字符，空值兜底 UUID | 工作区内唯一标识，系统菜单使用 `menu-{菜单ID}`，应用入口可自定义 |
+| `menu_id` | 可空，整数 ≥ 0 | 来源菜单 ID，用于菜单目录比对 |
+| `app_id` | 可空，仅 `A-Za-z0-9_.-`，≤100 字符 | 入口所属应用标识；用于应用禁用/菜单不下发时仍能识别所属应用（右键应用操作、图标解析），也是开始菜单聚合与窗口菜单隔离的依据 |
+| `title` | 必填，截断 60 字符，空值兜底「未命名应用」 | 桌面显示名称 |
+| `path` | 必填，必须以 `/` 开头且不得以 `//` 开头，截断 500 字符 | 站内绝对路径（URL 相对路径，不含域名）；协议地址与协议相对地址一律拒绝；数据库只存这种相对路径 |
+| `icon` | 必填，仅 `A-Za-z0-9 _-`（允许字体图标类名中的空格），≤100 字符，空值兜底 `fa fa-cube` | 字体图标类名；应用图片图标由前端按应用根目录解析，不存于此字段 |
+| `group_title` | 可空，截断 60 字符，空值兜底「应用」 | 分组标题 |
+| `x` / `y` | 整数 0–99 | 桌面网格坐标（仅桌面项） |
+
+数量与统计约束：
+
+- 单个工作区最多保存 48 个桌面入口、12 个任务栏固定项。
+- WebOS 在加载工作区时会用当前后台菜单补齐缺失的 `app_id` 并静默保存，旧版入口无需手工处理。
+- 桌面图标显示按「已分配」过滤（见第二章），停用应用的图标不占格位。
+
+## 七、通知与待办接入
+
+WebOS 任务栏铃铛与通知中心窗口的数据来自系统 `NotificationService`（`app/Services/NotificationService.php`），分两类数据源，其它应用按需接入：
+
+### 推送型通知（有历史、按管理员独立已读）
+
+应用在业务事件发生时调用框架服务写一条通知：
+
+```php
+use App\Services\NotificationService;
+
+app(NotificationService::class)->push([
+    'title'           => '导入任务完成',            // 必填，≤100 字
+    'content'         => '共导入 128 条记录',        // 可选，≤500 字
+    'link'            => '/admin/example/records',  // 可选，站内路径（见下方约定）
+    'app_id'          => 'cmspro.example',          // 可选，来源应用标识
+    'permission_code' => 'cmspro.example.record',   // 可选，非空则仅拥有该权限的管理员（或超管）可见
+    'level'           => 'success',                 // info | success | warning | error，默认 info
+]);
+```
+
+通知写入 `admin_notifications` 表后自动出现在任务栏通知面板、徽标与通知中心窗口。
+
+**`link` 路径约定**：WebOS 点击通知时按 `link` 与系统菜单目录中的入口路径精确匹配，命中则在 WebOS 内打开对应应用窗口，未命中回退浏览器新标签页。因此 `link` **必须使用 `admin_menus` 表中真实存在的菜单路径**，凭空推测的路径会导致点击退化为新标签页打开。
+
+### 聚合型待办（实时计算、数量归零自动消失、无历史）
+
+应用把「待处理事项数量」通过 HookManager filter 实时提供给通知中心：
+
+```php
+use App\Services\HookManager;
+use App\Services\NotificationService;
+
+// 注册时机：应用 ServiceProvider 的 boot() 中
+app(HookManager::class)->registerFilter(
+    NotificationService::TODO_HOOK,   // 'admin.notifications.todos'
+    function (array $entries): array {
+        // 必须合并传入的 $entries 后返回完整数组
+        return array_merge($entries, [
+            [
+                'key'             => 'cmspro.example.pending',   // 全应用唯一，重复注册的条目按 key 去重
+                'title'           => '待审核内容',
+                'count'           => 12,                          // int ≥ 0；0 的条目会被统一过滤（归零自动消失）
+                'link'            => '/admin/example/review',     // 必填，站内菜单路径（同上约定）
+                // 'permission_code' => 'cmspro.example.review',   // 可选，权限过滤同推送型
+            ],
+        ]);
+    },
+    10,                             // priority，默认 10
+    'cmspro.example'                // appId，应用卸载时框架据此自动移除其 hook
+);
+```
+
+聚合契约（`NotificationService::aggregateTodoEntries()` 统一兑现，应用无需重复实现）：
+
+| 项 | 规则 |
+|---|---|
+| 回调签名 | `callable(array $entries): array`——收到此前累积的条目数组，**必须 `array_merge` 后返回完整数组**（返回值直接替换累积值） |
+| 条目字段 | `key`（string 非空）、`title`（string 非空）、`count`（int ≥ 0）、`link`（string 非空）、`permission_code`（可选 string）；字段缺失或类型不符的条目被静默丢弃 |
+| 权限过滤 | `permission_code` 非空的条目仅对拥有该权限码的管理员（或超管）可见 |
+| 去重与容错 | `key` 重复的条目只保留第一个；单个回调抛异常仅记录日志，不影响其它应用聚合 |
+| 已读机制 | `admin_todo_reads` 表按「管理员 + todo_key」记录已见数量 `seen_count`：点击待办条目时 WebOS 调 `POST /api/admin/notifications/todo-read`（`key` + `count`）写入；`seen_count ≥ count` 的条目在面板/徽标中消失；业务量回落时已见量自动收敛到当前量，之后新增的数量恢复显示 |
+| 归零契约 | `count = 0` 的条目后端直接过滤，任何视图都不会展示「标题 0」的空待办 |
+
+### WebOS 全量待办接口
+
+通知中心窗口的「待办」Tab 使用应用侧接口 `GET /admin/cmspro/webos/api/all-todos`（含已读，条目附加 `seen` 与 `is_read` 字段），与任务栏面板（只显示未读）分工：面板 = 未读提醒，窗口 = 全量管理。
+
+## 八、偏好（preferences）键全集与使用统计
+
+### 偏好键全集
+
+偏好按管理员隔离存储于工作区 `preferences` JSON 字段，服务端 `WorkspaceService::DEFAULT_PREFERENCES` 定义默认值与键白名单：
+
+| 键 | 类型 | 默认值 | 取值约束 |
+|---|---|---|---|
+| `wallpaper` | string | `webos-default` | 枚举 `webos-default` / `deep-blue` |
+| `wallpaper_url` | string | `''` | 仅允许 `apps/cmspro.webos/wallpapers/{文件名}.{jpg\|jpeg\|png\|gif\|webp}` 相对路径，非法值清空 |
+| `icon_size` | string | `medium` | 枚举 `small` / `medium` / `large`（桌面右键「查看」三档图标） |
+| `window_tabs` | bool | `false` | 应用窗口多选项卡开关 |
+| `taskbar_alignment` | string | `left` | 枚举 `left` / `center` |
+| `taskbar_position` | string | `bottom` | 枚举 `top` / `bottom` / `left` / `right` |
+| `clock_format` | string | `24h` | 枚举 `12h` / `24h` |
+| `show_seconds` | bool | `false` | 时钟是否显示秒 |
+| `motion` | bool | `true` | 界面动效（响应系统「减少动态效果」） |
+| `window_width` | int | `78` | 40–100（新建窗口宽度占可用桌面区域百分比） |
+| `window_height` | int | `80` | 40–100 |
+| `override_admin_home` | bool | `false` | 覆盖传统后台首页（`/admin` 直达 WebOS） |
+| `usage_stats` | object | `[]` | 入口使用统计，见下节 |
+
+### 新增偏好键的「多层同步」教训（1.9.67/1.9.68 踩坑）
+
+新增一个偏好键必须同步**四处**，缺一处即静默失效：
+
+1. **`WorkspaceService::DEFAULT_PREFERENCES`**：登记键与默认值（同时是保存时的键白名单，`Arr::only` 按它过滤）；
+2. **`WorkspaceService::sanitizePreferences()`**：登记类型/枚举校验与非法值回退；
+3. **`WebosController::saveWorkspace()` 验证规则**：补充 `preferences.{key}` 规则——Laravel `$validated` 只保留有规则声明的键，**漏写会导致该键在控制器层被丢弃、无法持久化**（1.9.67 的 `icon_size` 即此因）；
+4. **前端 `webos.js` 的 `normalizePreferences()`**：补充默认值，保证旧工作区数据合并后前端可读。
+
+典型验证规则写法：`'preferences.icon_size' => ['sometimes', 'in:small,medium,large']`、`'preferences.window_tabs' => ['sometimes', 'boolean']`；持久化验证用 HTTP 测试兜底（PUT 写入后再 GET 读出断言）。
+
+### 使用统计（`recordEntryUsage`）
+
+- `usage_stats` 的键为入口标识（正则 `[A-Za-z0-9:._-]{1,100}`），值为 `{ count, last_opened_at }`（`count` 1–999999，`last_opened_at` 格式 `Y-m-d H:i:s`）；最多保留 80 个键。
+- 前端 `recordEntryUsage(entry)` 在每次 `openEntry` 打开入口时累加（含 `_blank`/`_layer` 菜单的打开分支）并静默 `saveWorkspace` 持久化；开始菜单「常用」分组按 `count` 降序、`last_opened_at` 降序显示最多 6 个入口。
+- 排除项：内置且自动打开的窗口不计入——`webos-settings`（OS 设置）与 `webos-official-news`（官网动态，仅超管进桌面时自动打开）。「常用」统计按管理员隔离，数据只用于本管理员的排序展示。
+- 其它应用没有直接写入使用统计的场景；统计键由 WebOS 前端自维护，服务端仅做白名单校验。
+
+## 九、前端扩展原则
 
 1. 新应用页面保持完整 HTML 结构，确保可在 WebOS iframe 中独立渲染；菜单声明为 `_component`（路由模式）时，同一地址应能返回可直接注入的 HTML 片段。
 2. 页面不得依赖父窗口中的全局变量；权限脚本应在自身页面注入。`_component` 片段是例外，它运行在 WebOS 主文档中并共享全局作用域，可依赖桌面页已加载的 layui / pear 环境，但需自行避免变量与样式冲突。
@@ -167,22 +375,72 @@ WebOS 不新增应用管理接口，应用中心的数据与操作全部复用�
 7. 同一 `app_id` 只有一个可访问叶子菜单时，WebOS 默认隐藏窗口左侧菜单；声明多个后台菜单时默认展开，用户可在标题栏手动收起。
 8. 在 `manifest.json` 中用 `children` 声明多级菜单时，WebOS 窗口左侧会按同样的层级渲染为树：含下级的节点显示为分组，点击分组标题展开或收起，同级分组互斥（手风琴），打开窗口时自动展开当前页面所在的分组链路。中间分组不再被丢弃，但分组自身若声明了 `path` 仍不会作为可点击项渲染，需要访问的页面请放在叶子菜单上。
 9. 普通应用窗口标题按 `icon.svg`、`icon.png`、`manifest.json.icon` 顺序显示应用图标；应用记录的 `is_system` 为真时保留 CMSPRO Logo。
-10. 桌面快捷方式、任务栏图标与开始菜单卡片同样按第 9 条的顺序解析应用图标；不带 `app_id` 的系统菜单保留菜单自带图标。
+10. 桌面快捷方式、任务栏图标与开始菜单卡片同样按第 9 条的顺序解析应用图标；不带 `app_id` 的系统菜单保留菜单自带图标。应用图片图标也可直接走系统图标接口 `GET /api/app/{app_id}/icon`（服务端按 `icon.svg` → `icon.png` 顺序返回，安装记录等界面即以该接口为主图来源）。
 11. 应用如需在 WebOS 中提供“设置”入口，应在 `manifest.json` 声明 `config_groups`；配置项类型继续使用系统的 `text`、`textarea`、`number`、`select`、`switch`、`image`，WebOS 设置弹窗会按同样类型渲染。
 12. 声明为 `_blank` 或 `_layer` 的菜单不占用窗口内容区：点击后只打开新标签页或 layui 弹层，窗口内已显示的页面与侧栏选中态保持不变，也不会被记为“当前页面”。这类菜单在开始菜单聚合与应用市场“打开”按钮的默认入口选择中会被跳过。
 13. `http(s)` 外链菜单只有声明为 `_blank` 时才会出现在 WebOS 窗口左侧菜单中；外链入口不能被添加为桌面快捷方式，也不显示在应用中心的“入口管理”树中（桌面路径由后端 `WorkspaceService` 校验，仅接受站内路径）。
 14. `_component` 片段不应重复引入 `layui.js`、`pear.js`、`pear.css`、jQuery 等主框架资源（桌面页已加载，重复引入会覆盖 `layui.config` 并破坏模块解析）。片段只输出业务结构、业务样式与业务脚本；组件渲染需在脚本中自行调用 `element.init()` / `form.render()`，WebOS 也会在全部脚本执行完毕后再补调一次。
 
-## 七、数据与卸载注意事项
+## 十、数据与卸载注意事项
 
 - 工作区表仅存菜单路径、图标类名、界面偏好和入口使用统计，不复制业务数据。
 - 目标应用卸载后，历史桌面入口可能暂时保留；用户可在入口管理中移除。后续版本可通过系统生命周期钩子增加自动清理。
+- 应用通过 HookManager 注册的待办 filter 带 `appId` 参数时，应用卸载/禁用由框架 `removeHooksByApp()` 自动移除，遗留的已读记录不影响其它应用。
 - 卸载 WebOS 会删除 `app_cmspro_webos_workspaces` 表，因此应在卸载前备份需要保留的布局。
 
-## 八、版本与更新日志
+### 约束与红线（对接应用必须遵守）
+
+1. **不修改框架与 WebOS**：对接只通过菜单清单、框架服务（`NotificationService`、`HookManager`）与系统 HTTP 接口，不得改动 `app/Services/`、`app/Http/Middleware/` 等框架代码，也不得依赖 WebOS 前端内部函数或 DOM 结构。
+2. **路径一律相对**：数据库中的菜单/入口路径只存 `/` 开头的站内相对路径（不含域名与协议）；桌面入口路径由 `WorkspaceService` 强校验，`http(s)` 外链仅限 `_blank` 菜单。
+3. **入口标识规范**：入口 `id` 不使用 `webos-` 前缀（WebOS 内置保留）；`app_id` 仅允许字母、数字、下划线、点和短横线。
+4. **不直写他人工作区**：工作区/壁纸接口按当前管理员隔离，应用不应把业务状态存入用户工作区（窗口内存态如选项卡列表本就不持久化）。
+5. **偏好新增走完整链路**：任何新增偏好键按第八章四处同步，缺一处即静默失效。
+6. **通知 link 必须真实**：推送通知与待办的 `link` 必须是 `admin_menus` 表中已存在的路径，避免点击退化为新标签页。
+7. **静态资源本地化**：应用页面资源不通过 CDN 加载；`_component` 片段不重复引入主框架资源。
+
+## 十一、版本与更新日志
 
 | 版本 | 日期 | 更新人 | 说明 |
 |---|---|---|---|
+| 2.0.1 | 2026-10-05 | CmsPro | **账号菜单新增「清除缓存」（用户需求：修改密码下面增加清除缓存，点击后触发 /api/admin/cache/clear）**：① index.blade.php 账号菜单「修改密码」（L129）下新增 `<button data-action="clear-cache"><i class="fa fa-eraser"></i>清除缓存</button>`（锁定桌面之前）；② webos.js 面板点击分发（L7982-7988）新增 clear-cache 分支——`closePanels()` 后 `api('/api/admin/cache/clear')`（GET，路由取证：routes/web.php L226 `Route::get('cache/clear', [ConfigController::class, 'clearCache'])`，位于 api/admin 认证组），成功 `toast('缓存已清除', 'success')`，失败 toast 错误信息。**复用优先：未新建任何接口，直接复用系统后台既有缓存清理端点（与 webos 一贯原则一致）**。测试：账号菜单测试补 3 条断言（菜单项 + 分发分支 + 接口调用）；115 测试 1118 断言通过。文档同步：版本记录更新 |
+| 2.0.0 | 2026-10-05 | CmsPro | **① 账号菜单新增「清除缓存」**：见前述记录（复用 GET /api/admin/cache/clear）。**② 系统菜单拖拽应用换顶级分类（用户需求：拖拽应用到顶级分类更新分类；超管专属；用户二次纠正：移动的是整个应用含应用文件夹，而非只移应用菜单）**：数据基础——flattenMenus 为叶子输出所属**应用文件夹节点 id**（`app_node_id`：walk 传递 `inheritedAppNodeId`，自带 app_id 的节点即应用文件夹节点、其 id 由后代叶子继承）；startItemsForGroup 卡片收集 `move_ids`——优先收应用文件夹节点 id（`moveIds.indexOf(entry.app_node_id)` 去重后 `push(Number(...))`，服务端只改父节点、子树随行整体移动），无节点的散叶子补自身 menu_id，目录卡片收 `moveIds.push(Number(representative.folder_id))`；渲染——renderStartMenu 按条件输出 `draggable="true" data-move-ids`（`isSuperAdmin && !item.special && move_ids.length`，搜索结果不启用）；交互——bindEvents 新增 document 级 dragstart/dragover/drop/dragend 委托（闭包变量 draggingMoveIds/dragOverCategory，dragover 高亮 `.is-drop-target`，「常用」groupId==='common' 排除）；提交——drop 后 `api('/api/admin/menus/move', { method:'PUT', body:{ ids, parent_id } })`，成功 toast + `refreshCatalog()`。**复用优先：移动接口直接复用系统 MenuController::batchMove（routes/web.php L276 `Route::put('move','batchMove')`），服务端已防环形引用（isDescendantOf）并按顶层节点移动防子树拍平，未新建任何接口**。**教训：① 编辑 bindEvents 大段代码时 old_string/new_string 截断过宽导致误删 action 处理块头部，node --check 通过但逻辑缺失——大块编辑必须逐段小编辑；② walk 签名加参时 old_string 末行参数数与实际不符导致编辑失败——多参数函数修改前后必须核对调用点参数个数；③ 断言字符串随实现细节联动（数组字面量改 push 调用后旧断言 MISS）——改实现后用临时 php -r/脚本批量 strpos 校验所有新断言再跑测试**。测试：11 条断言（app_node_id 输出/传递 + 节点优先收集 + draggable 条件 + move 接口 + refreshCatalog + CSS 高亮）；115 测试 1129 断言通过。**③ 修复线上 all-todos 接口 500**：见前述记录（子类 + method_exists 降级兜底）。**④ 移动后数据实时性（用户反馈：移动完菜单后需要刷新使数据最新）**：前端 refreshCatalog 已重拉 menus/user + apps 并重绘开始菜单/桌面/任务栏，服务端 batchMove 事务直改库无缓存——剩余风险是浏览器对同 URL GET 的 HTTP 缓存复用；loadCatalog 的两个 GET 统一附加 `?_t=Date.now()` 时间戳破坏缓存（顺带覆盖应用安装后的 refreshCatalog）。**教训：断言字符串与实现细节强联动（api('url') 改拼接后 2 条旧断言 MISS）——改实现后先批量 strpos 校验相关断言再跑全量测试**。测试：补 cacheBust 断言、更新 2 条 GET 断言；115 测试 1130 断言通过。**⑤ 标题栏刷新按钮支持特殊窗口（用户反馈：非应用窗口点击刷新无响应）**：根因——refresh 分支只处理有 tabs 的窗口（`refreshTarget.tabs && refreshTarget.tabs.length`），特殊窗口（应用中心/OS 设置/通知中心/官网动态，windowState.tabs = null）不命中任何分支静默返回。修复：补 else-if 分支——清 `host.dataset.pageToken` 后 `renderWindowPage(refreshTarget, refreshTarget.entry)` 强制重建整页（页面令牌相同会被 renderWindowPage 的 token 判定直接 return 跳过，必须先清），并重新触发各 special 窗口的数据渲染（renderAppCenter+loadUpdateCount / renderWebosSettings / renderNotificationCenter+loadNotifications / renderOfficialNews，保留当前 tab 状态）。**教训：新增「窗口级动作」时要枚举窗口形态（多选项卡/单页/无页面 special）逐一覆盖，条件分支的 else 路径不能静默——静默 return 是「按钮无响应」类反馈的最常见根因**。测试：补 3 条断言（else-if 分支 + pageToken 清空 + settings 重渲染）；115 测试 1133 断言通过。文档同步：版本记录更新 |
+| 1.9.105 | 2026-10-05 | CmsPro | **修复线上 all-todos 接口 500（Call to undefined method App\Services\NotificationService::allTodos() at WebosController.php:73）**：根因——接口依赖全局框架服务 `app/Services/NotificationService.php` 上新增的 `allTodos()` 公开包装（内部仅转发 protected `aggregateTodoEntries()`），该框架文件未随应用部署到线上 → 线上调用未定义方法。修复（架构规范化）：① 新增应用内子类 `app/Apps/CmsproWebos/Services/WebosNotificationService.php`（extends NotificationService，`allTodos()` 公开 protected 聚合能力，容器自动解析 HookManager 依赖）；② WebosController::allTodos 改用 `app(WebosNotificationService::class)`，移除全局 `use App\Services\NotificationService`（已无代码引用）；③ 本地全局文件的 allTodos 保留（属未提交的框架改动，由用户决定提交/部署时机），但应用不再依赖——**部署应用目录即可修复线上**。**教训：应用依赖的框架级新增方法必须放在应用内（子类/装饰器），直接改全局服务会造成「本地能跑、线上必炸」的部署陷阱；通知/待办等跨切面能力的公开入口要区分「框架原有」（todos/panel）与「应用私需」（allTodos），后者下沉到应用**。测试：补 4 条断言（子类文件内容 + 控制器引用子类 + 不再引用全局 allTodos）；115 测试 1113 断言通过。文档同步：版本记录更新 |
+| 1.9.104 | 2026-10-05 | CmsPro | **修复刷新按钮位置（用户反馈：无选项卡条窗口的刷新按钮跑到「收起左侧菜单」旁，未在 window-brand 右侧）**：根因——1.9.101 把按钮挂在 `.window-controls` 内，无选项卡条时控制区 `margin-left: auto` 右推，按钮随之贴右；1.9.103 的 order 方案只在有选项卡条时生效（order 是 controls 内部排序，管不到 controls 在标题栏的位置）。修复：按钮**移出控制区**，作为标题栏直属子元素插到 `.window-brand` 之后（新类 `.window-refresh`，CSS 仅 margin-left:4px）——标题栏 flex 顺序 brand → 刷新 → controls，无论有无选项卡条按钮恒居品牌区右侧；有选项卡时选项卡条（controls 内 afterbegin 插入）从按钮右侧展开。**安全性确认：bindWindowGestures 的拖动/双击最大化排除逻辑是 `event.target.closest('button')`（所有按钮，不限控制区），刷新按钮移出 controls 后不会误触拖动与双击最大化**。**教训：浮动元素的「恒定位置」不能依赖容器内排序（order/DOM 首位）——容器自身会因状态（margin-left:auto 右推、afterbegin 插序）位移，要提到容器外用外层 flex 顺序锚定**。测试：更新 2 条断言（新类名正则 + .window-refresh CSS 规则）；115 测试 1109 断言通过。文档同步：版本记录更新 |
+| 1.9.103 | 2026-10-05 | CmsPro | **修复标题栏刷新按钮位置（用户反馈：按钮在多选项卡右侧，应在左侧）**：根因——syncWindowTabsBar 动态将选项卡条/溢出导航 `insertAdjacentElement('afterbegin')` 插到 `.window-controls` 最前，把 1.9.101 放在 markup 首位的刷新按钮挤到选项卡右侧（DOM 首位 ≠ 视觉首位）。修复：CSS order 方案——webos.css 在 `.window-controls` 规则后补 `.window-controls [data-window-action="refresh"] { order: -2; }`（flex 容器内 order 提到所有 tabs/nav 之前），刷新按钮恒居选项卡条左侧，JS 零改动。**教训：动态 afterbegin 插入会让「markup 首位」失去位置意义，标题栏这类动态插序的 flex 容器用 order 控制视觉次序**。测试：补 1 条 CSS order 正则断言；115 测试 1109 断言通过。文档同步：版本记录更新 |
+| 1.9.102 | 2026-10-05 | CmsPro | **修复右键菜单点击 iframe 内容不关闭（用户反馈：选项卡右键菜单打开后点击 iframe 内任何位置菜单残留）**：根因——iframe 是独立文档，其内部点击**不会冒泡到父文档**，父文档 document click 委托末尾的 `closeDesktopContextMenu()` 等关闭调用收不到事件。修复：bindEvents 中 document click 委托注册后补 `window.addEventListener('blur', function () { closeDesktopContextMenu(); closeTaskbarContextMenu(); closeAppRowMenus(); })`——点击 iframe 内容会使父窗口失焦（blur），借此关闭所有父文档浮动菜单；桌面/任务栏/应用行菜单同语义顺带覆盖。**教训：父文档的统一 click 关闭监听覆盖不了 iframe 内部点击（独立文档树），凡是「点击其它区域关闭」的浮层都要考虑 blur 兜底或透明遮罩方案**。测试：补 1 条 blur 监听正则断言；115 测试 1108 断言通过。文档同步：版本记录更新 |
+| 1.9.101 | 2026-10-05 | CmsPro | **应用窗口标题栏新增刷新按钮（用户需求：window-brand 右侧增加刷新按钮，点击刷新当前显示内容，同选项卡右键「刷新页面」）**：① buildWindowMarkup 的 window-controls 最前新增 `data-window-action="refresh"` 按钮（fa-refresh，aria-label/title「刷新当前页面」），`windowTabsEnabled() ? ... : ''` 条件渲染——仅选项卡模式显示，非选项卡单页模式不渲染无功能按钮；② 标题栏点击分发（L8073-8081）新增 refresh 分支——`state.windows.get(key)` 取 windowState，激活 tab 反查（activeTabId find 兜底 tabs[0]）后复用 reloadWindowTab（清 pageToken 强制 renderWindowPage 重建，iframe 重设 src/组件重新拉取）。测试：补 3 条断言（markup 条件渲染正则 + 分发分支正则 + data 属性字面量）；115 测试 1107 断言通过。文档同步：版本记录更新 |
+| 1.9.100 | 2026-10-05 | CmsPro | **开始菜单应用卡图钉与名称优化（用户需求：添加到桌面/从桌面移除默认不显示、悬停显示；应用名显示更长）**：webos.css 两处——① `.pin-button` 取消 `.is-pinned` 常显选择器（原 L1458-1460 hover 组含 `.pin-button.is-pinned`），「添加到桌面/从桌面移除」统一 hover/focus-within 浮动显示；is-pinned 补主题色 `color: var(--webos-primary)` 作状态配色；② `.start-app-item` `padding: 10px 34px 10px 10px` → `10px 10px`（图钉绝对定位浮动不占文档流），`.start-app-item-text strong/small` 保持 ellipsis，名字可显示宽度 +24px。**CSS Edit 教训：替换选择器行时严禁把新选择器组误写进原属性块——本次曾把 `.pin-button {` 基选择器误替换为 hover 组导致「永远显示」，立即发现并恢复（基规则默认隐藏 + hover 规则浮动显示，两块必须分开）**。测试：纯 CSS 改动，115 测试 1104 断言通过。文档同步：版本记录更新 |
+| 1.9.99 | 2026-10-05 | CmsPro | **OS 设置→系统设置新增「点击菜单进入」（用户需求：默认当前系统菜单，可选进入全部功能）**：① 新布尔偏好 `menu_open_launcher`（默认 false）三层同步——WorkspaceService DEFAULT_PREFERENCES + sanitizePreferences（bool 强转）、WebosController 验证规则 `preferences.menu_open_launcher` sometimes|boolean、前端 normalizePreferences；② systemSectionMarkup 新增开关卡「点击菜单进入 / 直接进入全部功能」（data-toggle-webos-setting 复用既有切换管线，零新增管线代码）；③ bindEvents 的 startButton 点击分支：`menu_open_launcher === true` 时 closePanels() + openLauncherDialog() 直接进启动台，否则 togglePanel('start') 打开系统菜单面板。测试：静态断言 7 条（三层 + 开关卡 + 点击分支正则）+ HTTP 持久化测试 1 条；115 测试 1104 断言通过。**Edit 教训：向既有测试方法后插入新方法时，old_string 锚点若截断原方法尾部（方法内还有后续断言段）会把原代码悬空在方法外——插入前先读完整方法体（到下一个 function 声明为止），锚点取「方法完整结尾 + 空行 + 下一方法注释」**。文档同步：版本记录更新 |
+| 1.9.98 | 2026-10-05 | CmsPro | **开始菜单底部栏调整（用户需求：退出登录移到锁定右边；OS 设置只保留图标）**：desktop/index.blade.php L65-74 footer（.start-system-actions）按钮顺序 锁定 → 退出登录 → 版权 → OS 设置——退出登录上移至锁定后，版权 span（flex:1）仍居中撑开；OS 设置按钮去掉「OS 设置」文字仅留 fa-cog 图标，补 `aria-label="OS 设置" title="OS 设置"`（无障碍与悬停提示）。Blade 服务端渲染无需同步 public；测试补 2 条正则断言（footer 按钮顺序 + OS 设置纯图标形态）。114 测试 1093 断言通过。文档同步：版本记录更新 |
+| 1.9.97 | 2026-10-05 | CmsPro | **启动台空白区域点击关闭（用户需求：点击非功能、非搜索区域自动关闭）**：根因——1.9.86 全屏化后 `.launcher-panel` 100%×100% 铺满浮层，原关闭判定 `if (event.target === layer)`（精确命中浮层根节点）在 panel 内的空白点击永不命中。修复：点击委托末尾（folder/leaf/crumb/close 四分支之后）统一判定 `if (!event.target.closest('.launcher-item') && !event.target.closest('.launcher-search')) { closeLauncherDialog(); }`——点击目标不在功能卡片、不在搜索框内即关闭；卡片/面包屑/关闭按钮在上方分支已 return 不受影响，Esc 关闭保留。**教训：全屏浮层的「点击遮罩关闭」不能用 target === 根节点判定（panel 铺满后根节点区域为零），要用反向排除法（closest 排除交互区域）**。测试：补 1 条正则断言；114 测试 1091 断言通过。文档同步：版本记录更新 |
+| 1.9.96 | 2026-10-05 | CmsPro | **启动台分组卡片点击直接打开应用窗口（用户需求：就到应用，点击不要进入子菜单，直接打开应用窗口）**：launcherFolderMarkup 中有 application 关联的分组卡片，取该应用在 flatMenus 中的**代表叶子**（`state.flatMenus.find(candidate => candidate.app_id === application.app_id)`，树序第一个可打开菜单），卡片 data 属性改输出 `data-launcher-leaf="menu-{menu_id}"`——复用叶子点击链路（委托 → findEntry → openMenuByType/openEntry → 关闭浮层）直接进应用；无代表叶子兜底 data-launcher-folder，纯目录分组（无 app_id，如「管理」「系统」顶级分类）保持进入子目录。交互与开始菜单应用卡（start_item 点击打开 representative）完全一致。**设计取舍：分组卡片不再进入子菜单，子菜单通过应用窗口内左侧导航访问**。测试：补 2 条正则断言（representative 查找 + action 分支）；114 测试 1090 断言通过。文档同步：版本记录更新 |
+| 1.9.95 | 2026-10-05 | CmsPro | **修复：启动台分组卡片图标与系统菜单不一致（用户第三次反馈，本次通过数据实锤真根因）**：诊断链——① 直查 admin_menus 表：「管理」下顶层节点**绝大多数自带 app_id**（儿康管理=cmspro.childrehab 等），1.9.93 的「深层叶子 app_id 为空」根因判断**错误**；② 线上 `/api/app/cmspro.captcha/icon` 与本地 CmsproCaptcha/icon.png MD5 一致（白底绿盾），图1 中「验证码设置」已显示该图 = **叶子链路 1.9.93 已生效**；③ Clineproxy/icon.png（黑底白机器人）与图2 开始菜单「Cline」图标一致 = 开始菜单卡片即各应用 icon_url 图片；④ **真正的差异源：启动台「管理」下 24 张卡片中 22 张是分组节点（children>0），走 launcherFolderMarkup 纯 safeIcon 字体渲染从不查应用图标**——只有「验证码设置」「论坛设置」两张叶子（children=0）走 launcherLeafMarkup 显示图片（恰与截图吻合：图1 仅两张彩色图片其余全字体）。开始菜单则由 startItemsForGroup 把带 app_id 分组聚合为应用卡片（entryIconMarkup → 图片）、无 app_id 的（前台用户/内容管理，admin_menus 中 app_id 为 null）走 is-folder 黄底字体卡片。修复：launcherFolderMarkup 与叶子同标准——带 app_id 走 applicationIconMarkup 应用图片；无应用输出 `launcher-item-icon is-folder-icon`（CSS：background: var(--webos-folder) #f0a11a + 白字，与开始菜单目录卡片一致）。**教训：截图证据要逐卡片核对（数清楚哪些卡片是图片哪些是字体、对应菜单树节点的 children/app_id），不要被「整屏都不对」的印象带偏；渲染不一致问题先分层定位（数据层 app_id → 接口层字段 → 渲染层函数分支 → CSS 底色），每一层用独立证据实锤**。114 测试 1088 断言通过。文档同步：版本记录更新 |
+| 1.9.94 | 2026-10-05 | CmsPro | **启动台浮层右上角关闭按钮（用户需求：出现全部功能时右上角增加关闭按钮）**：① openLauncherDialog 的 layer.innerHTML 首节点插入 `<button class="launcher-close" data-launcher-close><i class="fa fa-times"></i></button>`（aria-label="关闭"）；② 浮层点击委托最前加 `data-launcher-close` 分支调 closeLauncherDialog()（closest 判定，点中按钮内部图标同样命中）；③ CSS `.launcher-close` absolute 悬浮右上角（22/26px、38px 圆形、半透明白底、hover 加亮、focus-visible 焦点环），与 Esc/点击遮罩空白并列的显式关闭入口。测试：补 markup 与委托分支 2 条正则断言；114 测试 1086 断言通过。文档同步：版本记录更新 |
+| 1.9.93 | 2026-10-05 | CmsPro | **修复：启动台叶子图标仍与系统菜单不一致（用户双截图对比：全部功能全是单色菜单字体图标，系统菜单是彩色应用图片图标）**：根因——launcherLeafMarkup 用菜单树**原生节点的 item.app_id** 查找应用，但菜单树里只有顶层节点带 app_id（如「验证码」），深层叶子（「验证码管理」）为 null → application 恒 null → 走 safeIcon 菜单图标回退；而开始菜单聚合用 flattenMenus **继承后**的 app_id（flattenMenus walk：`item.app_id \|\| inheritedAppId`）所以正常。「论坛设置」恰好在树上有自身 app_id 显示正常（该反例曾误导 1.9.92 认为链路正确）。修复：① 新增 `findFlatLeaf(menuId)` 按菜单 id 从 state.flatMenus 取平铺叶子（app_id 含祖先继承，与开始菜单聚合同源）；② 渲染改用 **entryIconMarkup**（开始菜单应用项 L777 同一个函数：findApplication → applicationIconMarkup / safeIcon 回退）；③ 搜索的应用名匹配同步改继承 app_id。**教训：跨「菜单树节点」与「flattenMenus 平铺叶子」取数必须对齐字段语义——flattenMenus 的 app_id 有祖先继承，原生树节点没有**。**插曲：manifest.json 曾被上一轮 PowerShell `Set-Content -Encoding UTF8` 写入 UTF-8 BOM（PS5.x 行为）导致后端 json 解析失败、页面标题 WebOS 版本号输出为空（test_admin_can_open_webos_desktop 暴露）——Windows 下写 UTF-8 文件一律用 `[System.IO.File]::WriteAllText($p, $text, [System.Text.UTF8Encoding]::new($false))`，禁用 Set-Content -Encoding UTF8**。114 测试 1084 断言通过。文档同步：版本记录更新 |
+| 1.9.92 | 2026-10-05 | CmsPro | **启动台叶子图标回归开始菜单标准（用户反馈：显示的图标和系统菜单右侧不一致，要以系统菜单为标准）**：launcherLeafMarkup 弃用 1.9.91 的服务端接口链，改回与开始菜单（系统菜单）同链路——同一查找 `state.catalog.applications.find(...)` + 同一渲染 `applicationIconMarkup(application, 'launcher-item-icon')`（catalog 链：icon_url 图片 → icon 字体）；无应用关联的叶子回退菜单自身图标 safeIcon。**更正 1.9.91 教训：应用图标渲染的「标准」是开始菜单的 catalog 链，data-app-icon-* 全局链只是图片加载失败的回退机制；recordIcon 接口主图链仅用于安装记录日志**（1.9.93 进一步修正：app_id 须取 flattenMenus 祖先继承值，并复用 entryIconMarkup）。测试断言踩坑：applicationIconMarkup 的 `is-app-icon` 是运行时拼接 `className + ' is-app-icon`（JS 字面量单引号闭合在 `src="` 之后）——断言字符串必须按源码实际拼接形态写（php -r strpos 验证），不能按「应该长什么样」脑补。114 测试 1083 断言通过。文档同步：版本记录更新 |
+| 1.9.91 | 2026-10-05 | CmsPro | **启动台叶子图标改走全局图标链（用户反馈：按 icon.svg → icon.png → manifest.json → icon 顺序显示）**：launcherLeafMarkup 弃用 applicationIconMarkup（依赖 catalog 的 icon_url 字段，目录未加载/缺失时回退过早）——改为与 recordIcon 同链路：主图 `<img data-app-icon-primary src="/api/app/{id}/icon">`（服务端按 icon.svg → icon.png 顺序返回）→ 失败由全局回退委托（webos.js 8450 附近 error 监听，基于 parentNode 找 data-app-icon-fallback/final）降级到 manifest.json 的 icon 字段（市场来源经 marketIconUrl 补全）→ 最终回退菜单自身图标（data-app-icon-final）；无 app_id 的叶子直接显示菜单图标。容器 span 固定带 `is-app-icon`（img 等比约束）。**教训：应用图标渲染一律走 data-app-icon-* 全局链 + 服务端图标接口，不依赖 catalog 字段加载状态**（1.9.92 推翻：与系统菜单显示不一致，标准回归 catalog 链）。114 测试 1082 断言通过。文档同步：版本记录更新 |
+| 1.9.90 | 2026-10-05 | CmsPro | **启动台重构为菜单树层级导航（用户四点反馈：去毛玻璃 / 系统目录要文件夹形式 / 要含系统目录与系统菜单一致 / 按顶级分类）**：① 数据源从 `state.catalog.applications` 平铺改回 `state.catalog.menus` 菜单树——`renderLauncherView(layer, path, query)` 按索引路径逐层渲染：目录节点（有 children）→ 文件夹卡片 `launcherFolderMarkup`（`safeIcon(item.icon \|\| 'fa fa-folder')` 目录图标优先文件夹兜底），叶子（openablePath）→ `launcherLeafMarkup`（有 app_id 用 applicationIconMarkup 应用图标，无应用回退菜单图标）；点击叶子 `findEntry('menu-'+id)` → `openMenuByType(entry) \|\| openEntry(entry)` 后关闭浮层（与窗口菜单/桌面图标打开链路一致）。② 面包屑 `.launcher-crumbs`（全部功能 / 一级 / 子级，点任意层级返回）。③ 搜索：`collectLauncherLeaves` 递归收集全部叶子，按菜单名/应用名匹配平铺。④ **移除 backdrop-filter 毛玻璃**（低配设备全屏模糊渲染开销大），遮罩加深为 rgba(9,20,30,0.92)。测试断言同步替换 4 条旧平铺断言；114 测试 1081 断言通过。文档同步：版本记录更新 |
+| 1.9.89 | 2026-10-05 | CmsPro | **修复：「刷新页面」点击无反应（用户反馈）**：runDesktopContextAction 的选项卡动作分发白名单只认 `tab-close/tab-close-others/tab-close-all`，1.9.87 新增菜单项时**漏把 tab-reload 加进外层分发**——点击被丢弃，runWindowTabContextAction 从未被调用。修复：分发条件补 `action === 'tab-reload'`。**教训：右键菜单新增动作项必须同步两处——openXxxContextMenu 菜单数组 + runDesktopContextAction 分发白名单**（已加防回归断言）。114 测试 1076 断言通过。文档同步：版本记录更新 |
+| 1.9.88 | 2026-10-05 | CmsPro | **双击标题栏切换最大化/还原**：bindWindowGestures 中 titlebar 拖动监听后追加 `dblclick` 监听——`target.maximized ? restoreWindow(key) : maximizeWindow(key)`，`event.target.closest('button')` 排除控制区按钮（最小化/最大化/关闭/前台菜单/选项卡条均为 button，双击不误触）。114 测试 1075 断言通过。文档同步：版本记录更新 |
+| 1.9.87 | 2026-10-05 | CmsPro | **选项卡右键「刷新页面」**：openWindowTabContextMenu 菜单项数组首位插入 `['刷新页面', 'fa-refresh', 'tab-reload']`；新增 `reloadWindowTab(windowState, tab)`——清空页面容器 `dataset.pageToken` 强制 renderWindowPage 重建（iframe 重设 src / _component 重新 fetchText），行为对齐框架后台标题栏刷新按钮（layui-icon-refresh-1 重新加载当前页）；runWindowTabContextAction 加 tab-reload 分支。测试断言踩坑：跨 if 块的正则 `\s*` 匹配不了 `}`——多行断言要把中间的代码结构（大括号）纳入正则。114 测试 1074 断言通过。文档同步：版本记录更新 |
+| 1.9.86 | 2026-10-05 | CmsPro | **启动台全屏 + 图片图标根治（用户截图二次反馈：仍堆叠）**：① 全屏化——`.launcher-layer` 改纵向 flex 铺满（`flex-direction: column` + `padding: 28px 44px 36px`），`.launcher-panel` 100%×100%（原 min(960px,100%)×min(640px,100%) 卡片废弃），搜索框 `flex: 0 0 auto` 顶部居中，`.launcher-grid` 加 `align-content: start`。② 堆叠根因：1.9.85 的约束选择器 `.launcher-item-icon.is-app-icon img` 依赖 `is-app-icon` 类，但该类是**各渲染位外层拼接**（entryIconMarkup/入口树），启动台直接调 `applicationIconMarkup(application, 'launcher-item-icon')` 没拼 → 选择器不匹配 → img 仍原始尺寸。**根治：is-app-icon 移入 applicationIconMarkup 图片分支源头声明**（所有调用位自动携带），删除 entryIconMarkup/入口树两处外层拼接。**教训：约束类挂在「源头渲染函数」而非「各调用点」，新增调用位才不会遗漏**。③ 调试插曲记录：hex 字节误读导致一度误判源码丢闭合引号（实际 `' is-app-icon"><img'` 是合法拼接），靠 node --check + MD5 比对回滚——**判断源码损坏必须以 node --check/解释器为准，人工 hex 推演易错**。测试断言同步 3 处；114 测试 1070 断言通过。文档同步：版本记录更新 |
+| 1.9.85 | 2026-10-05 | CmsPro | **修复：启动台图片图标堆叠爆版（用户截图反馈）**：applicationIconMarkup 对图片图标（icon_url）输出 `<img>`，`.launcher-item-icon` 只约束了 44px 容器但 **img 无尺寸约束**——原图按原始尺寸渲染撑爆网格项相互覆盖（字体图标正常，因此呈「大小不一堆叠」状）。修复：`.is-app-icon img` 等比缩放规则组（width/height 100% + object-fit: contain）追加 `.webos-desktop .launcher-item-icon.is-app-icon img`（与桌面徽标/任务栏/开始菜单同一规则组），另加 `.launcher-item img { pointer-events: none }` 防原生拖拽打断点击（与桌面图标 126 行同理）。**教训：新增图标渲染位必须同步检查 img 形态约束，applicationIconMarkup 有字体/图片两种输出**。纯 CSS 改动，测试补 2 条断言；114 测试 1064 断言通过。文档同步：版本记录更新 |
+| 1.9.84 | 2026-10-05 | CmsPro | **启动台改为应用级网格（用户反馈：不应平铺全部菜单项）**：renderLauncherGrid 数据源从 `state.flatMenus`（菜单叶子）改为 `state.catalog.applications`（与开始菜单「全部应用」同源）——过滤 `appHasMenu(app_id)`（无菜单应用点击无法打开）+ 应用名/app_id 即时搜索；网格项 = `applicationIconMarkup` 应用图标 + 应用名，点击复用既有 `data-open-app-id` 委托（追加 closeLauncherDialog() 后 openEntry(defaultEntryOf(appMenus)) 打开应用窗口默认菜单）。CSS 同步删除不再输出的 `.launcher-item small` 规则。测试断言踩坑：PHP 单引号串 `\n` 不转义（字面反斜杠）导致断言失配——跨行断言一律用 `\s*` 正则；一条长正则失配原因不明（hex 验证行内容正常）时改用已验证短正则并重跑全量。测试：114 测试 1062 断言通过。文档同步：版本记录更新 |
+| 1.9.83 | 2026-10-05 | CmsPro | **图标别名兼容 +「全部功能」按钮位置纠正（用户反馈：改错了地方，指开始菜单 data-open-special="entries" 按钮）**：① 查库实锤 admin_menus.icon 有三种形态——fa-*/layui-icon 双类名/**iconPicker 短代码别名**（IconImage/IconUser 等，safeIcon 输出 `<i class="IconImage">` 无样式不显示）。修复：safeIcon 增加 `ICON_ALIASES` 映射（6 个别名 → layui 类名，与框架 `ConfigController::buildMenuTree` 的 iconMap 完全一致），safeIcon 是全部渲染点的唯一图标出口故一处修复全局生效。**教训：菜单图标不是「fa 类名」单一形态，iconPicker 别名是真实存量数据**。② 开始菜单按钮（index.blade.php#L60）「管理入口」→「全部功能」，JS 委托中 `openSpecial === 'entries'` 特例直接 `openLauncherDialog()`；其余 data-open-special 值仍走应用中心标签页。③ **回滚 1.9.82 误改**：应用行菜单恢复「管理入口」+ openEntryDialog（该弹窗与启动台是两个不同功能，均保留）。测试：114 测试 1059 断言通过。文档同步：版本记录更新 |
+| 1.9.82 | 2026-10-05 | CmsPro | **目录图标修正 +「全部功能」启动台**：① 开始菜单目录项图标改为 `representative.folder_icon || group_icon || 'fa fa-folder'`（flattenMenus 已给目录 icon 兜底，startItemsForGroup 此前硬编码 fa-folder 丢失目录设置图标）；渲染处同步用 `item.start_icon` 不再硬编码。② 应用行菜单「管理入口」→「全部功能」（fa-th-large），action 分发改调 `openLauncherDialog()`——macOS 启动台风格浮层：`.launcher-layer`（毛玻璃 backdrop-filter，z-index 7500 低于锁屏 8000 高于窗口层）+ 顶部搜索框（title/group_title/app_id 即时过滤）+ `state.flatMenus` 全量网格（entryIconMarkup 复用应用图标），点击项走既有 `data-launch-id` 委托（追加 closeLauncherDialog()），Esc/点空白关闭。**同步清理**：删除不再被引用的 `openEntryDialog`（含其测试断言与 js 注释中的「管理入口」字样——assertStringNotContainsString('管理入口') 反向断言会命中注释，清理要连注释一起）。测试：114 测试 1053 断言通过。文档同步：版本记录更新 |
+| 1.9.81 | 2026-10-01 | CmsPro | **修复：选项卡全部关闭后空状态引导残留（用户反馈）**：closeWindowTab 全部关闭时 `host.innerHTML = emptyState(...)` 直接写入 page-host，而 renderWindowPage tabs 分支对已存在页面用 `appendChild` 追加——空状态 div 不是 `.window-page` 容器，恢复选项卡时未被清除。修复：tabs 分支开头遍历 `host.children` 移除非 `.window-page` 子节点（正常多页切换时无副作用）。**教训：直接写入 host 的临时内容（空状态/加载占位）必须与页面容器的生命周期联动**。测试：补清理循环正则断言；113 测试 1044 断言通过。文档同步：版本记录更新 |
+| 1.9.80 | 2026-10-01 | CmsPro | **前台菜单链接域名绑定兼容（用户反馈：论坛 /forum 域名绑定后前台链接无法访问）**：新增应用侧接口 `GET /admin/cmspro/webos/api/home-menu-urls?app_ids[]=`——按 app_id 返回 home 终端菜单「原始路径 → 访问地址」映射，**复用框架 `menu_path()`**（域名绑定 → 绑定域名根；普通应用 → main_url 主站地址；外链原样），与 admin.blade.php 前台菜单行为完全一致；app_ids 格式校验（`[A-Za-z0-9_.-]{1,100}`）+ 上限 50。前端 loadWindowHomeMenu 拿到菜单树后请求该接口合并 `leaf.url`（`leaf.url || leaf.path` 渲染），转换失败回退原始路径（不阻断菜单显示）；转换结果随 homeMenusCache 一起缓存。**踩坑提示**：AdminMenu 部分列查询必须带 `terminal_type` 列（menu_path 内部依赖 `$menu->terminal_type === 'home'` 判定，漏查则域名绑定分支静默失效）。为何不在框架菜单树接口转换：`/api/admin/menus/tree` 被菜单管理/应用管理等管理页共用，需保留原始 path 编辑语义。测试：新增 HTTP 链路（域名绑定断言域名根 + 普通应用断言主站地址 + 非法 app_id 过滤）与前端合并 2 个测试；112 测试 1041 断言通过。文档同步：版本记录更新 |
+| 1.9.79 | 2026-10-01 | CmsPro | **官网动态读取条数 3 → 6**：官网接口 `api/home/moments/latest` 原生支持 `limit` 参数（1-20，默认 3——MomentApiController@latest 已定义），fetch URL 加 `?limit=6` 即可，**先查接口能力再改前端**（勿臆测接口无参数）。110 测试 1032 断言通过。文档同步：版本记录更新 |
+| 1.9.78 | 2026-10-01 | CmsPro | **官网动态图片弹层预览（用户需求：点击图片最大化弹出层预览，多图可切换）**：图片点击由 window.open 改为 `layer.photos` 相册层——WebOS 已加载 layui（`layuiLayer()` 返回 window.layui.layer，checkWebosSelfUpdate 的 layer.confirm 同源），layer.photos 与框架后台 dashboard 的图片预览同一组件，内置左右切换/缩放自适应/关闭。实现细节：事件委托挂 `.official-news-images` 组容器（每条动态一组，组内多图 {src, thumb} 数组 + start 定位点击图索引）；**兜底**：layuiLayer() 为空时回退 window.open 新标签（layer 加载失败不阻断查看图片）。测试：补 2 条断言；110 测试 1032 断言通过。文档同步：版本记录更新 |
+| 1.9.77 | 2026-10-01 | CmsPro | **官网动态窗口（用户需求：桌面最右侧 600×500 官网动态窗口，仅 super_admin）**：新增第 4 个特殊窗口类型（app-center/settings/notifications 之后）。要点：① `officialNewsEntry()` + `windowKey` 特判（无 app_id 的 entry 默认 key 会带 folder- 前缀，特殊窗口必须特判保持与 BUILTIN_WINDOW_KEYS 一致）；② windowMarkup 的 `isOfficialNews` 分支——sidebar/sidebarToggle 均空、windowBody 无侧栏（与 isSettings 同款）、content 为 data-official-news shell（无 page-host → 多选项卡判定自动排除）；③ 固定尺寸走 BUILTIN_WINDOW_KEYS + defaultWindowSize 双处（小屏 min 收窄防溢出），停靠位置在 openEntry 通用 left/top 计算后覆盖（left=layerRect.width-width-24 贴右、top 垂直居中）；④ 数据层复用官网公开接口 `https://www.cmspro.cn/api/home/moments/latest`（前端直连，无需应用侧路由/控制器/视图），escapeHtml → linkifyOfficialNews（链接化）顺序与 dashboard 一致；**异步渲染必须 isConnected 检查**（窗口可随时被用户关闭，防写已移除 DOM）；⑤ `isSuperAdmin` 门控在 initialize 桌面渲染完成后 openEntry（与 checkWebosSelfUpdate 同位置）；⑥ recordEntryUsage 排除（自动打开不计使用统计，避免每次进桌面多一次 saveWorkspace）。测试：6 条断言（**教训：断言前先确认既有变量名**，CSS 内容变量是 $stylesheet 不是自造的 $css）；110 测试 1030 断言通过。文档同步：版本记录更新 |
+| 1.9.76 | 2026-10-01 | CmsPro | **选项卡右键菜单（用户需求：关闭当前/关闭其它/关闭全部）**：复用桌面右键菜单全套设施——容器 `#desktop-context-menu` + menuMarkupInto（items `[label, icon, action, danger, children]`，`data-desktop-id` 本为图标 id 但实为透传字符串，直接传选项卡 id）+ positionDesktopMenu + 点击后统一关闭（7969 行 closeDesktopContextMenu）。`runWindowTabContextAction` 遍历 state.windows 反查选项卡所在窗口（id 全局唯一）；**关闭其它注意点**：逐个 closeWindowTab 时激活页被关会触发相邻切换，收尾必须 `activeTabId !== tabId` 时 switchWindowTab 保住保留项激活；关闭全部直接复用逐个 closeWindowTab（最后一个激活页自动走空状态收尾）。右键监听挂 root（closest('[data-window-tab]') 委托）+ preventDefault + focusWindow 聚焦所在窗口（与左键点击行为一致）。分发入口：runDesktopContextAction 开头 tab 三分支（iconId 形参语义此时为 tabId）。测试：补 6 条断言；110 测试 1024 断言通过。文档同步：版本记录更新 |
+| 1.9.75 | 2026-10-01 | CmsPro | **修复前台按钮被选项卡条隔开（用户反馈：前台应挨着「收起左侧菜单」）**：根因——`loadWindowHomeMenu` 的 inject 用 `controls.insertAdjacentHTML('afterbegin')` 固定插控制区最前；1.9.69 选项卡条（afterbegin）、1.9.72 溢出导航 prev（afterbegin）/next（bar afterend）注入后，前台按钮与 `.sidebar-toggle` 之间被隔开，且位置随调用时序漂移——openEntry 是 syncWindowTabsBar → loadWindowHomeMenu（前台跑到 prev 左侧最左），activateWindowEntry 是 loadWindowHomeMenu → syncWindowTabsBar（前台在 next 与 sidebarToggle 之间）。**教训：同一容器多路动态注入禁止用固定方位（afterbegin/beforeend），必须锚定兄弟元素插入**。修复：`anchor = controls.querySelector('.sidebar-toggle')`，`anchor.insertAdjacentHTML('beforebegin', windowHomeMenuMarkup(leaves))`，anchor 缺失回退 afterbegin。测试：补锚点两条断言；110 测试 1018 断言通过。文档同步：版本记录更新 |
+| 1.9.74 | 2026-10-01 | CmsPro | **修复溢出导航箭头偏上（用户反馈截图：< > 按钮高于选项卡条中线）**：根因——`.window-controls` 是默认 stretch 的 flex 容器：`.window-tabs` 无固定高参与拉伸、内部 `align-items: center` 使选项卡垂直居中；而 `.window-tabs-nav` 固定 `height: 28px` 不参与 stretch，默认停在交叉轴起点（顶部）偏上。修复：`.window-tabs-nav` 补 `align-self: center`（居中对齐，语义化方案，优于硬编码 margin-top 下移）；110 测试 1016 断言通过。文档同步：版本记录更新 |
+| 1.9.73 | 2026-10-01 | CmsPro | **品牌区副标题跟随当前菜单（用户需求：window-brand 中的 small「控制面板」随菜单切换变化）**：1.9.71 为满足「应用名固定」把品牌区整块固化（strong 与内嵌 small 都不变），本次拆分——主标题应用名仍固定，新增 `syncWindowTabSubtitle(windowState, title)`：`strong.querySelector('small')` 后仅改 `textContent`（安全转义、不重写主标题 DOM）。四处调用：switchWindowTab（`tab.title`，makeWindowTab 已存菜单名）、closeWindowTab 相邻切换（`next.title`）、closeWindowTab 全部关闭（传 `''` 清空副标题，品牌区仅留应用名）、activateWindowEntry tabs 分支（`existing.title`，新开/复用路径统一）。单页模式不变（既有整块重写逻辑中 strong=identity.title 本就固定、small=entry.title 本就跟随）。测试：补 `function syncWindowTabSubtitle` 与 `substr_count` 5（4 调用 + 1 定义行同模式匹配）断言；110 测试 1016 断言通过。文档同步：版本记录更新 |
+| 1.9.71 | 2026-10-01 | CmsPro | **修复品牌区应用名随菜单变化（用户反馈：window-brand 应用名称固定）**：根因——1.9.68 的 `syncWindowTabBrand()` 在 switchWindowTab/closeWindowTab/activateWindowEntry tabs 分支三处把 tab.title（菜单名）写入 `.window-brand strong`。修复：删除该函数与三处调用，品牌区仅窗口创建时渲染一次（strong=windowIdentity().title 应用名、small=入口名副标题），当前菜单名由选项卡条高亮展示；单页模式品牌重写行为不变（其 strong 本就是应用名）。测试：补 `assertStringNotContainsString('syncWindowTabBrand')` 防回归；110 测试 1009 断言通过。文档同步：版本记录更新 |
+| 1.9.70 | 2026-10-01 | CmsPro | **修复按钮不贴右 + 关闭按钮报错（用户反馈两点）**：① 选项卡模式下收起左侧菜单/最小化/最大化/关闭按钮未贴最右——1.9.69 只取消了 `margin-left: auto`，但控制区作为 titlebar 的 flex 子项宽度仍是内容宽（auto），内部 `.window-tabs` 的 flex:1 没有剩余空间可分配，tabs 不撑开；修复：`.app-window.has-window-tabs .window-controls` 补 `flex: 1` 占满品牌区之后的剩余空间，tabs 从左侧撑满、窗口按钮始终贴最右。② 点击窗口关闭报 `Uncaught TypeError: closeWindow is not a function`——**var 声明提升遮蔽陷阱**：选项卡事件委托中 `var closeWindow = tabButton.closest('[data-window-key]')`（tab 关闭分支的宿主窗口局部变量）在同一 document click 函数作用域内提升并遮蔽了同名全局函数 `closeWindow`，导致窗口关闭分支 `closeWindow(key)` 调用的是 undefined 局部变量；`var switchWindow` 同理有潜在风险（幸无同名函数）。修复：局部变量统一重命名 `tabHostWindow`（两分支互斥共用），并加注释警示「局部变量不得命名为 closeWindow/switchWindowTab 等，var 提升会遮蔽同名全局函数」。测试：test_window_tabs_preference_and_titlebar_tab_bar 补 `assertStringNotContainsString('var closeWindow =')` 防回归；110 测试 1008 断言通过。文档同步：版本记录更新 |
+| 1.9.69 | 2026-10-01 | CmsPro | **修复多选项卡条贴右侧（用户反馈：选项卡应从左侧开始）**：根因——`.window-controls { margin-left: auto }` 把整个控制区（含首位的选项卡条）推到标题栏右端。修复：① `syncWindowTabsBar` 维护窗口根元素标记类——有选项卡 `classList.add('has-window-tabs')`、全部关闭移除；② CSS 新增 `.app-window.has-window-tabs .window-controls { margin-left: 0 }` 取消右推，`.window-tabs` flex:1 从标题栏左侧撑满、minimize/maximize/close 按钮自然靠右；③ 全部选项卡关闭后移除类恢复按钮贴右原状（无选项卡窗口不受影响）。测试：test_window_tabs_preference_and_titlebar_tab_bar 补 classList.add/remove('has-window-tabs') 与 `.app-window.has-window-tabs .window-controls` CSS 断言；110 测试 1006 断言通过。文档同步：版本记录更新 |
+| 1.9.68 | 2026-10-01 | CmsPro | **应用窗口多选项卡（用户需求：OS 设置开关，默认关闭；类似传统后台 admin.blade.php 的多选项卡）**：① 偏好 `window_tabs` 三层同步（1.9.67 教训落地）——WorkspaceService `DEFAULT_PREFERENCES` 加 `'window_tabs' => false`、`sanitizePreferences` 加 `(bool)` 校验、WebosController::updateWorkspace 验证规则加 `'preferences.window_tabs' => ['sometimes', 'boolean']`；前端 normalizePreferences 同步默认值。② OS 设置 systemSectionMarkup 新增开关卡（settings-card + fa-clone + data-toggle-webos-setting="window_tabs"，走既有 toggleWebosSetting 开关链路）。③ webos.js 核心实现（插在 loadComponentPage 之后）：`windowTabSeq`/`makeWindowTab()`（tab 记录 id/title/path/openType——**窗口内存态不持久化**，关闭窗口即消失）、`windowTabsEnabled()`、`windowActiveTab()`（无激活回退最后一个）、`syncWindowTabsBar()`（选项卡条注入 `.window-controls` afterbegin，收起左侧菜单按钮左侧）、`syncWindowTabBrand()`（window-brand strong 显示当前 tab 标题、small 保持应用身份副标题）、`switchWindowTab()`（复用既有容器不重载）、`closeWindowTab()`（移除 .window-page 容器，激活页关闭后 `Math.min(index, length-1)` 相邻优先切换，全部关闭 emptyState 引导）。④ `renderWindowPage` 双模式：tabs 分支在前——每 tab 独立 `.window-page` 容器 + `dataset.pageToken` 加载令牌（`'_component:'+path` / `'_iframe:'+path`），首次创建后切换仅 `node.hidden = node.dataset.windowPage !== tab.id` 改显隐，**页面状态保留**（表单输入/滚动位置/iframe 不重载），末尾 `syncWindowShields()` 补挂 iframe 遮罩；单页现状逻辑保留在后。⑤ 接入点：openEntry 窗口创建（`windowTabsEnabled() && windowElement.querySelector('[data-window-page-host]')` 判定启用——**排除应用中心/OS 设置/通知中心等无 page-host 的特殊窗口**；windowState 初始 `tabs: null, activeTabId: ''`）、activateWindowEntry tabs 分支（同路径 `tab.path === entry.path` 复用既有选项卡否则 makeWindowTab 新开，rerenderWindowNav 重绘左侧菜单高亮 + loadWindowHomeMenu 同步前台菜单）、事件委托（先 `closest('[data-window-tab-close]')` 后 `closest('[data-window-tab]')`——关闭叉嵌套在 tab 按钮内必须先判内层，再 `closest('[data-window-key]')` 定位窗口）。⑥ CSS：`.window-tabs`（flex:1 min-width:0 overflow-x auto + 滚动条隐藏）、`.window-tab`（inline-flex max-width 168px，span ellipsis 截断，is-active #087f75 底白字）、`.window-tab-close`（opacity .55 hover 加深）、`.window-page`（100% 尺寸）+ **`.window-page[hidden] { display: none }`**（复用 1.9.59 hidden 教训：显式声明防容器 display 规则覆盖）、`.window-controls` 加 min-width:0（flex 子项防溢出）。测试：新增 test_window_tabs_preference_and_titlebar_tab_bar（偏好三层+开关卡+核心函数+双容器/hidden 切换/关闭叉/CSS 断言）+ test_workspace_api_persists_window_tabs_preference（HTTP PUT true → 再读 true）；110 测试 1003 断言通过。附带修正：test_window_home_menu_dropdown_injected_when_app_has_home_menus 的旧挂载点断言 `loadWindowHomeMenu(state.windows.get(key));` 随 openEntry 改造（windowState 局部变量）失效，更新为 `loadWindowHomeMenu(windowState);`（三处挂载点统一形式）。文档同步：版本记录更新 |
 | 1.9.67 | 2026-10-01 | CmsPro | **修复右键「查看」勾选不跟随选择（用户反馈）**：排查链路——前端切档分支（state 更新+saveWorkspace）、点击委托（closest data-desktop-action 分发）、服务端 sanitizePreferences（Arr::only 白名单+枚举校验）均正确；实锤根因在 WebosController::updateWorkspace 的 Laravel 验证规则未声明 `preferences.icon_size`——`$validated` 只保留有规则声明的键，该键在控制器层被丢弃，saveForAdmin 的 incoming 白名单取不到 → 存量 medium 入库 → 前端 saveWorkspace 响应整体覆盖 state（state.workspace = workspace）→ desktopIconSize() 回退中档 → 勾选错误。修复：验证规则补充 `'preferences.icon_size' => ['sometimes', 'in:small,medium,large']`（1.9.65 遗漏：只补了 WorkspaceService 与 DEFAULT_PREFERENCES，漏了控制器规则层）。教训：**新增偏好字段需同步三层——DEFAULT_PREFERENCES、sanitizePreferences、updateWorkspace 验证规则（缺一即被 $validated 丢弃）**。测试：新增 test_workspace_api_persists_icon_size_preference（HTTP PUT icon_size=large 持久化断言 + getJson 再读验证 + 非法值 giant 返回 40201）；108 测试 978 断言通过。文档同步：版本记录更新 |
 | 1.9.66 | 2026-10-01 | CmsPro | **版权信息与动态版本标题（用户需求：对齐框架后台页脚文案）**：① WebosController 新增 `manifestVersion()`（读 app/Apps/CmsproWebos/manifest.json 的 version 字段），index() 视图数据新增 `cmsproVersion => system_version()`（框架动态版本函数，与 admin.blade.php 页脚同源）与 `webosVersion => manifestVersion()`；② Views/Admin/desktop/index.blade.php：`<title>` 改为 `CMSPRO v{{ $cmsproVersion }} · WebOS v{{ $webosVersion }}`（动态双版本）；开始菜单 start-system-actions 中锁定与退出登录之间插入 `<span class="start-copyright">`（CMSPRO/www.cmspro.cn + v{系统版本} + © 2015-{{ date('Y') }} 动态年份 + Holley/www.renhuali.cn，与 layouts/admin.blade.php#L203-204 完全一致，保留链接与 target=_blank + rel=noopener）；③ webos.css 新增 `.start-copyright`（flex:1 居中、12px 灰色、nowrap+ellipsis 防溢出、链接 hover 主题色）；④ 测试：test_admin_can_open_webos_desktop 改为真实渲染断言——标题正则 `CMSPRO v\d+\.\d+\.\d+ · WebOS v\d+\.\d+\.\d+`、版权年份 `© 2015-{date('Y')}`；107 测试 971 断言通过。文档同步：版本记录更新 |
 | 1.9.65 | 2026-10-01 | CmsPro | **桌面右键「查看」子菜单（大/中/小图标，默认中档；用户需求）**：① webos.js 顶部新增 `DESKTOP_ICON_SIZES` 三档格子常量（large 128x130/iconW 112、medium 102x104/88、small 86x88/72——中档与历史布局完全一致保证「默认中图标（当前）」）与 `desktopIconSize()`（非法值回退中档）；② renderDesktop 布局定位与拖拽（move 边界/end 落点）换算改为按档位，`root.dataset.iconSize` 同步到根节点驱动 CSS 视觉覆盖（`.webos-desktop[data-icon-size=…]` 三档 badge/按钮盒/label 字号）；③ `menuMarkupInto` 扩展 item[4] 子菜单支持：每项包 `.desktop-context-group`、父项 `has-children`（FontAwesome 尾箭头 ::after）、子菜单 `.desktop-context-submenu` hover 父项或自身均保持展开、当前档位 `is-checked` + fa-check；④ openDesktopBlankContextMenu 新增「查看」（fa-th-large）+ 三档子项（勾选态动态计算）；runDesktopContextAction 新增 icon-large/medium/small 分支（更新 preferences.icon_size → saveWorkspace(false) → renderDesktop 重排）；⑤ 后端 WorkspaceService：DEFAULT_PREFERENCES 加 icon_size=medium，sanitizePreferences 枚举校验（Arr::only 白名单过滤所需）。测试：新增 test_desktop_view_submenu_switches_icon_size（常量/两处换算/dataset/子菜单 markup/切档动作/CSS/偏好默认/后端白名单断言）；107 测试 969 断言通过。文档同步：版本记录更新 |
