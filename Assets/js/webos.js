@@ -3573,7 +3573,8 @@
         if (!apps || !apps.length) {
             return emptyState(mode === 'updates' ? 'fa-check-circle' : 'fa-cubes', mode === 'updates' ? '当前应用均为最新版本' : '暂无应用数据');
         }
-        return '<div class="app-grid">' + appCardsMarkup(apps, mode) + '</div>';
+        // 未安装（local，含市场远程不可用时的降级列表）与市场分类一致用 3 列；全部/更新保持 2 列
+        return '<div class="app-grid' + (mode === 'local' ? ' market-app-grid' : '') + '">' + appCardsMarkup(apps, mode) + '</div>';
     }
 
     /** 应用卡片 HTML（market/local/updates 共用），供整列渲染与市场滚动追加复用 */
