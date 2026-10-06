@@ -3151,6 +3151,43 @@
         }
     }
 
+    /** 「不可错过的应用」换一批：带 refresh=1 跳过代理缓存重新拉取随机数据，仅更新该区块 */
+    function refreshMarketHomeRandom(refreshBtn) {
+        if (refreshBtn.disabled) {
+            return;
+        }
+        var key = refreshBtn.dataset.homeRefresh;
+        var section = marketHomeSections[key];
+        if (!section) {
+            return;
+        }
+        refreshBtn.disabled = true;
+        var icon = refreshBtn.querySelector('i');
+        if (icon) {
+            icon.classList.add('fa-spin');
+        }
+        api('/api/admin/market/home?refresh=1').then(function (payload) {
+            var data = payload || {};
+            var random = Array.isArray(data.random) ? data.random : [];
+            cacheMarketApps(random);
+            section.apps = random;
+            section.page = 0;
+            var scope = refreshBtn.closest('.market-home-section');
+            var body = scope ? scope.querySelector('[data-home-body]') : null;
+            if (body) {
+                body.innerHTML = marketHomePageApps(key).map(marketHomeCardMarkup).join('');
+            }
+        }).catch(function (error) {
+            toast('刷新失败：' + (error.message || '网络异常'), 'error');
+        }).then(function () {
+            refreshBtn.disabled = false;
+            var spinning = refreshBtn.querySelector('i');
+            if (spinning) {
+                spinning.classList.remove('fa-spin');
+            }
+        });
+    }
+
     /** 首页视图：随机推荐/推荐应用/推荐位竖列/辅助推荐，数据来自市场 home 接口 */
     function renderMarketHome(content, status, body) {
         cancelMarketRequest();
@@ -3175,7 +3212,7 @@
 
             // 区块分页状态：应用数超过每页数量时标题右侧显示 < > 翻页（重新进入首页时重建）
             marketHomeSections = {
-                random: { type: 'grid', apps: random, pageSize: 12, page: 0 },
+                random: { type: 'grid', apps: random, pageSize: 12, page: 0, refreshable: true },
                 featured: { type: 'grid', apps: featured, pageSize: 12, page: 0 }
             };
             auxPositions.forEach(function (position) {
@@ -3218,20 +3255,27 @@
         return section.apps.slice(section.page * section.pageSize, (section.page + 1) * section.pageSize);
     }
 
-    /** 区块标题行：标题 + （超过一页时）右侧 < > 翻页按钮 */
+    /** 区块标题行：标题 + 右侧工具区（超过一页时 < > 翻页；refreshable 区块附刷新按钮） */
     function marketHomeTitleRow(key, title) {
         var section = marketHomeSections[key];
         var maxPage = Math.ceil(section.apps.length / section.pageSize) - 1;
-        var pager = '';
+        var tools = '';
         if (maxPage > 0) {
-            pager = '<span class="market-home-pager">'
+            tools += '<span class="market-home-pager">'
                 + '<button type="button" class="market-home-pager-btn" data-home-pager="prev" data-home-key="' + escapeHtml(key) + '"'
                 + (section.page === 0 ? ' disabled' : '') + '><i class="fa fa-angle-left"></i></button>'
                 + '<button type="button" class="market-home-pager-btn" data-home-pager="next" data-home-key="' + escapeHtml(key) + '"'
                 + (section.page >= maxPage ? ' disabled' : '') + '><i class="fa fa-angle-right"></i></button>'
                 + '</span>';
         }
-        return '<div class="market-home-title-row"><h3 class="market-home-title">' + escapeHtml(title) + '</h3>' + pager + '</div>';
+        if (section.refreshable) {
+            tools += '<button type="button" class="market-home-pager-btn" data-home-refresh="' + escapeHtml(key) + '" title="换一批"><i class="fa fa-refresh"></i></button>';
+        }
+        if (!tools) {
+            return '<div class="market-home-title-row"><h3 class="market-home-title">' + escapeHtml(title) + '</h3></div>';
+        }
+        return '<div class="market-home-title-row"><h3 class="market-home-title">' + escapeHtml(title) + '</h3>'
+            + '<span class="market-home-title-tools">' + tools + '</span></div>';
     }
 
     /** 首页横排网格区块：每行6个，图标+名称（超过一页时标题行带翻页按钮） */
@@ -8551,6 +8595,12 @@
             var homePager = event.target.closest('[data-home-pager]');
             if (homePager && !homePager.disabled) {
                 switchMarketHomePage(homePager, homePager.dataset.homePager === 'next' ? 1 : -1);
+            }
+
+            // 「不可错过的应用」换一批：重新拉取随机数据
+            var homeRefresh = event.target.closest('[data-home-refresh]');
+            if (homeRefresh) {
+                refreshMarketHomeRandom(homeRefresh);
             }
 
             // 市场卡片整卡可点击进入详情，卡内的安装/更新按钮与链接保持自身行为
