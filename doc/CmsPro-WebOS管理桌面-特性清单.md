@@ -1,7 +1,7 @@
 # CmsPro WebOS 管理桌面 · 特性清单
 
-> 文档版本：2.0.5 | 更新日期：2026-10-06
-> 应用版本：2.0.5 | 应用 ID：`cmspro.webos`
+> 文档版本：2.0.6 | 更新日期：2026-10-06
+> 应用版本：2.0.6 | 应用 ID：`cmspro.webos`
 
 ## 一、应用定位
 
@@ -118,6 +118,7 @@ CmsproWebos/
 
 | 版本 | 日期 | 说明 |
 |---|---|---|
+| 2.0.6 | 2026-10-06 | 市场首页区块随机展示（用户需求：推荐应用/装机必备/官方精选/运营推荐/辅助推荐从获取的数据列表中随机显示而非固定）：新增 shuffleArray（Fisher-Yates，返回新数组不改原数组），renderMarketHome 构建分页状态时对 featured 与各推荐位（含 aux）的 apps 打乱后再切片展示——每次进入首页顺序不同，翻页浏览的是打乱后的稳定序列；「不可错过的应用」random 由服务端 inRandomOrder 随机，前端不再处理；cacheMarketApps 仍在打乱前以原始数据写详情缓存（按 app_id 存取，与顺序无关）。 |
 | 2.0.5 | 2026-10-06 | 应用市场分类 Tab 应用列表由 2 列改为 3 列（用户需求）：renderMarketCategoryView 的网格容器追加专属类 `market-app-grid`（webos.js L3110），CSS 以 `.market-app-grid { grid-template-columns: repeat(3, minmax(0,1fr)) }` 覆盖 `.app-grid` 的 2 列——应用中心「全部/更新」视图共用的 `.app-grid` 保持 2 列不受影响。 |
 | 2.0.4 | 2026-10-06 | 市场首页「不可错过的应用」换一批（用户需求）：① 标题行右侧工具区（`.market-home-title-tools`）新增刷新按钮（fa-refresh，复用翻页按钮样式），点击调 `GET /api/admin/market/home?refresh=1` 重新拉取随机数据；② 框架代理支持 refresh 参数——AppMarketService::getHome(bool $refresh) 为 true 时跳过 60 秒缓存直接请求市场服务端（拆出 fetchHome()），AppController::marketHome 透传 `Request::boolean('refresh')`；③ 请求期间按钮禁用 + fa-spin 旋转，成功后仅重渲染该区块（section.apps 更新、页码归零、cacheMarketApps 写缓存），失败 toast 提示并恢复按钮。 |
 | 2.0.3 | 2026-10-06 | 市场首页区块翻页（用户需求：区块应用数超过当前显示数量时标题右侧显示 < > 切换）：① renderMarketHome 构建区块分页状态 marketHomeSections（key → type/apps/pageSize/page），推荐应用与辅助推荐每页 12 个（网格 2 行）、推荐位列每列每页 5 个，「不可错过的应用」接口固定 12 个不足一页不显示翻页；② marketHomeTitleRow 统一渲染标题行（.market-home-title-row 两端布局），总页数 > 1 时输出 .market-home-pager 的 < > 按钮（fa-angle-left/right，边界 disabled）；③ 全局点击委托新增 [data-home-pager] 处理 → switchMarketHomePage（从按钮 closest('.market-home-column, .market-home-section') 就近定位区块防多窗口错位），仅重渲染该区块 [data-home-body] 内容并同步按钮可用态；④ 配合 Appstore 侧 home 接口 featured 由 12 增至 24（前端两页数据源）。 |

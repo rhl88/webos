@@ -3119,6 +3119,18 @@
         });
     }
 
+    /** Fisher-Yates 随机打乱（返回新数组，不修改原数组） */
+    function shuffleArray(list) {
+        var arr = (list || []).slice();
+        for (var i = arr.length - 1; i > 0; i--) {
+            var j = Math.floor(Math.random() * (i + 1));
+            var tmp = arr[i];
+            arr[i] = arr[j];
+            arr[j] = tmp;
+        }
+        return arr;
+    }
+
     /** 首页区块翻页：dir=1 下一页 / -1 上一页，仅重渲染该区块内容区并同步按钮可用态 */
     function switchMarketHomePage(pagerBtn, dir) {
         var key = pagerBtn.dataset.homeKey;
@@ -3211,15 +3223,16 @@
             });
 
             // 区块分页状态：应用数超过每页数量时标题右侧显示 < > 翻页（重新进入首页时重建）
+            // 推荐应用与推荐位区块从接口返回列表中随机展示（Fisher-Yates），每次进入首页顺序不同；打乱一次后翻页顺序保持稳定
             marketHomeSections = {
                 random: { type: 'grid', apps: random, pageSize: 12, page: 0, refreshable: true },
-                featured: { type: 'grid', apps: featured, pageSize: 12, page: 0 }
+                featured: { type: 'grid', apps: shuffleArray(featured), pageSize: 12, page: 0 }
             };
             auxPositions.forEach(function (position) {
-                marketHomeSections['aux-' + position.code] = { type: 'grid', apps: position.apps || [], pageSize: 12, page: 0 };
+                marketHomeSections['aux-' + position.code] = { type: 'grid', apps: shuffleArray(position.apps || []), pageSize: 12, page: 0 };
             });
             columnPositions.forEach(function (position) {
-                marketHomeSections['pos-' + position.code] = { type: 'list', apps: position.apps || [], pageSize: 5, page: 0 };
+                marketHomeSections['pos-' + position.code] = { type: 'list', apps: shuffleArray(position.apps || []), pageSize: 5, page: 0 };
             });
 
             var html = '<div class="market-home">'
