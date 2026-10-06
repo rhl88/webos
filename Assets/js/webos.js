@@ -3143,7 +3143,7 @@
 
             var html = '<div class="market-home">'
                 + marketHomeGridSection('不可错过的应用', random)
-                + marketHomeGridSection('官方精选', featured)
+                + marketHomeGridSection('推荐应用', featured)
                 + marketHomeColumnsSection(columnPositions)
                 + auxPositions.map(function (position) {
                     return marketHomeGridSection(position.name, (position.apps || []).slice(0, 12));
