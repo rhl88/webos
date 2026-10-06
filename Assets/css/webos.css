@@ -3129,6 +3129,12 @@ textarea:focus-visible,
     gap: 2px;
 }
 
+/* .fa 的 display: inline-block 会覆盖 [hidden] 的 UA 样式，与其他图标容器一致显式修复 */
+.market-home-icon [hidden],
+.market-home-list-icon [hidden] {
+    display: none !important;
+}
+
 .market-home-list-info strong {
     font-size: 13px;
     font-weight: 500;
