@@ -1,7 +1,7 @@
 # CmsPro WebOS 管理桌面 · 特性清单
 
-> 文档版本：2.0.4 | 更新日期：2026-10-06
-> 应用版本：2.0.4 | 应用 ID：`cmspro.webos`
+> 文档版本：2.0.5 | 更新日期：2026-10-06
+> 应用版本：2.0.5 | 应用 ID：`cmspro.webos`
 
 ## 一、应用定位
 
@@ -118,6 +118,7 @@ CmsproWebos/
 
 | 版本 | 日期 | 说明 |
 |---|---|---|
+| 2.0.5 | 2026-10-06 | 应用市场分类 Tab 应用列表由 2 列改为 3 列（用户需求）：renderMarketCategoryView 的网格容器追加专属类 `market-app-grid`（webos.js L3110），CSS 以 `.market-app-grid { grid-template-columns: repeat(3, minmax(0,1fr)) }` 覆盖 `.app-grid` 的 2 列——应用中心「全部/更新」视图共用的 `.app-grid` 保持 2 列不受影响。 |
 | 2.0.4 | 2026-10-06 | 市场首页「不可错过的应用」换一批（用户需求）：① 标题行右侧工具区（`.market-home-title-tools`）新增刷新按钮（fa-refresh，复用翻页按钮样式），点击调 `GET /api/admin/market/home?refresh=1` 重新拉取随机数据；② 框架代理支持 refresh 参数——AppMarketService::getHome(bool $refresh) 为 true 时跳过 60 秒缓存直接请求市场服务端（拆出 fetchHome()），AppController::marketHome 透传 `Request::boolean('refresh')`；③ 请求期间按钮禁用 + fa-spin 旋转，成功后仅重渲染该区块（section.apps 更新、页码归零、cacheMarketApps 写缓存），失败 toast 提示并恢复按钮。 |
 | 2.0.3 | 2026-10-06 | 市场首页区块翻页（用户需求：区块应用数超过当前显示数量时标题右侧显示 < > 切换）：① renderMarketHome 构建区块分页状态 marketHomeSections（key → type/apps/pageSize/page），推荐应用与辅助推荐每页 12 个（网格 2 行）、推荐位列每列每页 5 个，「不可错过的应用」接口固定 12 个不足一页不显示翻页；② marketHomeTitleRow 统一渲染标题行（.market-home-title-row 两端布局），总页数 > 1 时输出 .market-home-pager 的 < > 按钮（fa-angle-left/right，边界 disabled）；③ 全局点击委托新增 [data-home-pager] 处理 → switchMarketHomePage（从按钮 closest('.market-home-column, .market-home-section') 就近定位区块防多窗口错位），仅重渲染该区块 [data-home-body] 内容并同步按钮可用态；④ 配合 Appstore 侧 home 接口 featured 由 12 增至 24（前端两页数据源）。 |
 | 2.0.2 | 2026-10-06 | 应用市场新增「首页」子 Tab（用户需求，配合 Appstore v2.1.0 推荐位功能）：① 应用中心市场区顶部渲染「首页 / 分类」子 Tab（`MARKET_SUB_TABS` + `switchMarketSubTab`，state.marketSubTab 默认 home，`data-market-sub-tab` 全局点击委托）；② 首页调 `GET /api/admin/market/home`（框架新代理，远程市场 `GET /api/market/home`）渲染四大区块——「不可错过的应用」随机 2 行网格（每行 6 个，图标+名称）、「官方精选」精选优先按下载量补全 2 行、「装机必备/官方精选/运营推荐」推荐位列表区（每列 5 个，图标+名称+两行描述）、底部「辅助推荐」网格（推荐位 aux，2 行）；③ 卡片复用 `data-market-detail` 全局委托打开详情 + `cacheMarketApps` 写入 state.marketApps 缓存；④ 分类子 Tab 保留原分类浏览主体（抽取 `renderMarketCategoryView`），市场搜索时自动切到分类 Tab；⑤ CSS 新增 `.market-sub-tabs`/`.market-home` 系列样式（网格 repeat(6,1fr)、列区 repeat(3,1fr)）。 |

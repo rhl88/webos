@@ -3107,7 +3107,7 @@
     function renderMarketCategoryView(content, status, body) {
         resetMarketPager('', '');
         body.innerHTML = '<nav class="market-tabs" data-market-tabs hidden></nav>'
-            + '<div class="app-grid" data-market-grid></div>'
+            + '<div class="app-grid market-app-grid" data-market-grid></div>'
             + '<div class="market-sentinel" data-market-sentinel><i class="fa fa-circle-o-notch fa-spin"></i>正在读取应用市场…</div>';
         bindMarketScroll(content, status);
         api('/api/admin/market/categories').then(function (payload) {

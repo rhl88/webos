@@ -3609,6 +3609,11 @@ textarea:focus-visible,
     gap: 14px;
 }
 
+/* 应用市场分类 Tab：3 列展示 */
+.market-app-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
 .app-card {
     position: relative;
     display: flex;
