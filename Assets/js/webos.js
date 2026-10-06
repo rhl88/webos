@@ -3644,7 +3644,7 @@
     function marketDetailHeaderMarkup(app, market) {
         var links = [];
         if (app.forum_url) {
-            links.push('<a href="' + escapeHtml(app.forum_url) + '" target="_blank" rel="noopener noreferrer">应用文档</a>');
+            links.push('<a href="' + escapeHtml(app.forum_url) + '" target="_blank" rel="noopener noreferrer">论坛讨论</a>');
         }
         if (app.author) {
             links.push('作者 ' + (app.author_url
@@ -3950,7 +3950,7 @@
         var id = escapeHtml(app.app_id || '');
         var links = [];
         if (app.forum_url) {
-            links.push('<a href="' + escapeHtml(app.forum_url) + '" target="_blank" rel="noopener noreferrer">应用文档</a>');
+            links.push('<a href="' + escapeHtml(app.forum_url) + '" target="_blank" rel="noopener noreferrer">论坛讨论</a>');
         }
         if (app.author) {
             links.push('作者 ' + escapeHtml(app.author));
