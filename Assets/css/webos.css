@@ -3004,10 +3004,51 @@ textarea:focus-visible,
 }
 
 .market-home-title {
-    margin: 0 0 10px;
+    margin: 0;
     font-size: 15px;
     font-weight: 600;
     color: var(--webos-text);
+}
+
+/* 区块标题行：标题 + 右侧翻页按钮（超过一页时渲染） */
+.market-home-title-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    margin: 0 0 10px;
+}
+
+.market-home-pager {
+    display: inline-flex;
+    gap: 4px;
+    flex: 0 0 auto;
+}
+
+.market-home-pager-btn {
+    width: 22px;
+    height: 22px;
+    padding: 0;
+    border: 1px solid var(--webos-line);
+    border-radius: 4px;
+    background: #fff;
+    color: var(--webos-text);
+    font-size: 13px;
+    line-height: 1;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+}
+
+.market-home-pager-btn:hover:not(:disabled) {
+    border-color: var(--webos-primary);
+    color: var(--webos-primary);
+}
+
+.market-home-pager-btn:disabled {
+    opacity: .35;
+    cursor: default;
 }
 
 /* 横排网格区块：每行6个，图标+名称 */

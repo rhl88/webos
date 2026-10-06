@@ -1,7 +1,7 @@
 # CmsPro WebOS 管理桌面 · 特性清单
 
-> 文档版本：2.0.2 | 更新日期：2026-10-06
-> 应用版本：2.0.2 | 应用 ID：`cmspro.webos`
+> 文档版本：2.0.3 | 更新日期：2026-10-06
+> 应用版本：2.0.3 | 应用 ID：`cmspro.webos`
 
 ## 一、应用定位
 
@@ -118,6 +118,7 @@ CmsproWebos/
 
 | 版本 | 日期 | 说明 |
 |---|---|---|
+| 2.0.3 | 2026-10-06 | 市场首页区块翻页（用户需求：区块应用数超过当前显示数量时标题右侧显示 < > 切换）：① renderMarketHome 构建区块分页状态 marketHomeSections（key → type/apps/pageSize/page），推荐应用与辅助推荐每页 12 个（网格 2 行）、推荐位列每列每页 5 个，「不可错过的应用」接口固定 12 个不足一页不显示翻页；② marketHomeTitleRow 统一渲染标题行（.market-home-title-row 两端布局），总页数 > 1 时输出 .market-home-pager 的 < > 按钮（fa-angle-left/right，边界 disabled）；③ 全局点击委托新增 [data-home-pager] 处理 → switchMarketHomePage（从按钮 closest('.market-home-column, .market-home-section') 就近定位区块防多窗口错位），仅重渲染该区块 [data-home-body] 内容并同步按钮可用态；④ 配合 Appstore 侧 home 接口 featured 由 12 增至 24（前端两页数据源）。 |
 | 2.0.2 | 2026-10-06 | 应用市场新增「首页」子 Tab（用户需求，配合 Appstore v2.1.0 推荐位功能）：① 应用中心市场区顶部渲染「首页 / 分类」子 Tab（`MARKET_SUB_TABS` + `switchMarketSubTab`，state.marketSubTab 默认 home，`data-market-sub-tab` 全局点击委托）；② 首页调 `GET /api/admin/market/home`（框架新代理，远程市场 `GET /api/market/home`）渲染四大区块——「不可错过的应用」随机 2 行网格（每行 6 个，图标+名称）、「官方精选」精选优先按下载量补全 2 行、「装机必备/官方精选/运营推荐」推荐位列表区（每列 5 个，图标+名称+两行描述）、底部「辅助推荐」网格（推荐位 aux，2 行）；③ 卡片复用 `data-market-detail` 全局委托打开详情 + `cacheMarketApps` 写入 state.marketApps 缓存；④ 分类子 Tab 保留原分类浏览主体（抽取 `renderMarketCategoryView`），市场搜索时自动切到分类 Tab；⑤ CSS 新增 `.market-sub-tabs`/`.market-home` 系列样式（网格 repeat(6,1fr)、列区 repeat(3,1fr)）。 |
 | 2.0.1 | 2026-10-05 | 账号菜单新增「清除缓存」（用户需求：修改密码下方增加，点击触发 /api/admin/cache/clear）：index.blade.php 账号菜单「修改密码」下新增按钮（fa-eraser 图标）；点击分发新增 clear-cache 分支——复用系统后台缓存清理接口（GET /api/admin/cache/clear，ConfigController::clearCache），成功 toast「缓存已清除」，失败展示错误信息。115 测试 1118 断言通过。 |
 | 2.0.0 | 2026-10-05 | ① 账号菜单新增「清除缓存」（修改密码下方，点击触发 /api/admin/cache/clear）。② 系统菜单新增拖拽应用换顶级分类（超管专属）：开始菜单应用卡片可拖拽（draggable），移动语义为**整个应用（含应用文件夹节点）整体移动**——flattenMenus 为叶子输出所属应用文件夹节点 id（app_node_id），卡片收集优先收节点 id（服务端只改父节点、子树随行），直接挂在分类下的散叶子补自身 id；拖到左侧分类按钮高亮松手后调 PUT /api/admin/menus/move（MenuService::batchMove，服务端已防环形引用），成功后 refreshCatalog 重绘菜单（loadCatalog GET 附时间戳破坏 HTTP 缓存，确保拿到实时分组数据）；「常用」虚拟分组不可作为目标，搜索结果不启用拖拽。③ 修复线上 all-todos 接口 500（应用内子类 + 旧版框架降级兜底）。④ 标题栏刷新按钮支持特殊窗口（用户反馈：非应用窗口点击刷新无响应）：无选项卡的应用中心/OS 设置/通知中心/官网动态窗口点刷新——清页面令牌强制重建整页并重新执行各自数据渲染（页面令牌相同会被 renderWindowPage 跳过，是此前静默无响应的根因）。115 测试 1133 断言通过。 |

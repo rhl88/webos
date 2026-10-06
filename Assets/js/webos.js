@@ -3119,7 +3119,39 @@
         });
     }
 
-    /** 首页视图：随机推荐/官方精选/推荐位竖列/辅助推荐，数据来自市场 home 接口 */
+    /** 首页区块翻页：dir=1 下一页 / -1 上一页，仅重渲染该区块内容区并同步按钮可用态 */
+    function switchMarketHomePage(pagerBtn, dir) {
+        var key = pagerBtn.dataset.homeKey;
+        var section = marketHomeSections[key];
+        if (!section) {
+            return;
+        }
+        var maxPage = Math.ceil(section.apps.length / section.pageSize) - 1;
+        var page = section.page + dir;
+        if (page < 0 || page > maxPage) {
+            return;
+        }
+        section.page = page;
+        // 从点击按钮就近定位所属区块，避免多窗口时命中其他窗口的区块
+        var scope = pagerBtn.closest('.market-home-column, .market-home-section');
+        var body = scope ? scope.querySelector('[data-home-body]') : null;
+        if (!body) {
+            return;
+        }
+        body.innerHTML = section.type === 'list'
+            ? marketHomePageApps(key).map(marketHomeListItemMarkup).join('')
+            : marketHomePageApps(key).map(marketHomeCardMarkup).join('');
+        var prevBtn = scope.querySelector('[data-home-pager="prev"]');
+        var nextBtn = scope.querySelector('[data-home-pager="next"]');
+        if (prevBtn) {
+            prevBtn.disabled = section.page === 0;
+        }
+        if (nextBtn) {
+            nextBtn.disabled = section.page >= maxPage;
+        }
+    }
+
+    /** 首页视图：随机推荐/推荐应用/推荐位竖列/辅助推荐，数据来自市场 home 接口 */
     function renderMarketHome(content, status, body) {
         cancelMarketRequest();
         body.innerHTML = '<div class="market-sentinel"><i class="fa fa-circle-o-notch fa-spin"></i>正在读取推荐内容…</div>';
@@ -3133,7 +3165,7 @@
                 cacheMarketApps(position.apps || []);
             });
 
-            // 推荐位拆分：常规推荐位竖列展示（前5个），辅助推荐(aux)横排网格
+            // 推荐位拆分：常规推荐位竖列展示（每列每页5个），辅助推荐(aux)横排网格（每页12个）
             var columnPositions = positions.filter(function (position) {
                 return position.code !== 'aux' && (position.apps || []).length;
             });
@@ -3141,12 +3173,24 @@
                 return position.code === 'aux' && (position.apps || []).length;
             });
 
+            // 区块分页状态：应用数超过每页数量时标题右侧显示 < > 翻页（重新进入首页时重建）
+            marketHomeSections = {
+                random: { type: 'grid', apps: random, pageSize: 12, page: 0 },
+                featured: { type: 'grid', apps: featured, pageSize: 12, page: 0 }
+            };
+            auxPositions.forEach(function (position) {
+                marketHomeSections['aux-' + position.code] = { type: 'grid', apps: position.apps || [], pageSize: 12, page: 0 };
+            });
+            columnPositions.forEach(function (position) {
+                marketHomeSections['pos-' + position.code] = { type: 'list', apps: position.apps || [], pageSize: 5, page: 0 };
+            });
+
             var html = '<div class="market-home">'
-                + marketHomeGridSection('不可错过的应用', random)
-                + marketHomeGridSection('推荐应用', featured)
+                + marketHomeGridSection('random', '不可错过的应用')
+                + marketHomeGridSection('featured', '推荐应用')
                 + marketHomeColumnsSection(columnPositions)
                 + auxPositions.map(function (position) {
-                    return marketHomeGridSection(position.name, (position.apps || []).slice(0, 12));
+                    return marketHomeGridSection('aux-' + position.code, position.name);
                 }).join('')
                 + '</div>';
             body.innerHTML = html;
@@ -3165,13 +3209,40 @@
         });
     }
 
-    /** 首页横排网格区块：每行6个，图标+名称 */
-    function marketHomeGridSection(title, apps) {
-        if (!apps || !apps.length) {
+    /** 首页区块分页状态：key -> { type, apps, pageSize, page }，renderMarketHome 每次重建 */
+    var marketHomeSections = {};
+
+    /** 当前页应用切片 */
+    function marketHomePageApps(key) {
+        var section = marketHomeSections[key];
+        return section.apps.slice(section.page * section.pageSize, (section.page + 1) * section.pageSize);
+    }
+
+    /** 区块标题行：标题 + （超过一页时）右侧 < > 翻页按钮 */
+    function marketHomeTitleRow(key, title) {
+        var section = marketHomeSections[key];
+        var maxPage = Math.ceil(section.apps.length / section.pageSize) - 1;
+        var pager = '';
+        if (maxPage > 0) {
+            pager = '<span class="market-home-pager">'
+                + '<button type="button" class="market-home-pager-btn" data-home-pager="prev" data-home-key="' + escapeHtml(key) + '"'
+                + (section.page === 0 ? ' disabled' : '') + '><i class="fa fa-angle-left"></i></button>'
+                + '<button type="button" class="market-home-pager-btn" data-home-pager="next" data-home-key="' + escapeHtml(key) + '"'
+                + (section.page >= maxPage ? ' disabled' : '') + '><i class="fa fa-angle-right"></i></button>'
+                + '</span>';
+        }
+        return '<div class="market-home-title-row"><h3 class="market-home-title">' + escapeHtml(title) + '</h3>' + pager + '</div>';
+    }
+
+    /** 首页横排网格区块：每行6个，图标+名称（超过一页时标题行带翻页按钮） */
+    function marketHomeGridSection(key, title) {
+        var section = marketHomeSections[key];
+        if (!section || !section.apps.length) {
             return '';
         }
-        return '<section class="market-home-section"><h3 class="market-home-title">' + escapeHtml(title) + '</h3>'
-            + '<div class="market-home-grid">' + apps.map(marketHomeCardMarkup).join('') + '</div></section>';
+        return '<section class="market-home-section">' + marketHomeTitleRow(key, title)
+            + '<div class="market-home-grid" data-home-body="' + escapeHtml(key) + '">'
+            + marketHomePageApps(key).map(marketHomeCardMarkup).join('') + '</div></section>';
     }
 
     /** 首页紧凑卡片：图标+名称，整卡点击进入市场详情 */
@@ -3183,14 +3254,16 @@
             + '<span class="market-home-name">' + escapeHtml(app.name || id) + '</span></article>';
     }
 
-    /** 首页推荐位竖列区块：每个推荐位一列，列表形式展示（最多5个） */
+    /** 首页推荐位竖列区块：每个推荐位一列，列表形式分页展示（每列每页5个） */
     function marketHomeColumnsSection(positions) {
         if (!positions || !positions.length) {
             return '';
         }
         return '<div class="market-home-columns">' + positions.map(function (position) {
-            return '<div class="market-home-column"><h3 class="market-home-title">' + escapeHtml(position.name || position.code) + '</h3>'
-                + '<div class="market-home-list">' + (position.apps || []).slice(0, 5).map(marketHomeListItemMarkup).join('') + '</div></div>';
+            var key = 'pos-' + position.code;
+            return '<div class="market-home-column">' + marketHomeTitleRow(key, position.name || position.code)
+                + '<div class="market-home-list" data-home-body="' + escapeHtml(key) + '">'
+                + marketHomePageApps(key).map(marketHomeListItemMarkup).join('') + '</div></div>';
         }).join('') + '</div>';
     }
 
@@ -8472,6 +8545,12 @@
                 if (subTabContent) {
                     switchMarketSubTab(marketSubTab.dataset.marketSubTab, subTabContent);
                 }
+            }
+
+            // 市场首页区块翻页：< > 切换该区块上一页/下一页（仅重渲染区块内容）
+            var homePager = event.target.closest('[data-home-pager]');
+            if (homePager && !homePager.disabled) {
+                switchMarketHomePage(homePager, homePager.dataset.homePager === 'next' ? 1 : -1);
             }
 
             // 市场卡片整卡可点击进入详情，卡内的安装/更新按钮与链接保持自身行为
