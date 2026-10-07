@@ -63,8 +63,9 @@
             </div>
         </div>
         <footer class="start-system-actions" aria-label="系统操作">
-            <button type="button" data-action="lock-desktop"><i class="fa fa-lock"></i>锁定</button>
-            <button type="button" data-action="logout"><i class="fa fa-sign-out"></i>退出登录</button>
+            {{-- 锁定与退出登录仅保留图标：文字省略，以 aria-label/title 提供无障碍与悬停提示（与 OS 设置按钮一致） --}}
+            <button type="button" data-action="lock-desktop" aria-label="锁定桌面" title="锁定桌面"><i class="fa fa-lock"></i></button>
+            <button type="button" data-action="logout" aria-label="退出登录" title="退出登录"><i class="fa fa-sign-out"></i></button>
             {{-- 版权信息与框架后台页脚（layouts/admin.blade.php）一致：系统版本号与年份动态读取 --}}
             <span class="start-copyright">
                 <a href="http://www.cmspro.cn" target="_blank" rel="noopener">CMSPRO</a> v{{ $cmsproVersion }} &copy; 2015-{{ date('Y') }} Copyright by <a href="http://www.renhuali.cn" target="_blank" rel="noopener">Holley</a>

@@ -465,9 +465,9 @@ class WebosWorkspaceApiTest extends WebosTestCase
         $this->assertStringContainsString('data-action="lock-desktop"', $view);
         $this->assertStringContainsString('data-action="logout"', $view);
         $this->assertStringContainsString('data-open-webos-settings', $view);
-        // 开始菜单底部栏顺序：锁定 → 退出登录 → 版权（中间撑开）→ OS 设置（仅图标，aria-label 提示）
+        // 开始菜单底部栏顺序：锁定 → 退出登录（均仅图标，aria-label/title 提示）→ 版权（中间撑开）→ OS 设置（仅图标）
         $this->assertMatchesRegularExpression(
-            '/data-action="lock-desktop">[\s\S]{0,120}锁定<\/button>[\s\S]{0,200}data-action="logout">[\s\S]{0,120}退出登录<\/button>/',
+            '/data-action="lock-desktop" aria-label="锁定桌面" title="锁定桌面">[\s\S]{0,80}data-action="logout" aria-label="退出登录" title="退出登录">/',
             $view
         );
         $this->assertMatchesRegularExpression(
@@ -1245,7 +1245,7 @@ class WebosWorkspaceApiTest extends WebosTestCase
         $this->assertIsString($script);
         // 首次加载时列表区不再放大字号占位提示，避免与底部哨兵同时出现两个“正在读取应用市场…”
         $this->assertSame(1, substr_count($script, '正在读取应用市场…'));
-        $this->assertStringContainsString('<div class="app-grid" data-market-grid></div>', $script);
+        $this->assertStringContainsString('<div class="app-grid market-app-grid" data-market-grid></div>', $script);
         $this->assertStringNotContainsString('data-market-grid><div class="panel-empty"', $script);
     }
 
@@ -1454,7 +1454,9 @@ class WebosWorkspaceApiTest extends WebosTestCase
         // 进入桌面时检查 WebOS 自身新版本：确认后打开应用中心并自动触发升级
         $this->assertStringContainsString('function checkWebosSelfUpdate()', $script);
         $this->assertStringContainsString("openEntry(applicationCenterEntry());" . "\n" . "                    // 打开应用中心后自动进入 WebOS 自身的升级流程（启用拦截 → 版本选择弹窗）" . "\n" . "                    upgradeApp('cmspro.webos');", $script);
-        $this->assertStringContainsString('checkWebosSelfUpdate();' . "\n" . '            root.classList.remove(\'is-loading\');', $script);
+        $this->assertStringContainsString('checkWebosSelfUpdate();', $script);
+        // 桌面就绪后延迟检查系统框架新版本（Versionmgr），错开 WebOS 自身的更新提示弹窗
+        $this->assertStringContainsString('setTimeout(checkFrameworkUpdate, 3000);', $script);
 
         // 桌面「应用中心」图标右上角的可更新数量角标：renderDesktop 按检查结果渲染，syncUpdateBadge 同步
         $this->assertStringContainsString("item.id === 'webos-app-center' && state.updateApps.length", $script);
