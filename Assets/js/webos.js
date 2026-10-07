@@ -292,8 +292,17 @@
         }
 
         return fetch(url, request).then(function (response) {
-            // 会话过期（CSRF 失效 419 / 登录态丢失 401）：走恢复流程，重新登录成功后带新 Token 自动重放一次
-            if (response.status === 419 || response.status === 401) {
+            // 419（CSRF Token 与服务器不一致，登录态可能仍有效）：先静默刷新 Token 直接重放，全程无感；刷新失败才走登录恢复层
+            if (response.status === 419) {
+                return refreshCsrfToken().then(function (refreshed) {
+                    return refreshed ? null : recoverSession();
+                }).then(function () {
+                    request.headers['X-CSRF-TOKEN'] = runtime.csrfToken || '';
+                    return fetch(url, request).then(parseApiResponse);
+                });
+            }
+            // 401（登录态确实丢失）：走恢复流程，重新登录成功后带新 Token 自动重放一次
+            if (response.status === 401) {
                 return recoverSession().then(function () {
                     request.headers['X-CSRF-TOKEN'] = runtime.csrfToken || '';
                     return fetch(url, request).then(parseApiResponse);
@@ -335,7 +344,13 @@
         };
         return fetch(url, request).then(function (response) {
             if (response.status === 419 || response.status === 401) {
-                return recoverSession().then(function () {
+                // 419 先静默刷新 Token（登录态可能仍有效）；401 直接走登录恢复层
+                var recovery = response.status === 419
+                    ? refreshCsrfToken().then(function (refreshed) {
+                        return refreshed ? null : recoverSession();
+                    })
+                    : recoverSession();
+                return recovery.then(function () {
                     request.headers['X-CSRF-TOKEN'] = runtime.csrfToken || '';
                     return fetch(url, request);
                 }).then(function (retried) {
@@ -357,6 +372,30 @@
                 throw new Error('页面请求失败（HTTP ' + response.status + '）');
             }
             return response.text();
+        });
+    }
+
+    /**
+     * 静默刷新 CSRF Token（原生 fetch，GET 不受 CSRF 校验限制）：419 仅代表 Token 与服务器不一致，
+     * 登录态可能仍有效——先静默换取新 Token 即可直接重放失败请求，全程无感、不弹层；
+     * 返回 false（401 等）才说明登录态确实失效，需弹出登录恢复层。
+     */
+    function refreshCsrfToken() {
+        return fetch('/api/admin/csrf-token', { headers: { 'Accept': 'application/json' } }).then(function (response) {
+            if (!response.ok) {
+                return false;
+            }
+            return response.json().then(function (payload) {
+                if (payload && payload.code === 0 && payload.data && payload.data.token) {
+                    runtime.csrfToken = payload.data.token;
+                    return true;
+                }
+                return false;
+            }).catch(function () {
+                return false;
+            });
+        }).catch(function () {
+            return false;
         });
     }
 
@@ -396,12 +435,8 @@
                     if (!response.ok) {
                         return null;
                     }
-                    // 已重新登录：取新 CSRF Token 更新全局 runtime，等待中的请求即可自动重放
-                    return api('/api/admin/csrf-token').then(function (data) {
-                        runtime.csrfToken = (data && data.token) || '';
-                        closeRecovery();
-                        resolve();
-                    }).catch(function () {
+                    // 已重新登录：静默换取新 CSRF Token 更新全局 runtime，等待中的请求即可自动重放
+                    return refreshCsrfToken().then(function () {
                         closeRecovery();
                         resolve();
                     });
@@ -423,13 +458,22 @@
         });
     }
 
-    /** 会话保活心跳：每 5 分钟静默请求一次用户信息重置 Session 空闲计时；发现过期时立即触发恢复层 */
+    /**
+     * 会话保活心跳：每 5 分钟静默请求一次用户信息重置 Session 空闲计时。
+     * 登录态正常时顺带同步最新 CSRF Token（另一标签页登录、修改密码等导致的 Token 轮换可自动对齐，避免积累失配）；
+     * 发现异常时先静默刷新 Token 自愈（网络抖动、Token 轮换的误判场景），仍失败才弹出登录恢复层，避免误打扰。
+     */
     function startSessionHeartbeat() {
         window.setInterval(function () {
             fetch('/api/admin/auth/user', { headers: { 'Accept': 'application/json' } }).then(function (response) {
                 if (!response.ok) {
-                    return recoverSession().catch(function () {});
+                    return refreshCsrfToken().then(function (refreshed) {
+                        if (!refreshed) {
+                            return recoverSession();
+                        }
+                    });
                 }
+                return refreshCsrfToken();
             }).catch(function () {});
         }, 5 * 60 * 1000);
     }

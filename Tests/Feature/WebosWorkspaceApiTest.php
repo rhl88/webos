@@ -1458,13 +1458,15 @@ class WebosWorkspaceApiTest extends WebosTestCase
         // 桌面就绪后延迟检查系统框架新版本（Versionmgr），错开 WebOS 自身的更新提示弹窗
         $this->assertStringContainsString('setTimeout(checkFrameworkUpdate, 3000);', $script);
 
-        // 会话恢复：api()/fetchText 统一拦截 419/401，走恢复流程（iframe 登录 + 轮询 + 新 Token）后自动重放一次；
-        // 心跳保活每 5 分钟静默请求一次用户信息，防止挂机过期
+        // 会话恢复：api()/fetchText 统一拦截 419/401——419 先静默刷新 CSRF Token（登录态可能仍有效，全程无感），
+        // 刷新失败或 401 才走恢复流程（iframe 登录 + 轮询 + 新 Token）后自动重放一次；
+        // 心跳保活每 5 分钟静默请求一次用户信息，防止挂机过期，正常时顺带同步最新 Token
         $this->assertStringContainsString('if (response.status === 419 || response.status === 401) {', $script);
+        $this->assertStringContainsString('function refreshCsrfToken()', $script);
+        $this->assertStringContainsString("return refreshed ? null : recoverSession();", $script);
         $this->assertStringContainsString('function parseApiResponse(response)', $script);
         $this->assertStringContainsString('function recoverSession()', $script);
         $this->assertStringContainsString('function openSessionRecovery()', $script);
-        $this->assertStringContainsString("api('/api/admin/csrf-token').then(function (data) {", $script);
         $this->assertStringContainsString('function startSessionHeartbeat()', $script);
         $this->assertStringContainsString('startSessionHeartbeat();', $script);
         // 会话恢复层 DOM：iframe 登录 + 取消按钮（桌面 Blade 视图）
