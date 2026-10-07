@@ -1,7 +1,7 @@
 # CmsPro WebOS 管理桌面 · 特性清单
 
-> 文档版本：2.0.10 | 更新日期：2026-10-07
-> 应用版本：2.0.10 | 应用 ID：`cmspro.webos`
+> 文档版本：2.1.0 | 更新日期：2026-10-07
+> 应用版本：2.1.0 | 应用 ID：`cmspro.webos`
 
 ## 一、应用定位
 
@@ -118,6 +118,7 @@ CmsproWebos/
 
 | 版本 | 日期 | 说明 |
 |---|---|---|
+| 2.1.0 | 2026-10-07 | 会话过期无刷新恢复（用户需求：WebOS 出现 41901「页面已过期」不应刷新页面，要像操作系统一样恢复）：① api()/fetchText 统一拦截 419/401，走恢复流程后带新 Token 自动重放一次（parseApiResponse 抽取复用，重放响应不再触发恢复）；② 会话恢复层 `#session-recovery-layer`：iframe 内嵌 `/admin/login`（完整复用验证码、失败锁定、记住我等安全机制），父页每 2 秒原生 fetch 轮询 `auth/user` 登录态（不经过 api() 防递归），成功后调 `GET /api/admin/csrf-token`（框架新增，AuthController@csrfToken）取新 Token 更新 runtime.csrfToken；③ 恢复单例：并发失败请求共享一次恢复，全部自动重放；用户取消后 10 分钟内不再自动弹出；④ 心跳保活 startSessionHeartbeat：每 5 分钟静默请求 auth/user 重置 Session 空闲计时，过期即触发恢复层。配套框架改动：新增 `GET /api/admin/csrf-token` 路由 + AuthController::csrfToken（CsrfTokenApiTest 2 用例）。WebOS 115 测试 1145 断言通过。 |
 | 2.0.10 | 2026-10-07 | 系统菜单图标化（用户需求：锁定/退出登录移除文字仅保留图标 + title 提示）：开始菜单底部栏锁定、退出登录按钮改为仅图标（fa-lock/fa-sign-out），补 aria-label + title（「锁定桌面」「退出登录」），与 OS 设置按钮交互一致；账号菜单按钮保持文字不变；Blade 视图改动（服务端渲染无需同步 public）。同步修正两处历史漏改断言（分类 tab 3 列类名、框架升级提示调用行序）。115 测试 1134 断言通过。 |
 | 2.0.9 | 2026-10-06 | 系统框架版本升级提示（用户需求：WebOS 中有系统框架版本升级提示）：新增 checkFrameworkUpdate——桌面就绪后延迟 3 秒（错开 WebOS 自身的更新提示弹窗）调 Versionmgr 检查接口 `GET /admin/versionmgr/api/check`，`has_update` 且未跳过（`is_skipped`）时 layer.confirm「发现系统框架新版本 vX（当前 vY），是否前往升级？」，确认后 openEntry 打开「版本管理」iframe 窗口（/admin/versionmgr，升级路径/备份/执行在页面内完成）；仅超管生效、版本服务不可用静默；Versionmgr dashboard 本身已具备进入页面自动检查提示，无需改动。 |
 | 2.0.8 | 2026-10-06 | 非应用窗口内容可复制（用户反馈：非 iframe 窗口内容无法复制）：根因是 `.webos-desktop` 全局 `user-select: none` 仅在 `.window-page-host` 恢复，应用中心/设置/通知中心/官网动态等 DOM 注入窗口与窗口侧栏文字均继承禁选；修复为 `.window-body` 整体恢复 `user-select: text`（标题栏为独立 header 天然保持禁选，拖动防误选不受影响）。 |

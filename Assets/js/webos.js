@@ -280,7 +280,7 @@
     }
 
     function api(url, options) {
-        var request = options || {};
+        var request = Object.assign({}, options || {});
         request.headers = Object.assign({
             'Accept': 'application/json',
             'X-CSRF-TOKEN': runtime.csrfToken || ''
@@ -292,32 +292,63 @@
         }
 
         return fetch(url, request).then(function (response) {
-            if (response.status === 401) {
-                window.location.href = root.dataset.loginUrl || '/admin/login';
-                throw new Error('登录状态已失效');
+            // 会话过期（CSRF 失效 419 / 登录态丢失 401）：走恢复流程，重新登录成功后带新 Token 自动重放一次
+            if (response.status === 419 || response.status === 401) {
+                return recoverSession().then(function () {
+                    request.headers['X-CSRF-TOKEN'] = runtime.csrfToken || '';
+                    return fetch(url, request).then(parseApiResponse);
+                });
             }
-            return response.json().catch(function () {
-                throw new Error('服务器返回了无法识别的数据');
-            }).then(function (payload) {
-                if (!response.ok || payload.code !== 0) {
-                    var validation = payload.errors ? Object.values(payload.errors).flat().join('；') : '';
-                    throw new Error(validation || payload.message || '请求失败');
-                }
-                return payload.data;
-            });
+            return parseApiResponse(response);
+        });
+    }
+
+    /** 统一响应解析：401 跳转登录页，419 提示会话过期（重放后的响应同样走此解析，不会再次触发恢复） */
+    function parseApiResponse(response) {
+        if (response.status === 401) {
+            window.location.href = root.dataset.loginUrl || '/admin/login';
+            throw new Error('登录状态已失效');
+        }
+        if (response.status === 419) {
+            throw new Error('页面已过期，请刷新后重试');
+        }
+        return response.json().catch(function () {
+            throw new Error('服务器返回了无法识别的数据');
+        }).then(function (payload) {
+            if (!response.ok || payload.code !== 0) {
+                var validation = payload.errors ? Object.values(payload.errors).flat().join('；') : '';
+                throw new Error(validation || payload.message || '请求失败');
+            }
+            return payload.data;
         });
     }
 
     /** _component（路由模式）需要的是 HTML 片段而非 JSON，因此单独走文本请求 */
     function fetchText(url) {
-        return fetch(url, {
+        var request = {
             method: 'GET',
             credentials: 'same-origin',
             headers: {
                 'X-Requested-With': 'XMLHttpRequest',
                 'X-CSRF-TOKEN': runtime.csrfToken || ''
             }
-        }).then(function (response) {
+        };
+        return fetch(url, request).then(function (response) {
+            if (response.status === 419 || response.status === 401) {
+                return recoverSession().then(function () {
+                    request.headers['X-CSRF-TOKEN'] = runtime.csrfToken || '';
+                    return fetch(url, request);
+                }).then(function (retried) {
+                    if (retried.status === 401) {
+                        window.location.href = root.dataset.loginUrl || '/admin/login';
+                        throw new Error('登录状态已失效');
+                    }
+                    if (!retried.ok) {
+                        throw new Error('页面请求失败（HTTP ' + retried.status + '）');
+                    }
+                    return retried.text();
+                });
+            }
             if (response.status === 401) {
                 window.location.href = root.dataset.loginUrl || '/admin/login';
                 throw new Error('登录状态已失效');
@@ -327,6 +358,80 @@
             }
             return response.text();
         });
+    }
+
+    /**
+     * 会话恢复（单例）：419/401 时弹出内置登录层（iframe 复用 /admin/login 的验证码、失败锁定等完整安全机制），
+     * 父页轮询登录态，检测到重新登录成功后获取新 CSRF Token 并 resolve——等待中的失败请求各自自动重放一次。
+     * 用户取消后 10 分钟内不再自动弹出，避免反复打扰；超过后恢复可用。
+     */
+    var sessionRecoveryPromise = null;
+    var sessionRecoverySuppressedUntil = 0;
+    function recoverSession() {
+        if (Date.now() < sessionRecoverySuppressedUntil) {
+            return Promise.reject(new Error('会话已过期，请重新登录后再操作'));
+        }
+        if (!sessionRecoveryPromise) {
+            sessionRecoveryPromise = openSessionRecovery().finally(function () {
+                sessionRecoveryPromise = null;
+            });
+        }
+        return sessionRecoveryPromise;
+    }
+
+    function openSessionRecovery() {
+        return new Promise(function (resolve, reject) {
+            var layer = document.getElementById('session-recovery-layer');
+            var frame = document.getElementById('session-recovery-frame');
+            var cancelButton = document.getElementById('session-recovery-cancel');
+            if (!layer || !frame) {
+                reject(new Error('会话已过期，请重新登录后再操作'));
+                return;
+            }
+            frame.src = (root.dataset.loginUrl || '/admin/login') + '?recovery=' + Date.now();
+            layer.hidden = false;
+            var timer = window.setInterval(function () {
+                // 原生 fetch 轮询登录态：不经过 api()，避免 401 触发整页跳转或递归恢复
+                fetch('/api/admin/auth/user', { headers: { 'Accept': 'application/json' } }).then(function (response) {
+                    if (!response.ok) {
+                        return null;
+                    }
+                    // 已重新登录：取新 CSRF Token 更新全局 runtime，等待中的请求即可自动重放
+                    return api('/api/admin/csrf-token').then(function (data) {
+                        runtime.csrfToken = (data && data.token) || '';
+                        closeRecovery();
+                        resolve();
+                    }).catch(function () {
+                        closeRecovery();
+                        resolve();
+                    });
+                }).catch(function () {});
+            }, 2000);
+            function closeRecovery() {
+                window.clearInterval(timer);
+                layer.hidden = true;
+                frame.src = 'about:blank';
+                cancelButton.removeEventListener('click', onCancel);
+            }
+            function onCancel() {
+                closeRecovery();
+                // 用户主动取消：10 分钟内不再自动弹出恢复层（手动操作触发时仍会提示过期错误）
+                sessionRecoverySuppressedUntil = Date.now() + 10 * 60 * 1000;
+                reject(new Error('会话已过期，请重新登录后再操作'));
+            }
+            cancelButton.addEventListener('click', onCancel);
+        });
+    }
+
+    /** 会话保活心跳：每 5 分钟静默请求一次用户信息重置 Session 空闲计时；发现过期时立即触发恢复层 */
+    function startSessionHeartbeat() {
+        window.setInterval(function () {
+            fetch('/api/admin/auth/user', { headers: { 'Accept': 'application/json' } }).then(function (response) {
+                if (!response.ok) {
+                    return recoverSession().catch(function () {});
+                }
+            }).catch(function () {});
+        }, 5 * 60 * 1000);
     }
 
     function toast(message, type) {
@@ -9098,6 +9203,8 @@
             checkWebosSelfUpdate();
             // 延迟检查系统框架新版本（Versionmgr）：错开 WebOS 自身的更新提示，避免两个弹窗同时出现
             setTimeout(checkFrameworkUpdate, 3000);
+            // 会话保活心跳：防止长时间挂机后 Session 过期导致 419「页面已过期」
+            startSessionHeartbeat();
             root.classList.remove('is-loading');
         }).catch(function (error) {
             root.classList.remove('is-loading');

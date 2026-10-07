@@ -1458,6 +1458,22 @@ class WebosWorkspaceApiTest extends WebosTestCase
         // 桌面就绪后延迟检查系统框架新版本（Versionmgr），错开 WebOS 自身的更新提示弹窗
         $this->assertStringContainsString('setTimeout(checkFrameworkUpdate, 3000);', $script);
 
+        // 会话恢复：api()/fetchText 统一拦截 419/401，走恢复流程（iframe 登录 + 轮询 + 新 Token）后自动重放一次；
+        // 心跳保活每 5 分钟静默请求一次用户信息，防止挂机过期
+        $this->assertStringContainsString('if (response.status === 419 || response.status === 401) {', $script);
+        $this->assertStringContainsString('function parseApiResponse(response)', $script);
+        $this->assertStringContainsString('function recoverSession()', $script);
+        $this->assertStringContainsString('function openSessionRecovery()', $script);
+        $this->assertStringContainsString("api('/api/admin/csrf-token').then(function (data) {", $script);
+        $this->assertStringContainsString('function startSessionHeartbeat()', $script);
+        $this->assertStringContainsString('startSessionHeartbeat();', $script);
+        // 会话恢复层 DOM：iframe 登录 + 取消按钮（桌面 Blade 视图）
+        $view = file_get_contents(dirname(__DIR__, 2) . '/Views/Admin/desktop/index.blade.php');
+        $this->assertIsString($view);
+        $this->assertStringContainsString('id="session-recovery-layer"', $view);
+        $this->assertStringContainsString('id="session-recovery-frame"', $view);
+        $this->assertStringContainsString('id="session-recovery-cancel"', $view);
+
         // 桌面「应用中心」图标右上角的可更新数量角标：renderDesktop 按检查结果渲染，syncUpdateBadge 同步
         $this->assertStringContainsString("item.id === 'webos-app-center' && state.updateApps.length", $script);
         $this->assertStringContainsString("'<span class=\"desktop-update-badge\">' + state.updateApps.length + '</span>'", $script);

@@ -134,6 +134,26 @@
         </nav>
     </section>
 
+    {{-- 会话恢复层：419/401 过期时弹出，iframe 复用 /admin/login 完整安全机制，登录成功后自动重放失败请求 --}}
+    <section id="session-recovery-layer" class="session-recovery" hidden>
+        <div class="session-recovery-mask"></div>
+        <div class="session-recovery-card" role="dialog" aria-modal="true" aria-label="会话恢复">
+            <header class="session-recovery-head">
+                <i class="fa fa-user-circle" aria-hidden="true"></i>
+                <div>
+                    <strong>会话已过期</strong>
+                    <span>请重新登录，登录成功后将自动恢复刚才的操作</span>
+                </div>
+            </header>
+            <div class="session-recovery-frame">
+                <iframe id="session-recovery-frame" src="about:blank" title="重新登录"></iframe>
+            </div>
+            <footer class="session-recovery-foot">
+                <button type="button" id="session-recovery-cancel">暂不登录</button>
+            </footer>
+        </div>
+    </section>
+
     <section id="install-dialog" class="webos-dialog webos-dialog--plain" role="dialog" aria-modal="true" aria-labelledby="install-dialog-title" hidden>
         <div class="dialog-card">
             <header class="dialog-header">
