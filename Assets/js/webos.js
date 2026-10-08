@@ -72,8 +72,10 @@
         startSearch: document.getElementById('start-search'),
         startCategories: document.getElementById('start-categories'),
         startGrid: document.getElementById('start-app-grid'),
+        startRecent: document.getElementById('start-recent'),
         startGroupTitle: document.getElementById('start-group-title'),
         startGroupCount: document.getElementById('start-group-count'),
+        fullscreenButton: document.getElementById('fullscreen-button'),
         taskbarPinned: document.getElementById('taskbar-pinned'),
         taskbarWindows: document.getElementById('taskbar-windows'),
         websiteButton: document.getElementById('website-button'),
@@ -958,6 +960,97 @@
         }).join('') : '<div class="panel-empty"><i class="fa '
             + (!query && current && current.id === 'common' ? 'fa-star-o' : 'fa-search') + '"></i>'
             + (!query && current && current.id === 'common' ? '打开应用后，常用入口会显示在这里' : '没有匹配的入口') + '</div>';
+        renderStartRecent(groups, query);
+    }
+
+    /**
+     * 系统菜单「最近」区块：仅「常用」分类且非搜索时显示最近打开的 6 个入口。
+     * 数据复用使用统计 usage_stats（recordEntryUsage 已记录 last_opened_at），按最近打开时间降序取前 6，
+     * 副标题显示「上次打开 月-日 时:分」；卡片结构与常用一致（含添加到桌面按钮），点击委托由 root 级 [data-menu-id] 处理。
+     * 从未打开过任何应用时隐藏区块。
+     */
+    function renderStartRecent(groups, query) {
+        var host = elements.startRecent;
+        if (!host) { return; }
+        var statistics = state.workspace.preferences.usage_stats;
+        if (!statistics || Array.isArray(statistics)) {
+            statistics = {};
+        }
+        var recent = !query
+            ? groups.reduce(function (all, group) { return all.concat(group.items); }, []).filter(function (item) {
+                return statistics[item.start_key] && statistics[item.start_key].last_opened_at;
+            }).sort(function (left, right) {
+                return statistics[right.start_key].last_opened_at.localeCompare(statistics[left.start_key].last_opened_at);
+            }).slice(0, 6)
+            : [];
+        if (!recent.length) {
+            host.innerHTML = '';
+            host.hidden = true;
+            return;
+        }
+        host.innerHTML = '<div class="start-recent-title">最近</div>'
+            + '<div class="start-app-grid">' + recent.map(function (item) {
+                var isPinned = state.workspace.desktop_items.some(function (entry) { return entry.id === item.id; });
+                var pinButton = isFolderStartItem(item) ? '' : '<button class="pin-button' + (isPinned ? ' is-pinned' : '') + '" type="button" data-pin-id="'
+                    + escapeHtml(item.id) + '" title="' + (isPinned ? '从桌面移除' : '添加到桌面')
+                    + '"><i class="fa ' + (isPinned ? 'fa-thumb-tack' : 'fa-plus') + '"></i></button>';
+                return '<div class="start-app-item ' + (isFolderStartItem(item) ? 'is-folder' : '')
+                    + '" tabindex="0" role="button" data-menu-id="' + escapeHtml(item.id) + '" data-start-kind="'
+                    + escapeHtml(item.start_kind) + '">'
+                    + (isFolderStartItem(item)
+                        ? '<span class="start-app-item-icon"><i class="' + safeIcon(item.start_icon) + '"></i></span>'
+                        : entryIconMarkup(item, 'start-app-item-icon'))
+                    + '<span class="start-app-item-text"><strong>' + escapeHtml(item.start_title) + '</strong><small>上次打开 '
+                    + escapeHtml(String(statistics[item.start_key].last_opened_at).slice(5, 16)) + '</small></span>'
+                    + pinButton
+                    + '</div>';
+            }).join('') + '</div>';
+        host.hidden = false;
+    }
+
+    /** 任务栏全屏切换：进入/退出浏览器全屏；fullscreenchange 后由 syncFullscreenButton 同步图标与提示 */
+    function toggleFullscreen() {
+        if (document.fullscreenElement || document.webkitFullscreenElement) {
+            var exit = document.exitFullscreen || document.webkitExitFullscreen;
+            if (exit) {
+                try {
+                    var result = exit.call(document);
+                    if (result && typeof result.catch === 'function') {
+                        result.catch(function () { toast('退出全屏失败，请重试', 'error'); });
+                    }
+                } catch (error) {
+                    toast('退出全屏失败，请重试', 'error');
+                }
+            }
+            return;
+        }
+        var target = document.documentElement;
+        var request = target.requestFullscreen || target.webkitRequestFullscreen;
+        if (!request) {
+            toast('当前浏览器不支持全屏显示', 'error');
+            return;
+        }
+        try {
+            var entered = request.call(target);
+            if (entered && typeof entered.catch === 'function') {
+                entered.catch(function () { toast('进入全屏失败，请重试', 'error'); });
+            }
+        } catch (error) {
+            toast('进入全屏失败，请重试', 'error');
+        }
+    }
+
+    /** 同步全屏按钮状态：图标 expand/compress、aria-label 与 title 提示、激活态样式 */
+    function syncFullscreenButton() {
+        if (!elements.fullscreenButton) { return; }
+        var fullscreen = Boolean(document.fullscreenElement || document.webkitFullscreenElement);
+        var icon = elements.fullscreenButton.querySelector('i');
+        if (icon) {
+            icon.className = 'fa ' + (fullscreen ? 'fa-compress' : 'fa-expand');
+        }
+        elements.fullscreenButton.setAttribute('aria-label', fullscreen ? '退出全屏' : '全屏显示');
+        elements.fullscreenButton.setAttribute('title', fullscreen ? '退出全屏' : '全屏显示');
+        elements.fullscreenButton.classList.toggle('is-active', fullscreen);
     }
 
     function findEntry(id) {
@@ -8408,6 +8501,13 @@
         elements.websiteButton.addEventListener('click', function () {
             window.open(elements.websiteButton.dataset.websiteUrl, '_blank', 'noopener');
         });
+        // 任务栏全屏切换：点击在「全屏显示/退出全屏」之间切换，状态变化统一由 fullscreenchange 驱动
+        if (elements.fullscreenButton) {
+            elements.fullscreenButton.addEventListener('click', toggleFullscreen);
+            document.addEventListener('fullscreenchange', syncFullscreenButton);
+            document.addEventListener('webkitfullscreenchange', syncFullscreenButton);
+            syncFullscreenButton();
+        }
         elements.accountButton.addEventListener('click', function () { togglePanel('account', elements.accountPanel, elements.accountButton); });
         elements.clockButton.addEventListener('click', function () { togglePanel('calendar', elements.calendarPanel, elements.clockButton); });
         elements.startSearch.addEventListener('input', renderStartMenu);

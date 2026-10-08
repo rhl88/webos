@@ -60,6 +60,8 @@
                     <button type="button" class="text-button" data-open-special="entries">全部功能</button>
                 </div>
                 <div id="start-app-grid" class="start-app-grid"></div>
+                {{-- 最近打开：仅「常用」分类且非搜索时显示最近 6 个打开过的入口（JS 渲染） --}}
+                <div id="start-recent" class="start-recent" hidden></div>
             </div>
         </div>
         <footer class="start-system-actions" aria-label="系统操作">
@@ -225,6 +227,10 @@
         {{-- 前台首页入口：在 WebOS 内以通用窗口打开站点首页 --}}
         <button id="website-button" class="taskbar-button website-button" type="button" aria-label="访问前台首页" data-website-url="{{ url('/') }}">
             <i class="fa fa-globe" aria-hidden="true"></i>
+        </button>
+        {{-- 全屏切换：图标与提示由 JS 随 fullscreenchange 同步（进入/退出全屏） --}}
+        <button id="fullscreen-button" class="taskbar-button fullscreen-button" type="button" aria-label="全屏显示" title="全屏显示">
+            <i class="fa fa-expand" aria-hidden="true"></i>
         </button>
         <button id="notification-button" class="taskbar-button notification-button" type="button" aria-label="打开通知中心" aria-expanded="false">
             <i class="fa fa-bell" aria-hidden="true"></i>

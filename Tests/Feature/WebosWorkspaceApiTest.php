@@ -648,6 +648,35 @@ class WebosWorkspaceApiTest extends WebosTestCase
         $this->assertStringContainsString('background: rgba(15, 23, 42, 0.42);', $stylesheet);
     }
 
+    /** 系统菜单「最近」区块（常用下方显示最近打开 6 项）与任务栏全屏切换按钮 */
+    public function test_start_menu_recent_section_and_fullscreen_toggle(): void
+    {
+        $script = file_get_contents(dirname(__DIR__, 2) . '/Assets/js/webos.js');
+        $stylesheet = file_get_contents(dirname(__DIR__, 2) . '/Assets/css/webos.css');
+        $view = file_get_contents(dirname(__DIR__, 2) . '/Views/Admin/desktop/index.blade.php');
+
+        $this->assertIsString($script);
+        $this->assertIsString($stylesheet);
+        $this->assertIsString($view);
+        // Blade：最近区块容器（常用网格下方）与任务栏全屏按钮（地球与铃铛之间）
+        $this->assertStringContainsString('<div id="start-recent" class="start-recent" hidden></div>', $view);
+        $this->assertStringContainsString('<button id="fullscreen-button" class="taskbar-button fullscreen-button"', $view);
+        // JS：最近区块复用 usage_stats 的 last_opened_at 降序取前 6，副标题「上次打开 月-日 时:分」；无记录时隐藏
+        $this->assertStringContainsString('function renderStartRecent(groups, query)', $script);
+        $this->assertStringContainsString('renderStartRecent(groups, query);', $script);
+        $this->assertStringContainsString("statistics[right.start_key].last_opened_at.localeCompare(statistics[left.start_key].last_opened_at)", $script);
+        $this->assertStringContainsString("'<span class=\"start-app-item-text\"><strong>' + escapeHtml(item.start_title) + '</strong><small>上次打开 '", $script);
+        $this->assertStringContainsString('host.hidden = true;', $script);
+        // JS：全屏切换与状态同步（图标 expand/compress、提示、激活态）
+        $this->assertStringContainsString('function toggleFullscreen()', $script);
+        $this->assertStringContainsString('function syncFullscreenButton()', $script);
+        $this->assertStringContainsString("document.addEventListener('fullscreenchange', syncFullscreenButton);", $script);
+        $this->assertStringContainsString("icon.className = 'fa ' + (fullscreen ? 'fa-compress' : 'fa-expand');", $script);
+        // CSS：最近标题与全屏按钮激活态
+        $this->assertStringContainsString('.start-recent-title {', $stylesheet);
+        $this->assertStringContainsString('.fullscreen-button.is-active {', $stylesheet);
+    }
+
     /** 桌面右键「查看」子菜单切换大/中/小图标：三档格子换算、偏好持久化与后端白名单校验 */
     public function test_desktop_view_submenu_switches_icon_size(): void
     {

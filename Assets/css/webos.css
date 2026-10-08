@@ -1409,6 +1409,20 @@ textarea:focus-visible,
     gap: 10px;
 }
 
+/* 系统菜单「最近」区块：常用分类右侧内容下方，标题样式与内容标题一致，卡片复用 start-app-grid 网格 */
+.start-recent {
+    margin-top: 18px;
+}
+
+.start-recent-title {
+    font-size: 16px;
+    margin-bottom: 14px;
+}
+
+.start-recent .start-app-grid {
+    margin-top: 0;
+}
+
 .start-app-item {
     position: relative;
     display: flex;
@@ -5594,5 +5608,11 @@ textarea:focus-visible,
 .session-recovery-foot button:hover {
     color: #087f75;
     border-color: #087f75;
+    background: #eaf8f6;
+}
+
+/* 任务栏全屏切换按钮：处于全屏时高亮（图标已由 JS 切换为 fa-compress） */
+.fullscreen-button.is-active {
+    color: #087f75;
     background: #eaf8f6;
 }
