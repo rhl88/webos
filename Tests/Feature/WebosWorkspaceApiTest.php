@@ -759,6 +759,9 @@ class WebosWorkspaceApiTest extends WebosTestCase
         $this->assertStringContainsString('var requestedUrl = tab.url;', $script);
         $this->assertStringContainsString('tab.url !== requestedUrl', $script);
         $this->assertStringContainsString('fetchPageMeta(tab);', $script);
+        // 标签 iframe 显隐用 hidden 属性：必须显式覆盖 .window-content iframe 的 display:block，
+        // 否则作者样式压过 UA 的 [hidden] 默认样式，切换标签时内容停留在最后打开的标签
+        $this->assertStringContainsString('.browser-views iframe[hidden] {', $stylesheet);
         // 元信息代理失败结果短缓存：瞬时失败不会被固化成空结果一整天（成功缓存 1 天）
         $service = file_get_contents(dirname(__DIR__, 2) . '/Services/PageMetaService.php');
         $this->assertStringContainsString('Cache::put($key, $meta, $succeeded ? now()->addDay() : now()->addMinutes(5));', $service);

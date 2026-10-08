@@ -5855,3 +5855,10 @@ textarea:focus-visible,
     height: 100%;
     border: 0;
 }
+
+/* 标签显隐用 hidden 属性：.window-content iframe 的 display:block（作者样式）会覆盖
+   [hidden] 的 UA 默认 display:none，导致多标签切换时隐藏失效（所有 iframe 叠加、
+   视觉上永远停留在最后打开的标签）——与项目其它 [hidden] 修复同款，显式声明 */
+.browser-views iframe[hidden] {
+    display: none;
+}
