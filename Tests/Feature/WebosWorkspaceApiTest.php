@@ -1726,6 +1726,57 @@ class WebosWorkspaceApiTest extends WebosTestCase
         $this->assertArrayHasKey('desktop_items.0.path', $response->json('data'));
     }
 
+    /** 内置浏览器入口（id=webos-browser）path 为空放行（内容由前端管理、按 id 特判打开）；普通项空 path 仍拒绝 */
+    public function test_workspace_api_allows_builtin_browser_empty_path(): void
+    {
+        $this->actingAdmin();
+
+        $this->putJson('/admin/cmspro/webos/api/workspace', [
+            'desktop_items' => [
+                [
+                    'id' => 'webos-browser',
+                    'title' => '浏览器',
+                    'path' => '',
+                    'icon' => 'fa fa-compass',
+                    'group_title' => 'WebOS',
+                    'x' => 0,
+                    'y' => 0,
+                ],
+                [
+                    'id' => 'menu-1046',
+                    'title' => '儿康管理系统',
+                    'path' => '/admin/cmspro/childrehab/hospitals',
+                    'icon' => 'fa fa-home',
+                    'x' => 0,
+                    'y' => 1,
+                ],
+            ],
+            'preferences' => [],
+        ])->assertOk()
+            ->assertJsonPath('code', 0)
+            ->assertJsonPath('data.desktop_items.0.path', '')
+            ->assertJsonPath('data.desktop_items.1.path', '/admin/cmspro/childrehab/hospitals');
+
+        // 再次读取验证持久化
+        $this->getJson('/admin/cmspro/webos/api/workspace')
+            ->assertOk()
+            ->assertJsonPath('data.desktop_items.0.path', '');
+
+        // 普通入口空 path 仍拒绝（仅 webos-browser 白名单放行）
+        $this->putJson('/admin/cmspro/webos/api/workspace', [
+            'desktop_items' => [[
+                'id' => 'menu-1046',
+                'title' => '儿康管理系统',
+                'path' => '',
+                'icon' => 'fa fa-home',
+                'x' => 0,
+                'y' => 0,
+            ]],
+            'preferences' => [],
+        ])->assertUnprocessable()
+            ->assertJsonPath('code', 40201);
+    }
+
     /** 导出：对齐传统后台 exportApp，用 layer 确认 + XHR blob 下载，并识别 JSON 错误体 */
     public function test_app_export_follows_the_legacy_admin_flow(): void
     {

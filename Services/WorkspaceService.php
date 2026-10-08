@@ -101,12 +101,17 @@ class WorkspaceService
     /** @return array<string,mixed> */
     protected function sanitizeDesktopItem(array $item): array
     {
+        $id = preg_replace('/[^A-Za-z0-9_-]/', '', (string) ($item['id'] ?? '')) ?: Str::uuid()->toString();
         $path = trim((string) ($item['path'] ?? ''));
-        if (! str_starts_with($path, '/') || str_starts_with($path, '//')) {
+        // 内置浏览器入口（id=webos-browser）path 为空：内容由前端管理、按 id 特判打开；其余入口仍必须是站内路径
+        if ($path === '') {
+            if ($id !== 'webos-browser') {
+                throw new InvalidArgumentException('桌面入口路径必须是站内路径');
+            }
+        } elseif (! str_starts_with($path, '/') || str_starts_with($path, '//')) {
             throw new InvalidArgumentException('桌面入口路径必须是站内路径');
         }
 
-        $id = preg_replace('/[^A-Za-z0-9_-]/', '', (string) ($item['id'] ?? '')) ?: Str::uuid()->toString();
         $icon = preg_replace('/[^A-Za-z0-9 _-]/', '', (string) ($item['icon'] ?? 'fa fa-cube'));
         $appId = preg_replace('/[^A-Za-z0-9_.-]/', '', (string) ($item['app_id'] ?? ''));
 

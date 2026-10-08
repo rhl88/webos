@@ -172,12 +172,18 @@ class WebosController extends Controller
             'desktop_items.*.menu_id' => ['nullable', 'integer', 'min:0'],
             'desktop_items.*.app_id' => ['nullable', 'string', 'max:100', 'regex:/^[A-Za-z0-9_.-]*$/'],
             'desktop_items.*.title' => ['required', 'string', 'max:60'],
+            // 内置浏览器入口（id=webos-browser）path 为空（内容由前端管理、按 id 特判打开）仅该 id 放行；
+            // 注意不能用 nullable/string：空串经 ConvertEmptyStringsToNull 转 null 后规则被跳过或误报，
+            // 普通/超长/外链路径与空路径的裁决全部收进闭包（服务层白名单再兜底一层）
             'desktop_items.*.path' => [
-                'required',
-                'string',
-                'max:500',
                 static function (string $attribute, mixed $value, \Closure $fail): void {
-                    if (! is_string($value) || ! str_starts_with($value, '/') || str_starts_with($value, '//')) {
+                    if ($value === null || $value === '') {
+                        if ((string) request()->input(preg_replace('/\.path$/', '.id', $attribute)) !== 'webos-browser') {
+                            $fail('桌面入口路径必须是站内路径');
+                        }
+                        return;
+                    }
+                    if (! is_string($value) || mb_strlen($value) > 500 || ! str_starts_with($value, '/') || str_starts_with($value, '//')) {
                         $fail('桌面入口路径必须是站内路径');
                     }
                 },
@@ -191,12 +197,16 @@ class WebosController extends Controller
             'taskbar_items.*.menu_id' => ['nullable', 'integer', 'min:0'],
             'taskbar_items.*.app_id' => ['nullable', 'string', 'max:100', 'regex:/^[A-Za-z0-9_.-]*$/'],
             'taskbar_items.*.title' => ['required', 'string', 'max:60'],
+            // 任务栏项结构同桌面项：空 path 仅内置浏览器入口（id=webos-browser）放行，其余空路径/外链仍拒绝（裁决收进闭包，原因同桌面项）
             'taskbar_items.*.path' => [
-                'required',
-                'string',
-                'max:500',
                 static function (string $attribute, mixed $value, \Closure $fail): void {
-                    if (! is_string($value) || ! str_starts_with($value, '/') || str_starts_with($value, '//')) {
+                    if ($value === null || $value === '') {
+                        if ((string) request()->input(preg_replace('/\.path$/', '.id', $attribute)) !== 'webos-browser') {
+                            $fail('任务栏入口路径必须是站内路径');
+                        }
+                        return;
+                    }
+                    if (! is_string($value) || mb_strlen($value) > 500 || ! str_starts_with($value, '/') || str_starts_with($value, '//')) {
                         $fail('任务栏入口路径必须是站内路径');
                     }
                 },
