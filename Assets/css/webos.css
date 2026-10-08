@@ -107,6 +107,11 @@ textarea:focus-visible,
 
 .desktop-icon {
     position: absolute;
+    /* 垂直堆叠：图标图形与文字标签都是行内级（标签 inline-block 让底衬贴合文字），
+       短标签（如两字标题）会与图标挤进同一行，flex column 强制各占一行 */
+    display: flex;
+    flex-direction: column;
+    align-items: center;
     width: 88px;
     min-height: 96px;
     padding: 8px 4px;

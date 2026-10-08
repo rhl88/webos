@@ -646,6 +646,9 @@ class WebosWorkspaceApiTest extends WebosTestCase
         $this->assertStringContainsString('targets.forEach(removeDesktopEntry);', $script);
         // 标签文字效果（OS 设置三选一，默认无效果）：默认样式无底衬，底衬/阴影挂在 data-label-effect 作用域
         $this->assertStringContainsString('.desktop-icon-label {', $stylesheet);
+        // 图标与文字垂直堆叠：图标图形与标签均为行内级，短标签（两字标题）会与图标挤进同一行
+        $this->assertStringContainsString('短标签（如两字标题）会与图标挤进同一行，flex column 强制各占一行', $stylesheet);
+        $this->assertStringContainsString("align-items: center;\n    width: 88px;", $stylesheet);
         $this->assertStringContainsString('.desktop-icons[data-label-effect="shield"] .desktop-icon-label {', $stylesheet);
         $this->assertStringContainsString('.desktop-icons[data-label-effect="shadow"] .desktop-icon-label {', $stylesheet);
         $this->assertStringContainsString('text-shadow: 0 1px 2px rgba(0, 0, 0, 0.85), 0 0 5px rgba(0, 0, 0, 0.6);', $stylesheet);
