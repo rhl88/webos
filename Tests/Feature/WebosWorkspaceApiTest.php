@@ -614,6 +614,7 @@ class WebosWorkspaceApiTest extends WebosTestCase
     public function test_disabled_app_icons_do_not_occupy_grid_cells(): void
     {
         $script = file_get_contents(dirname(__DIR__, 2) . '/Assets/js/webos.js');
+        $stylesheet = file_get_contents(dirname(__DIR__, 2) . '/Assets/css/webos.css');
 
         $this->assertIsString($script);
         // 可见桌面项统一出口：渲染/拖拽占用/找空行都基于已分配集合
@@ -635,6 +636,16 @@ class WebosWorkspaceApiTest extends WebosTestCase
         $this->assertStringContainsString('if (changed) { saveWorkspace(false).catch(function () {}); }', $script);
         // 归一化触发点：目录刷新、首次渲染、窗口缩放自适应、任务栏移动、图标档位切换
         $this->assertSame(5, substr_count($script, 'normalizeDesktopLayout();'));
+        // 桌面右键「自动排列图标」：列优先紧凑重排（复用可视容量，拖乱后一键恢复整齐）
+        $this->assertStringContainsString('function autoArrangeDesktopIcons', $script);
+        $this->assertStringContainsString("['自动排列图标', 'fa-magic', 'auto-arrange', '', null]", $script);
+        $this->assertStringContainsString("if (action === 'auto-arrange') {", $script);
+        // 键盘操作：Ctrl+A 全选、方向键移动焦点、Enter 打开、Delete 删除
+        $this->assertStringContainsString("ArrowRight: [1, 0], ArrowLeft: [-1, 0], ArrowDown: [0, 1], ArrowUp: [0, -1]", $script);
+        $this->assertStringContainsString('targets.forEach(removeDesktopEntry);', $script);
+        // 标签底衬：浅色壁纸下白色文字可读性增强
+        $this->assertStringContainsString('.desktop-icon-label {', $stylesheet);
+        $this->assertStringContainsString('background: rgba(15, 23, 42, 0.42);', $stylesheet);
     }
 
     /** 桌面右键「查看」子菜单切换大/中/小图标：三档格子换算、偏好持久化与后端白名单校验 */

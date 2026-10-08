@@ -209,13 +209,19 @@ textarea:focus-visible,
     background: #f0a51b;
 }
 
+/* 标签底衬：浅色壁纸下白色文字可读性增强（inline-block 底衬贴合文字宽度，block 全宽会超出文字），保留阴影 */
 .desktop-icon-label {
-    display: block;
+    display: inline-block;
+    max-width: 100%;
     font-size: 14px;
     line-height: 20px;
+    padding: 1px 7px;
+    border-radius: 4px;
+    background: rgba(15, 23, 42, 0.42);
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+    text-shadow: 0 1px 3px rgba(0, 24, 58, 0.5);
 }
 
 .window-layer {

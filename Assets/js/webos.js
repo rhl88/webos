@@ -1232,6 +1232,7 @@
         ];
         var items = [
             ['刷新', 'fa-refresh', 'refresh', '', null],
+            ['自动排列图标', 'fa-magic', 'auto-arrange', '', null],
             ['查看', 'fa-th-large', '', '', sizeChildren],
             ['设置背景', 'fa-picture-o', 'wallpaper', '', null],
             ['个性设置', 'fa-sliders', 'personalize', '', null],
@@ -1293,6 +1294,11 @@
             saveWorkspace(false);
             normalizeDesktopLayout();
             renderDesktop();
+            return;
+        }
+        // 桌面右键「自动排列图标」：全部可见图标列优先紧凑重排
+        if (action === 'auto-arrange') {
+            autoArrangeDesktopIcons();
             return;
         }
         if (action === 'open') {
@@ -7442,6 +7448,42 @@
     }
 
     /**
+     * 自动排列图标（桌面右键菜单）：全部可见图标按 (y,x) 顺序列优先紧凑重排，
+     * 落点规则与新增图标一致（行列数由可视容量决定），拖乱后一键恢复整齐。
+     * 未分配（隐藏）项不参与；图标数超过可视容量时超出的保留原坐标，避免挤到屏幕外。
+     */
+    function autoArrangeDesktopIcons() {
+        var items = assignedDesktopItems().slice().sort(function (a, b) {
+            return (Number(a.y) || 0) - (Number(b.y) || 0) || (Number(a.x) || 0) - (Number(b.x) || 0);
+        });
+        if (!items.length) { return; }
+        var capacity = desktopGridCapacity();
+        var rows = capacity.rows || 1;
+        var cols = capacity.cols;
+        var changed = false;
+        var slot = 0;
+        items.forEach(function (item) {
+            var column = Math.floor(slot / rows);
+            var row = slot % rows;
+            // 可视格子已全部占满：剩余图标保留原坐标
+            if (cols > 0 && column >= cols) { return; }
+            slot += 1;
+            if (item.x !== column || item.y !== row) {
+                item.x = column;
+                item.y = row;
+                changed = true;
+            }
+        });
+        if (!changed) {
+            toast('图标已是整齐排列');
+            return;
+        }
+        state.desktopSelection.clear();
+        renderDesktop();
+        saveWorkspace(false).then(function () { toast('已自动排列图标'); });
+    }
+
+    /**
      * 应用中心/开始菜单目录：直接复用系统接口作为数据源（与传统后台应用管理同一数据源，便于统一维护）
      * 已安装应用列表：GET /api/admin/apps；后台菜单目录：GET /api/admin/menus/user
      * 操作记录不再随目录预取，切换到「安装记录」时按需读取 /api/admin/app-logs
@@ -8443,6 +8485,69 @@
             }
             if (button) {
                 button.dataset.wasDragged = '0';
+            }
+        });
+        // 桌面图标键盘操作（无障碍与效率）：Ctrl+A 全选、方向键移动焦点、Enter 打开、Delete 删除
+        elements.desktopIcons.addEventListener('keydown', function (event) {
+            if (event.ctrlKey && (event.key === 'a' || event.key === 'A')) {
+                event.preventDefault();
+                state.desktopSelection.clear();
+                assignedDesktopItems().forEach(function (item) { state.desktopSelection.add(item.id); });
+                syncDesktopSelection();
+                return;
+            }
+            var button = event.target.closest('[data-desktop-id]');
+            if (!button) {
+                return;
+            }
+            if (event.key === 'Enter') {
+                // 与双击打开一致：拖动误触标记的图标不打开
+                event.preventDefault();
+                if (button.dataset.wasDragged !== '1') {
+                    openEntry(findEntry(button.dataset.desktopId));
+                }
+                button.dataset.wasDragged = '0';
+                return;
+            }
+            if (event.key === 'Delete') {
+                event.preventDefault();
+                // 选中多个时整批删除，否则删除焦点图标（应用中心内置入口在 removeDesktopEntry 内拦截）
+                var targets = state.desktopSelection.has(button.dataset.desktopId) && state.desktopSelection.size > 1
+                    ? Array.from(state.desktopSelection)
+                    : [button.dataset.desktopId];
+                targets.forEach(removeDesktopEntry);
+                var remaining = elements.desktopIcons.querySelector('[data-desktop-id]');
+                if (remaining) {
+                    remaining.focus();
+                }
+                return;
+            }
+            // 方向键：移动到当前图标目标方向上最近一格的图标并聚焦
+            var direction = { ArrowRight: [1, 0], ArrowLeft: [-1, 0], ArrowDown: [0, 1], ArrowUp: [0, -1] }[event.key];
+            if (!direction) {
+                return;
+            }
+            event.preventDefault();
+            var current = findDesktopItem(button.dataset.desktopId);
+            if (!current) {
+                return;
+            }
+            var currentX = Number(current.x) || 0;
+            var currentY = Number(current.y) || 0;
+            var target = assignedDesktopItems().filter(function (item) {
+                var x = Number(item.x) || 0;
+                var y = Number(item.y) || 0;
+                return direction[0]
+                    ? y === currentY && Math.sign(x - currentX) === direction[0]
+                    : x === currentX && Math.sign(y - currentY) === direction[1];
+            }).sort(function (a, b) {
+                return direction[0]
+                    ? Math.abs((Number(a.x) || 0) - currentX) - Math.abs((Number(b.x) || 0) - currentX)
+                    : Math.abs((Number(a.y) || 0) - currentY) - Math.abs((Number(b.y) || 0) - currentY);
+            })[0];
+            var nextButton = target && desktopButtonById(target.id);
+            if (nextButton) {
+                nextButton.focus();
             }
         });
         elements.desktopIcons.addEventListener('contextmenu', function (event) {
