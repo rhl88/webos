@@ -1495,21 +1495,27 @@ textarea:focus-visible,
 }
 
 /* 菜单项「+」/图钉按钮（添加到桌面/从桌面移除）默认隐藏，悬停/聚焦应用项时浮动显示；
-   is-pinned 仅作为状态配色（图钉色），不再常显 */
+   is-pinned 仅作为状态配色（图钉色），不再常显。
+   按钮为右上角「角标」：浮出卡片边缘，避免与较长应用名称重叠遮挡 */
 .pin-button {
     position: absolute;
-    top: 8px;
-    right: 6px;
-    width: 27px;
-    height: 27px;
-    border: 0;
-    border-radius: 5px;
+    top: -7px;
+    right: -5px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 21px;
+    height: 21px;
+    border: 1px solid var(--webos-line);
+    border-radius: 50%;
+    font-size: 11px;
     color: #8592a5;
-    background: transparent;
+    background: #fff;
+    box-shadow: 0 2px 6px rgba(15, 34, 58, 0.18);
     cursor: pointer;
     opacity: 0;
     visibility: hidden;
-    transform: translateX(4px);
+    transform: translate(3px, -3px);
     transition: opacity 0.15s ease, transform 0.15s ease, visibility 0.15s ease;
 }
 
@@ -1517,12 +1523,13 @@ textarea:focus-visible,
 .start-app-item:focus-within .pin-button {
     opacity: 1;
     visibility: visible;
-    transform: translateX(0);
+    transform: translate(0, 0);
 }
 
 .pin-button:hover {
-    color: var(--webos-primary-dark);
-    background: #fff;
+    color: #fff;
+    background: var(--webos-primary);
+    border-color: var(--webos-primary);
 }
 
 /* 已固定到桌面的应用：悬停显示时图钉用主题色，与「添加到桌面」的加号区分 */

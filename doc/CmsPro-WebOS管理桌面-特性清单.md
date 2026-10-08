@@ -1,7 +1,7 @@
 # CmsPro WebOS 管理桌面 · 特性清单
 
-> 文档版本：2.1.7 | 更新日期：2026-10-08
-> 应用版本：2.1.7 | 应用 ID：`cmspro.webos`
+> 文档版本：2.1.8 | 更新日期：2026-10-08
+> 应用版本：2.1.8 | 应用 ID：`cmspro.webos`
 
 ## 一、应用定位
 
@@ -122,6 +122,7 @@ CmsproWebos/
 
 | 版本 | 日期 | 说明 |
 |---|---|---|
+| 2.1.8 | 2026-10-08 | 系统菜单悬停图钉按钮改角标（用户反馈：悬停应用出现「添加到桌面/从桌面移除」按钮盖住应用名称）：`.pin-button` 由卡片内右上（top 8px / right 6px、27px 透明底）改为**浮出卡片右上边缘的圆形角标**——top:-7px / right:-5px、21px 白底 + 边框 + 轻阴影，悬停应用时淡入（translate(3px,-3px)→0 归位动效），悬停按钮自身反白主题色；名称较长时按钮不再与文字同行重叠，浮出量（7px）小于网格间距（10px）不侵入相邻卡片、滚动容器 padding（16px）不被裁剪。118 测试 1227 断言通过。 |
 | 2.1.7 | 2026-10-08 | 修复保存工作区接口对内置浏览器空 path 的误拦（用户反馈：含 webos-browser 桌面项的工作区保存返回 40201「desktop_items.10.path 字段必须存在」）：① 控制器验证——`desktop_items.*.path` / `taskbar_items.*.path` 由 `required`+闭包改为单闭包全权裁决：空值仅 id=webos-browser 放行（按 attribute 反查同项 id），非空仍必须 `/` 开头站内路径；**不能用 nullable/string 规则**——空串经 ConvertEmptyStringsToNull 转 null 后 nullable 跳过闭包（普通项空路径漏到服务层抛 500）、string 规则对 null 直接误报，裁决收进闭包保证 40201 语义；② 服务层 sanitizeDesktopItem 空路径白名单兜底（id 解析前置，空 path 仅 webos-browser，其余仍抛 InvalidArgumentException 纵深防御）；③ 新增回归测试 test_workspace_api_allows_builtin_browser_empty_path（浏览器空 path 保存/回读、普通项空 path 仍 40201）。118 测试 1227 断言通过。 |
 | 2.1.6 | 2026-10-08 | 全屏下任务栏地球图标改为内置浏览器打开：原点击行为是 `window.open` 新标签页打开前台首页，浏览器会因此退出全屏；现当 `document.fullscreenElement` 存在时改走新增的 `openBrowserWithURL(url)`——同步 `openEntry(webosBrowserEntry())`（已有窗口则激活还原，否则新建 90%×86% 浏览器窗口），再对当前激活标签执行 `browserNavigate` 导航到站点首页；非全屏行为不变。117 测试 1219 断言通过。 |
 | 2.1.5 | 2026-10-08 | 「最近」区块去重与相对时间（用户反馈：最近区块每项成对重复显示；「上次打开 月-日 时:分」改为 x 秒/分钟/小时/天/月前打开）：① **重复根因**——renderStartRecent 遍历的 groups 来自 groupsFromMenus() = [commonGroup(常用), ...原始分组]，「常用」虚拟分组的条目与原始分组条目同 start_key（usage_stats 同一 key），两处都进最近候选导致同一条目渲染两次（主网格有 unique 按 start_key 去重所以常用区无重复，最近区块漏了同款处理）；修复为数据源 filter 排除 common 虚拟分组；② **相对时间 relativeOpenedAt**——'Y-m-d H:i:s' 解析（空格转 T），秒差按 60/60/24/30/12 五档进位输出「x 秒前打开 / x 分钟前打开 / x 小时前打开 / x 天前打开 / x 个月前打开」，12 个月以上「x 年前打开」，不足 1 秒「刚刚打开」，解析失败回退「上次打开 原文」。117 测试 1217 断言通过。 |
