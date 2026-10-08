@@ -985,8 +985,9 @@
     /**
      * 系统菜单「最近」区块：仅「常用」分类且非搜索时显示最近打开的 6 个入口。
      * 数据复用使用统计 usage_stats（recordEntryUsage 已记录 last_opened_at），按最近打开时间降序取前 6，
-     * 副标题显示「上次打开 月-日 时:分」；卡片结构与常用一致（含添加到桌面按钮），点击委托由 root 级 [data-menu-id] 处理。
-     * 从未打开过任何应用时隐藏区块。
+     * 副标题显示相对时间（x 秒/分钟/小时/天/月前打开）；卡片结构与常用一致（含添加到桌面按钮），点击委托由 root 级 [data-menu-id] 处理。
+     * 从未打开过任何应用时隐藏区块。注意：groups 首元素是「常用」虚拟分组（commonGroup），
+     * 其条目与原始分组同 start_key，这里必须排除避免同一条目出现两次。
      */
     function renderStartRecent(groups, query) {
         var host = elements.startRecent;
@@ -996,7 +997,7 @@
             statistics = {};
         }
         var recent = !query
-            ? groups.reduce(function (all, group) { return all.concat(group.items); }, []).filter(function (item) {
+            ? groups.filter(function (group) { return group.id !== 'common'; }).reduce(function (all, group) { return all.concat(group.items); }, []).filter(function (item) {
                 return statistics[item.start_key] && statistics[item.start_key].last_opened_at;
             }).sort(function (left, right) {
                 return statistics[right.start_key].last_opened_at.localeCompare(statistics[left.start_key].last_opened_at);
@@ -1019,12 +1020,40 @@
                     + (isFolderStartItem(item)
                         ? '<span class="start-app-item-icon"><i class="' + safeIcon(item.start_icon) + '"></i></span>'
                         : entryIconMarkup(item, 'start-app-item-icon'))
-                    + '<span class="start-app-item-text"><strong>' + escapeHtml(item.start_title) + '</strong><small>上次打开 '
-                    + escapeHtml(String(statistics[item.start_key].last_opened_at).slice(5, 16)) + '</small></span>'
+                    + '<span class="start-app-item-text"><strong>' + escapeHtml(item.start_title) + '</strong><small>'
+                    + escapeHtml(relativeOpenedAt(statistics[item.start_key].last_opened_at)) + '</small></span>'
                     + pinButton
                     + '</div>';
             }).join('') + '</div>';
         host.hidden = false;
+    }
+
+    /**
+     * 「最近」区块相对时间：x 秒 / x 分钟 / x 小时 / x 天 / x 月 / x 年前打开（不足 1 秒显示「刚刚打开」）。
+     * 入参为 'Y-m-d H:i:s' 本地时间字符串（formatLocalDateTime 产出），解析失败回退原文。
+     */
+    function relativeOpenedAt(value) {
+        var time = new Date(String(value).replace(' ', 'T'));
+        if (isNaN(time.getTime())) { return '上次打开 ' + value; }
+        var seconds = Math.max(0, Math.floor((Date.now() - time.getTime()) / 1000));
+        if (seconds < 1) { return '刚刚打开'; }
+        var units = [
+            [60, '秒前打开'],
+            [60, '分钟前打开'],
+            [24, '小时前打开'],
+            [30, '天前打开'],
+            [12, '个月前打开']
+        ];
+        var amount = seconds;
+        for (var i = 0; i < units.length; i++) {
+            var limit = units[i][0];
+            var suffix = units[i][1];
+            if (amount < limit) {
+                return Math.floor(amount) + ' ' + suffix;
+            }
+            amount /= limit;
+        }
+        return Math.floor(amount) + ' 年前打开';
     }
 
     /** 全屏切换（桌面右键菜单入口）：进入/退出浏览器全屏；菜单文案随当前状态动态渲染，无需监听 fullscreenchange */

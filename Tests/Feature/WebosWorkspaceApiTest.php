@@ -673,11 +673,17 @@ class WebosWorkspaceApiTest extends WebosTestCase
         // Blade：最近区块容器（常用网格下方）；任务栏全屏按钮已移除（全屏入口迁至桌面右键菜单）
         $this->assertStringContainsString('<div id="start-recent" class="start-recent" hidden></div>', $view);
         $this->assertStringNotContainsString('fullscreen-button', $view);
-        // JS：最近区块复用 usage_stats 的 last_opened_at 降序取前 6，副标题「上次打开 月-日 时:分」；无记录时隐藏
+        // JS：最近区块复用 usage_stats 的 last_opened_at 降序取前 6，副标题相对时间（x 秒/分钟/小时/天/月前打开）；无记录时隐藏
         $this->assertStringContainsString('function renderStartRecent(groups, query)', $script);
         $this->assertStringContainsString('renderStartRecent(groups, query);', $script);
         $this->assertStringContainsString("statistics[right.start_key].last_opened_at.localeCompare(statistics[left.start_key].last_opened_at)", $script);
-        $this->assertStringContainsString("'<span class=\"start-app-item-text\"><strong>' + escapeHtml(item.start_title) + '</strong><small>上次打开 '", $script);
+        // 数据源排除「常用」虚拟分组（commonGroup 条目与原始分组同 start_key，不排除会成对重复）
+        $this->assertStringContainsString("groups.filter(function (group) { return group.id !== 'common'; })", $script);
+        // 副标题相对时间：秒/分钟/小时/天/月五档进位 + 年兜底，不足 1 秒「刚刚打开」
+        $this->assertStringContainsString('function relativeOpenedAt(value)', $script);
+        $this->assertStringContainsString("return Math.floor(amount) + ' ' + suffix;", $script);
+        $this->assertStringContainsString("return Math.floor(amount) + ' 年前打开';", $script);
+        $this->assertStringContainsString("escapeHtml(relativeOpenedAt(statistics[item.start_key].last_opened_at))", $script);
         $this->assertStringContainsString('host.hidden = true;', $script);
         // JS：全屏切换（保留 toggleFullscreen）+ 桌面右键菜单「显示桌面」下方动态文案项（每次渲染实时读取状态）
         $this->assertStringContainsString('function toggleFullscreen()', $script);
