@@ -1269,6 +1269,19 @@
         updateBrowserWindow(windowState);
     }
 
+    /**
+     * 在内置浏览器窗口打开指定网址（同步打开/复用窗口后导航到当前激活标签）。
+     * 全屏场景专用：新标签页会打断全屏体验（window.open 导致退出全屏）。
+     */
+    function openBrowserWithURL(url) {
+        openEntry(webosBrowserEntry());
+        var windowState = state.windows.get('webos-browser');
+        var active = windowState && windowState.browser ? browserActiveTab(windowState) : null;
+        if (url && active) {
+            browserNavigate(windowState, active, url);
+        }
+    }
+
     /** 浏览器事件委托：标签切换/关闭/新建、刷新、新窗口打开、地址栏回车导航 */
     function bindBrowserEvents(shell, windowState) {
         shell.addEventListener('click', function (event) {
@@ -8817,8 +8830,12 @@
             togglePanel('start', elements.startPanel, elements.startButton);
         });
         elements.notificationButton.addEventListener('click', function () { togglePanel('notifications', elements.notificationPanel, elements.notificationButton); });
-        // 前台首页：浏览器新标签页打开站点首页
+        // 前台首页：默认新标签页打开站点首页；全屏下新标签页会退出全屏，改在桌面内置浏览器窗口打开
         elements.websiteButton.addEventListener('click', function () {
+            if (document.fullscreenElement || document.webkitFullscreenElement) {
+                openBrowserWithURL(elements.websiteButton.dataset.websiteUrl);
+                return;
+            }
             window.open(elements.websiteButton.dataset.websiteUrl, '_blank', 'noopener');
         });
         elements.accountButton.addEventListener('click', function () { togglePanel('account', elements.accountPanel, elements.accountButton); });

@@ -734,6 +734,9 @@ class WebosWorkspaceApiTest extends WebosTestCase
         $this->assertStringContainsString('function browserStartPageMarkup()', $script);
         $this->assertStringContainsString('frame.srcdoc = browserStartPageMarkup();', $script);
         $this->assertStringContainsString("viewsHost.querySelector('[data-browser-view=\"' + tab.id + '\"]')", $script);
+        // 全屏下任务栏地球图标改为在内置浏览器窗口打开（新标签页会退出全屏）
+        $this->assertStringContainsString('function openBrowserWithURL(url)', $script);
+        $this->assertStringContainsString('openBrowserWithURL(elements.websiteButton.dataset.websiteUrl);', $script);
         // CSS：浏览器外壳/标签条/标签页/iframe 视图铺满
         $this->assertStringContainsString('.webos-browser-shell {', $stylesheet);
         $this->assertStringContainsString('.browser-tabbar {', $stylesheet);

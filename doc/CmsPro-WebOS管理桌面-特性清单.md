@@ -1,7 +1,7 @@
 # CmsPro WebOS 管理桌面 · 特性清单
 
-> 文档版本：2.1.5 | 更新日期：2026-10-08
-> 应用版本：2.1.5 | 应用 ID：`cmspro.webos`
+> 文档版本：2.1.6 | 更新日期：2026-10-08
+> 应用版本：2.1.6 | 应用 ID：`cmspro.webos`
 
 ## 一、应用定位
 
@@ -122,6 +122,7 @@ CmsproWebos/
 
 | 版本 | 日期 | 说明 |
 |---|---|---|
+| 2.1.6 | 2026-10-08 | 全屏下任务栏地球图标改为内置浏览器打开：原点击行为是 `window.open` 新标签页打开前台首页，浏览器会因此退出全屏；现当 `document.fullscreenElement` 存在时改走新增的 `openBrowserWithURL(url)`——同步 `openEntry(webosBrowserEntry())`（已有窗口则激活还原，否则新建 90%×86% 浏览器窗口），再对当前激活标签执行 `browserNavigate` 导航到站点首页；非全屏行为不变。117 测试 1219 断言通过。 |
 | 2.1.5 | 2026-10-08 | 「最近」区块去重与相对时间（用户反馈：最近区块每项成对重复显示；「上次打开 月-日 时:分」改为 x 秒/分钟/小时/天/月前打开）：① **重复根因**——renderStartRecent 遍历的 groups 来自 groupsFromMenus() = [commonGroup(常用), ...原始分组]，「常用」虚拟分组的条目与原始分组条目同 start_key（usage_stats 同一 key），两处都进最近候选导致同一条目渲染两次（主网格有 unique 按 start_key 去重所以常用区无重复，最近区块漏了同款处理）；修复为数据源 filter 排除 common 虚拟分组；② **相对时间 relativeOpenedAt**——'Y-m-d H:i:s' 解析（空格转 T），秒差按 60/60/24/30/12 五档进位输出「x 秒前打开 / x 分钟前打开 / x 小时前打开 / x 天前打开 / x 个月前打开」，12 个月以上「x 年前打开」，不足 1 秒「刚刚打开」，解析失败回退「上次打开 原文」。117 测试 1217 断言通过。 |
 | 2.1.4 | 2026-10-08 | 内置浏览器与右键菜单优化（用户需求 4 项）：① **内置浏览器**——`webos-browser` 与应用中心同待遇内置窗口（BUILTIN_WINDOW_KEYS 白名单、固定单实例 key、右键无删除项、默认 90%×86%），桌面图标对所有角色默认预置（存量用户一次性自动补齐 + normalizeDesktopLayout 归位），多标签 iframe 浏览（标签条新建/关闭/切换，全关保留新标签页；iframe 按标签 id 保活，切换仅显隐不重载），地址栏回车导航（normalizeBrowserUrl 仅允许 http(s)、无协议补 https://），工具栏刷新（跨域 iframe 重设 src）+ 新窗口打开兜底（X-Frame-Options 拒嵌站点），标签标题取 hostname（跨域读不到 title），新标签页 srcdoc 引导页，浏览器状态随窗口关闭释放不写工作区；② **全屏入口迁移**——移除任务栏全屏/退出全屏按钮（blade、syncFullscreenButton、is-active 样式一并清理），桌面右键菜单「显示桌面」下方新增「全屏显示/退出全屏」项（每次打开菜单实时读 fullscreenElement 动态文案，无需监听 fullscreenchange），复用 toggleFullscreen；③ **右键菜单行高紧凑化**——`.desktop-context-menu` padding 6px→5px、gap 2px→1px，`.desktop-context-item` padding 8px 10px→6px 10px；④ **「查看」子菜单防闪烁修复**——根因是子菜单 `left: calc(100% + 4px)` 有 4px 间隙，指针缓慢经过间隙时 group 与 submenu 两个 hover 同时断开导致子菜单消失（快速移动反而不易触发）；修复为子菜单与父菜单重叠 2px（`calc(100% - 2px)`）+ 常驻透明 hover 桥（`.desktop-context-group.has-children::after` 宽 6px），纯 CSS 无 JS 延迟。windowMarkup 特殊窗口 content/identity 两处深层三元嵌套改平铺 if/else 链（消除括号失配隐患）。117 测试 1213 断言通过。 |
 | 2.1.3 | 2026-10-08 | 图标文字效果设置化（用户需求：桌面图标文字的半透明深色底衬移入 OS 设置→基本设置，默认关闭可自行开启；新增文字阴影效果，参考 Win11；底衬与阴影单选）：① 新增偏好 `label_effect` 三选一——`none`（无效果，默认）/ `shadow`（Win11 风格四周柔和文字阴影，无底衬）/ `shield`（半透明深色底衬，即 2.1.1 引入的效果）；② WorkspaceService 白名单校验（非法值回退 none），normalizePreferences 补默认值；③ 效果挂 .desktop-icons 容器 data-label-effect 属性（applyWorkspacePreferences 统一应用），CSS 作用域切换避免逐图标改类；④ OS 设置→基本设置新增「图标文字效果」卡片（settings-choice-grid is-three 三列单选，setWebosPreference 持久化并即时生效）；116 测试 1183 断言通过。 |
