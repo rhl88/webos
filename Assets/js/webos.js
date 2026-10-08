@@ -1114,7 +1114,7 @@
     }
 
     function browserNewTab() {
-        return { id: 'btab-' + Date.now() + '-' + Math.floor(Math.random() * 1000), url: '', title: '新标签页' };
+        return { id: 'btab-' + Date.now() + '-' + Math.floor(Math.random() * 1000), url: '', title: '新标签页', icon: '' };
     }
 
     /** 浏览器起始页（srcdoc 内联，无需网络请求）：引导用户在地址栏输入网址 */
@@ -1187,9 +1187,13 @@
 
         var tabsHost = shell.querySelector('[data-browser-tabs]');
         tabsHost.innerHTML = browser.tabs.map(function (tab) {
+            // 标签图标：元信息代理返回的站点 favicon（base64 data URI），新标签页/未取到时回退罗盘图标
+            var tabIcon = tab.icon
+                ? '<img class="browser-tab-favicon" src="' + escapeHtml(tab.icon) + '" alt="">'
+                : '<i class="fa ' + (tab.url ? 'fa-globe' : 'fa-compass') + '"></i>';
             return '<div class="browser-tab' + (tab.id === active.id ? ' is-active' : '') + '" data-browser-tab="'
                 + escapeHtml(tab.id) + '" title="' + escapeHtml(tab.title) + '">'
-                + '<i class="fa ' + (tab.url ? 'fa-globe' : 'fa-compass') + '"></i>'
+                + tabIcon
                 + '<span>' + escapeHtml(tab.title) + '</span>'
                 + '<button class="browser-tab-close" type="button" data-browser-action="close-tab" data-browser-tab-id="'
                 + escapeHtml(tab.id) + '" aria-label="关闭标签页" title="关闭标签页"><i class="fa fa-times"></i></button>'
@@ -1225,7 +1229,7 @@
         }
     }
 
-    /** 地址栏导航：规范化 URL 后更新标签并加载（清除 srcdoc 起始页改用 src） */
+    /** 地址栏导航：规范化 URL 后更新标签并加载（清除 srcdoc 起始页改用 src）；异步拉取页面元信息更新标题/图标 */
     function browserNavigate(windowState, tab, input) {
         var url = normalizeBrowserUrl(input);
         if (!url) {
@@ -1234,12 +1238,47 @@
         }
         tab.url = url;
         tab.title = browserTabTitle(url);
+        tab.icon = '';
+        tab.metaPending = false;
         var frame = browserFrameOf(windowState, tab);
         if (frame) {
             frame.removeAttribute('srcdoc');
             frame.src = url;
         }
         updateBrowserWindow(windowState);
+        fetchPageMeta(tab);
+    }
+
+    /**
+     * 拉取页面元信息（title/favicon）：跨域 iframe 读不到目标页标题与图标，
+     * 走后端代理接口（结果服务端缓存 1 天）；成功后更新标签并重绘标签条（iframe 不动）。
+     * 每次导航重置状态（metaPending 防并发重复请求），请求失败静默保留域名标题。
+     */
+    function fetchPageMeta(tab) {
+        var endpoint = root.dataset.pageMetaUrl;
+        if (!endpoint || !tab.url || tab.metaPending) {
+            return;
+        }
+        tab.metaPending = true;
+        api(endpoint + '?url=' + encodeURIComponent(tab.url)).then(function (meta) {
+            tab.metaPending = false;
+            // 响应期间标签可能已导航到其它页面或回到新标签页，过期结果不应用
+            if (!meta || !tab.url) {
+                return;
+            }
+            if (meta.title) {
+                tab.title = meta.title;
+            }
+            if (meta.icon) {
+                tab.icon = meta.icon;
+            }
+            var windowState = state.windows.get('webos-browser');
+            if (windowState && windowState.browser) {
+                updateBrowserWindow(windowState);
+            }
+        }).catch(function () {
+            tab.metaPending = false;
+        });
     }
 
     /** 刷新当前标签：跨域 iframe 无法调用 contentWindow.location.reload，统一重设 src 强制重载 */
@@ -7825,6 +7864,8 @@
         var entryId = String(id || '');
         if (entryId === 'webos-app-center') { return isSuperAdmin; }
         if (entryId === 'webos-settings') { return true; }
+        // 内置浏览器：与应用中心同待遇的内置入口，无权限要求（所有角色桌面均预置）
+        if (entryId === 'webos-browser') { return true; }
         if (state.flatMenus.some(function (item) { return item.id === entryId; })) { return true; }
 
         var appPrefix = 'app:';

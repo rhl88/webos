@@ -6,6 +6,7 @@ use App\Apps\CmsproWebos\Tests\WebosTestCase;
 use App\Models\AdminMenu;
 use App\Models\AdminUser;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Http;
 
 class WebosWorkspaceApiTest extends WebosTestCase
 {
@@ -704,6 +705,8 @@ class WebosWorkspaceApiTest extends WebosTestCase
     {
         $script = file_get_contents(dirname(__DIR__, 2) . '/Assets/js/webos.js');
         $stylesheet = file_get_contents(dirname(__DIR__, 2) . '/Assets/css/webos.css');
+        $view = file_get_contents(dirname(__DIR__, 2) . '/Views/Admin/desktop/index.blade.php');
+        $controller = file_get_contents(dirname(__DIR__, 2) . '/Controllers/Admin/WebosController.php');
 
         $this->assertIsString($script);
         $this->assertIsString($stylesheet);
@@ -739,12 +742,21 @@ class WebosWorkspaceApiTest extends WebosTestCase
         $this->assertStringContainsString('openBrowserWithURL(elements.websiteButton.dataset.websiteUrl);', $script);
         // 桌面项加载过滤放行内置浏览器空 path（safePath('') 为 false 会把浏览器图标每次加载都丢掉）
         $this->assertStringContainsString("(item.id === 'webos-browser' || safePath(item.path))", $script);
+        // 桌面渲染权限过滤放行内置浏览器（entryAssigned 无特判时浏览器图标被判未分配而不渲染）
+        $this->assertStringContainsString("if (entryId === 'webos-browser') { return true; }", $script);
         // 应用窗口 iframe 内框架「前台」地球链接：全屏改在内置浏览器打开，非全屏保持 target=_blank 新窗口
         $this->assertStringContainsString('function bindWindowFrame(frame)', $script);
         $this->assertStringContainsString("target.closest('a.layui-icon-website')", $script);
         $this->assertStringContainsString('openBrowserWithURL(link.href);', $script);
         $this->assertStringContainsString('bindWindowFrame(frame);', $script);
         $this->assertStringContainsString('bindWindowFrame(windowFrame);', $script);
+        // 标签站点图标与标题：后端元信息代理（跨域 iframe 读不到 title/favicon）
+        $this->assertStringContainsString('function fetchPageMeta(tab)', $script);
+        $this->assertStringContainsString("api(endpoint + '?url=' + encodeURIComponent(tab.url))", $script);
+        $this->assertStringContainsString('\'<img class="browser-tab-favicon" src="\' + escapeHtml(tab.icon)', $script);
+        $this->assertStringContainsString('.browser-tab-favicon {', $stylesheet);
+        $this->assertStringContainsString("data-page-meta-url=\"{{ url('/admin/cmspro/webos/api/page-meta') }}\"", $view);
+        $this->assertStringContainsString('function pageMeta(Request $request)', $controller);
         // CSS：浏览器外壳/标签条/标签页/iframe 视图铺满
         $this->assertStringContainsString('.webos-browser-shell {', $stylesheet);
         $this->assertStringContainsString('.browser-tabbar {', $stylesheet);
@@ -1783,6 +1795,31 @@ class WebosWorkspaceApiTest extends WebosTestCase
             'preferences' => [],
         ])->assertUnprocessable()
             ->assertJsonPath('code', 40201);
+    }
+
+    /** 内置浏览器页面元信息接口：后端代理抓取站点 title/favicon（Http fake，不发生真实外网请求） */
+    public function test_page_meta_api_returns_parsed_site_info(): void
+    {
+        $this->actingAdmin();
+
+        Http::fake([
+            'https://meta.example.com/' => Http::response(
+                '<html><head><title>Meta 站点标题</title><link rel="icon" href="/favicon.ico"></head></html>'
+            ),
+            'https://meta.example.com/favicon.ico' => Http::response('ICO', 200, ['Content-Type' => 'image/x-icon']),
+        ]);
+
+        $this->getJson('/admin/cmspro/webos/api/page-meta?url=' . urlencode('https://meta.example.com/'))
+            ->assertOk()
+            ->assertJsonPath('code', 0)
+            ->assertJsonPath('data.title', 'Meta 站点标题')
+            ->assertJsonPath('data.icon', 'data:image/x-icon;base64,' . base64_encode('ICO'));
+
+        // 非法协议：接口不放行也不发请求
+        $this->getJson('/admin/cmspro/webos/api/page-meta?url=' . urlencode('file:///etc/passwd'))
+            ->assertOk()
+            ->assertJsonPath('data.title', '')
+            ->assertJsonPath('data.icon', '');
     }
 
     /** 导出：对齐传统后台 exportApp，用 layer 确认 + XHR blob 下载，并识别 JSON 错误体 */

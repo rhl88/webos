@@ -3,6 +3,7 @@
 namespace App\Apps\CmsproWebos\Controllers\Admin;
 
 use App\Apps\CmsproWebos\Services\CalendarService;
+use App\Apps\CmsproWebos\Services\PageMetaService;
 use App\Apps\CmsproWebos\Services\WallpaperService;
 use App\Apps\CmsproWebos\Services\WebosNotificationService;
 use App\Apps\CmsproWebos\Services\WorkspaceService;
@@ -20,7 +21,8 @@ class WebosController extends Controller
     public function __construct(
         protected WorkspaceService $workspaces,
         protected CalendarService $calendar,
-        protected WallpaperService $wallpapers
+        protected WallpaperService $wallpapers,
+        protected PageMetaService $pageMeta
     ) {
     }
 
@@ -48,6 +50,15 @@ class WebosController extends Controller
             'cmsproVersion' => system_version(),
             'webosVersion' => $this->manifestVersion(),
         ]);
+    }
+
+    /**
+     * 内置浏览器页面元信息（title/favicon）：跨域 iframe 受同源策略限制读不到，
+     * 由后端代理抓取（结果缓存 1 天）；失败返回空值，前端回退域名与默认图标。
+     */
+    public function pageMeta(Request $request): JsonResponse
+    {
+        return response()->json(ApiResponse::success($this->pageMeta->fetch((string) $request->query('url', ''))));
     }
 
     /**

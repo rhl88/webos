@@ -1,7 +1,7 @@
 # CmsPro WebOS 管理桌面 · 特性清单
 
-> 文档版本：2.1.9 | 更新日期：2026-10-08
-> 应用版本：2.1.9 | 应用 ID：`cmspro.webos`
+> 文档版本：2.1.10 | 更新日期：2026-10-08
+> 应用版本：2.1.10 | 应用 ID：`cmspro.webos`
 
 ## 一、应用定位
 
@@ -122,6 +122,7 @@ CmsproWebos/
 
 | 版本 | 日期 | 说明 |
 |---|---|---|
+| 2.1.10 | 2026-10-08 | 桌面浏览器图标真正修复 + 标签站点图标与标题（用户反馈两项）：① **图标根因补全**——2.1.9 修了 normalizeDesktopItems 加载过滤，本轮发现 `entryAssigned(id)` 渲染权限过滤同样漏了 webos-browser 特判（应用中心/OS 设置都有），浏览器项被判「未分配」在 renderDesktop 与 assignedDesktopItems（网格占用/找空位）中双重排除，导致图标始终不显示；补 `if (entryId === 'webos-browser') { return true; }`；② **页面元信息代理**——新增 `GET /api/page-meta?url=`（PageMetaService）：后端代抓目标页解析 `<title>`（兼容 GBK/GB2312/BIG5 转码，60 字符截断）与 favicon（`<link rel="icon">` 声明优先、缺省探测 `/favicon.ico`，限 30KB、图片类型校验，转 base64 data URI），Http 超时 4s/连接 2s/重定向 2 次，仅 http(s) 协议（SSRF 基础防护），结果 Cache 1 天；前端 fetchPageMeta 导航后异步拉取（metaPending 防并发、过期响应不应用、失败静默回退域名标题），标签条渲染 `<img class="browser-tab-favicon">`（14px，未取到回退罗盘/地球图标）；③ 新增 PageMetaServiceTest（5 用例：协议拒绝不发请求/title+声明图标解析/默认 favicon 探测/请求失败回退/404 与非法图标类型忽略）与接口测试 test_page_meta_api_returns_parsed_site_info（Http fake）。124 测试 1260 断言通过。 |
 | 2.1.9 | 2026-10-08 | 桌面浏览器图标丢失修复 + 窗口内前台链接全屏分流（用户反馈两项）：① **图标丢失根因**——`normalizeDesktopItems` 的过滤条件 `item.id && safePath(item.path)` 对内置浏览器空 path（`safePath('')` 为 false）每次加载都把 webos-browser 项丢掉（bootstrapDesktopItems 虽有补齐但 saveWorkspace 在 2.1.7 前被 40201 拦截静默失败，服务器始终存不上）；修复为 `item.id === 'webos-browser' || safePath(item.path)` 特判放行，存量用户刷新后由补齐逻辑自动恢复图标；② **窗口内前台链接分流 bindWindowFrame**——应用窗口 iframe 绑定 load 事件（同源导航 contentDocument 更新后逐次重绑，doc 标记防重复，跨域静默跳过），load 后在 doc 上挂捕获阶段 click 监听匹配框架「前台」地球链接（`a.layui-icon-website`，[admin.blade.php L159](../../resources/views/layouts/admin.blade.php)）：全屏时 preventDefault 并 `openBrowserWithURL(link.href)` 在内置浏览器窗口打开，非全屏保持 `target="_blank"` 浏览器默认新窗口；renderWindowPage 两处 iframe 创建（多选项卡/单页）后均绑定。118 测试 1233 断言通过。 |
 | 2.1.8 | 2026-10-08 | 系统菜单悬停图钉按钮改角标（用户反馈：悬停应用出现「添加到桌面/从桌面移除」按钮盖住应用名称）：`.pin-button` 由卡片内右上（top 8px / right 6px、27px 透明底）改为**浮出卡片右上边缘的圆形角标**——top:-7px / right:-5px、21px 白底 + 边框 + 轻阴影，悬停应用时淡入（translate(3px,-3px)→0 归位动效），悬停按钮自身反白主题色；名称较长时按钮不再与文字同行重叠，浮出量（7px）小于网格间距（10px）不侵入相邻卡片、滚动容器 padding（16px）不被裁剪。118 测试 1227 断言通过。 |
 | 2.1.7 | 2026-10-08 | 修复保存工作区接口对内置浏览器空 path 的误拦（用户反馈：含 webos-browser 桌面项的工作区保存返回 40201「desktop_items.10.path 字段必须存在」）：① 控制器验证——`desktop_items.*.path` / `taskbar_items.*.path` 由 `required`+闭包改为单闭包全权裁决：空值仅 id=webos-browser 放行（按 attribute 反查同项 id），非空仍必须 `/` 开头站内路径；**不能用 nullable/string 规则**——空串经 ConvertEmptyStringsToNull 转 null 后 nullable 跳过闭包（普通项空路径漏到服务层抛 500）、string 规则对 null 直接误报，裁决收进闭包保证 40201 语义；② 服务层 sanitizeDesktopItem 空路径白名单兜底（id 解析前置，空 path 仅 webos-browser，其余仍抛 InvalidArgumentException 纵深防御）；③ 新增回归测试 test_workspace_api_allows_builtin_browser_empty_path（浏览器空 path 保存/回读、普通项空 path 仍 40201）。118 测试 1227 断言通过。 |

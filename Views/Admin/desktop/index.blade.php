@@ -23,6 +23,7 @@
     data-calendar-url="{{ url('/admin/cmspro/webos/api/calendar') }}"
     data-wallpaper-url="{{ asset('apps/cmspro.webos/images/webos-wallpaper.png') }}"
     data-wallpapers-url="{{ url('/admin/cmspro/webos/api/wallpapers') }}"
+    data-page-meta-url="{{ url('/admin/cmspro/webos/api/page-meta') }}"
     data-login-url="{{ route('admin.login') }}"
     data-market-base-url="{{ $marketBaseUrl }}"
     data-taskbar-position="bottom"

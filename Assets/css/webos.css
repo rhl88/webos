@@ -5712,6 +5712,15 @@ textarea:focus-visible,
     text-overflow: ellipsis;
 }
 
+/* 标签站点图标（元信息代理返回的 favicon base64） */
+.browser-tab-favicon {
+    flex: none;
+    width: 14px;
+    height: 14px;
+    border-radius: 2px;
+    object-fit: contain;
+}
+
 .browser-tab-close {
     display: flex;
     align-items: center;

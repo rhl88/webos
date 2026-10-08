@@ -16,4 +16,6 @@ Route::prefix('api')->name('api.')->group(function () {
     Route::get('/all-todos', [WebosController::class, 'allTodos'])->name('all-todos');
     // 前台菜单链接兼容转换（域名绑定/子域名部署 → 可直达 URL）
     Route::get('/home-menu-urls', [WebosController::class, 'homeMenuUrls'])->name('home-menu-urls');
+    // 内置浏览器页面元信息（title/favicon 代抓，跨域 iframe 读不到）
+    Route::get('/page-meta', [WebosController::class, 'pageMeta'])->name('page-meta');
 });
