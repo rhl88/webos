@@ -1145,9 +1145,15 @@
         var shell = windowState.element.querySelector('[data-webos-browser]');
         if (!shell) { return; }
         if (!shell.querySelector('[data-browser-views]')) {
-            shell.innerHTML = '<div class="browser-tabbar"><div class="browser-tabs" data-browser-tabs></div>'
+            // 浏览器窗口不显示 window-titlebar（CSS 隐藏）：窗口控制按钮内嵌标签栏右侧，标签栏空白区承担窗口拖动
+            shell.innerHTML = '<div class="browser-tabbar" data-window-drag><div class="browser-tabs" data-browser-tabs></div>'
                 + '<button class="browser-tab-new" type="button" data-browser-action="new-tab" aria-label="新建标签页" title="新建标签页">'
-                + '<i class="fa fa-plus"></i></button></div>'
+                + '<i class="fa fa-plus"></i></button>'
+                + '<div class="browser-window-controls">'
+                + '<button class="window-control" type="button" data-window-action="minimize" aria-label="最小化" title="最小化"><i class="fa fa-minus"></i></button>'
+                + '<button class="window-control" type="button" data-window-action="maximize" aria-label="最大化" title="最大化"><i class="fa fa-square-o"></i></button>'
+                + '<button class="window-control close" type="button" data-window-action="close" aria-label="关闭" title="关闭"><i class="fa fa-times"></i></button>'
+                + '</div></div>'
                 + '<div class="browser-toolbar">'
                 + '<button class="browser-tool" type="button" data-browser-action="reload" aria-label="刷新当前标签" title="刷新当前标签">'
                 + '<i class="fa fa-refresh"></i></button>'
@@ -3395,14 +3401,14 @@
         target.maximized = !target.maximized;
         target.element.classList.toggle('is-maximized', target.maximized);
 
-        var maximizeButton = target.element.querySelector('[data-window-action="maximize"]');
-        if (maximizeButton) {
+        var maximizeButtons = target.element.querySelectorAll('[data-window-action="maximize"]');
+        maximizeButtons.forEach(function (maximizeButton) {
             var maximizeIcon = maximizeButton.querySelector('i');
             maximizeButton.setAttribute('aria-label', target.maximized ? '还原' : '最大化');
             if (maximizeIcon) {
                 maximizeIcon.className = 'fa ' + (target.maximized ? 'fa-clone' : 'fa-square-o');
             }
-        }
+        });
 
         focusWindow(key);
     }
@@ -3481,56 +3487,59 @@
     function bindWindowGestures(key) {
         var target = state.windows.get(key);
         var element = target.element;
-        var titlebar = element.querySelector('[data-window-drag]');
 
         element.addEventListener('pointerdown', function () { focusWindow(key); });
-        titlebar.addEventListener('pointerdown', function (event) {
-            if (event.target.closest('button') || target.maximized) {
-                return;
-            }
-            var startX = event.clientX;
-            var startY = event.clientY;
-            var startLeft = element.offsetLeft;
-            var startTop = element.offsetTop;
-            var pointerId = event.pointerId;
-            var scheduleMove = createFrameScheduler(function (point) {
-                var left = Math.max(0, Math.min(window.innerWidth - 180, startLeft + point.x - startX));
-                var top = Math.max(0, Math.min(window.innerHeight - 120, startTop + point.y - startY));
-                element.style.left = left + 'px';
-                element.style.top = top + 'px';
-            });
-            element.classList.add('is-window-gesturing');
-            titlebar.setPointerCapture(event.pointerId);
-            function move(moveEvent) {
-                scheduleMove({ x: moveEvent.clientX, y: moveEvent.clientY });
-            }
-            function end() {
-                scheduleMove.flush();
-                element.classList.remove('is-window-gesturing');
-                titlebar.removeEventListener('pointermove', move);
-                titlebar.removeEventListener('pointerup', end);
-                titlebar.removeEventListener('pointercancel', end);
-                titlebar.removeEventListener('lostpointercapture', end);
-                if (titlebar.hasPointerCapture(pointerId)) {
-                    titlebar.releasePointerCapture(pointerId);
+        // 拖动源：常规窗口为标题栏；内置浏览器窗口标题栏隐藏（CSS），由标签栏空白区承担拖动
+        // （遍历所有 data-window-drag 源逐一绑定，排除按钮/标签/输入控件避免交互冲突）
+        element.querySelectorAll('[data-window-drag]').forEach(function (dragHost) {
+            dragHost.addEventListener('pointerdown', function (event) {
+                if (event.target.closest('button, .browser-tab, input, select, textarea') || target.maximized) {
+                    return;
                 }
-            }
-            titlebar.addEventListener('pointermove', move);
-            titlebar.addEventListener('pointerup', end);
-            titlebar.addEventListener('pointercancel', end);
-            titlebar.addEventListener('lostpointercapture', end);
-        });
+                var startX = event.clientX;
+                var startY = event.clientY;
+                var startLeft = element.offsetLeft;
+                var startTop = element.offsetTop;
+                var pointerId = event.pointerId;
+                var scheduleMove = createFrameScheduler(function (point) {
+                    var left = Math.max(0, Math.min(window.innerWidth - 180, startLeft + point.x - startX));
+                    var top = Math.max(0, Math.min(window.innerHeight - 120, startTop + point.y - startY));
+                    element.style.left = left + 'px';
+                    element.style.top = top + 'px';
+                });
+                element.classList.add('is-window-gesturing');
+                dragHost.setPointerCapture(event.pointerId);
+                function move(moveEvent) {
+                    scheduleMove({ x: moveEvent.clientX, y: moveEvent.clientY });
+                }
+                function end() {
+                    scheduleMove.flush();
+                    element.classList.remove('is-window-gesturing');
+                    dragHost.removeEventListener('pointermove', move);
+                    dragHost.removeEventListener('pointerup', end);
+                    dragHost.removeEventListener('pointercancel', end);
+                    dragHost.removeEventListener('lostpointercapture', end);
+                    if (dragHost.hasPointerCapture(pointerId)) {
+                        dragHost.releasePointerCapture(pointerId);
+                    }
+                }
+                dragHost.addEventListener('pointermove', move);
+                dragHost.addEventListener('pointerup', end);
+                dragHost.addEventListener('pointercancel', end);
+                dragHost.addEventListener('lostpointercapture', end);
+            });
 
-        // 双击标题栏（品牌区/空白处）切换最大化还原（Windows 桌面惯例）；控制区按钮双击不触发
-        titlebar.addEventListener('dblclick', function (event) {
-            if (event.target.closest('button')) {
-                return;
-            }
-            if (target.maximized) {
-                restoreWindow(key);
-            } else {
-                maximizeWindow(key);
-            }
+            // 双击拖动区（品牌区/标签栏空白处）切换最大化还原（Windows 桌面惯例）；控制区按钮双击不触发
+            dragHost.addEventListener('dblclick', function (event) {
+                if (event.target.closest('button, .browser-tab, input, select, textarea')) {
+                    return;
+                }
+                if (target.maximized) {
+                    restoreWindow(key);
+                } else {
+                    maximizeWindow(key);
+                }
+            });
         });
 
         element.querySelectorAll('[data-window-resize]').forEach(function (handle) {

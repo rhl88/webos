@@ -261,9 +261,10 @@ class WebosWorkspaceApiTest extends WebosTestCase
             $script
         );
         $this->assertStringContainsString("'tab-close-others'", $script);
-        // 双击标题栏切换最大化还原：dblclick 绑定在拖动标题栏上，控制区按钮（closest('button')）不触发
+        // 双击拖动区切换最大化还原：dblclick 绑定在所有 data-window-drag 源（标题栏/浏览器标签栏）上，
+        // 控制区按钮、标签、输入控件（closest('button, .browser-tab, input, select, textarea')）不触发
         $this->assertMatchesRegularExpression(
-            "/titlebar\.addEventListener\('dblclick', function \(event\) \{\s*if \(event\.target\.closest\('button'\)\) \{\s*return;\s*\}\s*if \(target\.maximized\) \{\s*restoreWindow\(key\);\s*\} else \{\s*maximizeWindow\(key\);\s*\}\s*\}\);/",
+            "/dragHost\.addEventListener\('dblclick', function \(event\) \{\s*if \(event\.target\.closest\('button, \.browser-tab, input, select, textarea'\)\) \{\s*return;\s*\}\s*if \(target\.maximized\) \{\s*restoreWindow\(key\);\s*\} else \{\s*maximizeWindow\(key\);\s*\}\s*\}\);/",
             $script
         );
         $this->assertStringContainsString("'tab-close-all'", $script);
@@ -760,6 +761,13 @@ class WebosWorkspaceApiTest extends WebosTestCase
         $this->assertStringContainsString('.browser-tab-favicon {', $stylesheet);
         $this->assertStringContainsString("data-page-meta-url=\"{{ url('/admin/cmspro/webos/api/page-meta') }}\"", $view);
         $this->assertStringContainsString('function pageMeta(Request $request)', $controller);
+        // 浏览器窗口无标题栏：控制按钮内嵌标签栏右侧，标签栏空白区承担窗口拖动（多拖动源遍历绑定）
+        $this->assertStringContainsString("'<div class=\"browser-tabbar\" data-window-drag>", $script);
+        $this->assertStringContainsString('browser-window-controls', $script);
+        $this->assertStringContainsString("querySelectorAll('[data-window-drag]')", $script);
+        $this->assertStringContainsString("querySelectorAll('[data-window-action=\"maximize\"]')", $script);
+        $this->assertStringContainsString('[data-window-key="webos-browser"] .window-titlebar', $stylesheet);
+        $this->assertStringContainsString('.browser-window-controls {', $stylesheet);
         // CSS：浏览器外壳/标签条/标签页/iframe 视图铺满
         $this->assertStringContainsString('.webos-browser-shell {', $stylesheet);
         $this->assertStringContainsString('.browser-tabbar {', $stylesheet);
@@ -2076,7 +2084,7 @@ class WebosWorkspaceApiTest extends WebosTestCase
         $this->assertStringContainsString('function createFrameScheduler(callback)', $script);
         $this->assertStringContainsString('window.requestAnimationFrame', $script);
         $this->assertStringContainsString("element.classList.add('is-window-gesturing')", $script);
-        $this->assertStringContainsString("titlebar.addEventListener('pointercancel', end)", $script);
+        $this->assertStringContainsString("dragHost.addEventListener('pointercancel', end)", $script);
         $this->assertStringContainsString("handle.addEventListener('pointercancel', end)", $script);
         $this->assertStringContainsString('--motion-fast: 120ms;', $stylesheet);
         $this->assertStringContainsString('--motion-standard: 180ms;', $stylesheet);

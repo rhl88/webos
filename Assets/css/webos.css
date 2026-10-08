@@ -5661,9 +5661,30 @@ textarea:focus-visible,
     display: flex;
     align-items: flex-end;
     gap: 6px;
-    padding: 8px 10px 0;
+    padding: 8px 0 0 10px;
     background: #eef3f8;
     border-bottom: 1px solid #dce5ee;
+    /* 内置浏览器窗口：标题栏隐藏（CSS），标签栏空白区承担窗口拖动 */
+    cursor: default;
+}
+
+/* 浏览器窗口控制按钮组（最小化/最大化/关闭）：替代隐藏标题栏的控制区，贴标签栏右端 */
+.browser-window-controls {
+    display: flex;
+    align-items: center;
+    align-self: flex-start;
+    margin-left: auto;
+    flex: none;
+}
+
+.browser-window-controls .window-control {
+    width: 40px;
+    height: 34px;
+}
+
+/* 内置浏览器窗口：原生标题栏隐藏（控制按钮与拖动已移入标签栏，避免顶部双栏过高突兀） */
+.app-window[data-window-key="webos-browser"] .window-titlebar {
+    display: none;
 }
 
 .browser-tabs {
