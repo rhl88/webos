@@ -643,9 +643,21 @@ class WebosWorkspaceApiTest extends WebosTestCase
         // 键盘操作：Ctrl+A 全选、方向键移动焦点、Enter 打开、Delete 删除
         $this->assertStringContainsString("ArrowRight: [1, 0], ArrowLeft: [-1, 0], ArrowDown: [0, 1], ArrowUp: [0, -1]", $script);
         $this->assertStringContainsString('targets.forEach(removeDesktopEntry);', $script);
-        // 标签底衬：浅色壁纸下白色文字可读性增强
+        // 标签文字效果（OS 设置三选一，默认无效果）：默认样式无底衬，底衬/阴影挂在 data-label-effect 作用域
         $this->assertStringContainsString('.desktop-icon-label {', $stylesheet);
-        $this->assertStringContainsString('background: rgba(15, 23, 42, 0.42);', $stylesheet);
+        $this->assertStringContainsString('.desktop-icons[data-label-effect="shield"] .desktop-icon-label {', $stylesheet);
+        $this->assertStringContainsString('.desktop-icons[data-label-effect="shadow"] .desktop-icon-label {', $stylesheet);
+        $this->assertStringContainsString('text-shadow: 0 1px 2px rgba(0, 0, 0, 0.85), 0 0 5px rgba(0, 0, 0, 0.6);', $stylesheet);
+        $this->assertStringContainsString('.settings-choice-grid.is-three {', $stylesheet);
+        // 偏好写入：容器 data 属性切换 + OS 设置单选委托 + 后端白名单
+        $this->assertStringContainsString('elements.desktopIcons.dataset.labelEffect = preferences.label_effect', $script);
+        $this->assertStringContainsString("settingsChoice('set-label-effect', 'none'", $script);
+        $this->assertStringContainsString("settingsChoice('set-label-effect', 'shadow'", $script);
+        $this->assertStringContainsString("settingsChoice('set-label-effect', 'shield'", $script);
+        $this->assertStringContainsString("closest('[data-set-label-effect]')", $script);
+        $service = file_get_contents(dirname(__DIR__, 2) . '/Services/WorkspaceService.php');
+        $this->assertStringContainsString("'label_effect' => 'none',", $service);
+        $this->assertStringContainsString("['none', 'shadow', 'shield']", $service);
     }
 
     /** 系统菜单「最近」区块（常用下方显示最近打开 6 项）与任务栏全屏切换按钮 */

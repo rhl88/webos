@@ -209,19 +209,28 @@ textarea:focus-visible,
     background: #f0a51b;
 }
 
-/* 标签底衬：浅色壁纸下白色文字可读性增强（inline-block 底衬贴合文字宽度，block 全宽会超出文字），保留阴影 */
+/* 图标名称文字：默认无效果（OS 设置「图标文字效果」可选文字阴影/深色底衬，挂 .desktop-icons[data-label-effect]） */
 .desktop-icon-label {
     display: inline-block;
     max-width: 100%;
     font-size: 14px;
     line-height: 20px;
-    padding: 1px 7px;
-    border-radius: 4px;
-    background: rgba(15, 23, 42, 0.42);
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+}
+
+/* 深色底衬：半透明圆角小块贴合文字宽度（inline-block），浅色壁纸下白字更清晰 */
+.desktop-icons[data-label-effect="shield"] .desktop-icon-label {
+    padding: 1px 7px;
+    border-radius: 4px;
+    background: rgba(15, 23, 42, 0.42);
     text-shadow: 0 1px 3px rgba(0, 24, 58, 0.5);
+}
+
+/* 文字阴影：Win11 风格四周柔和投影，无底衬 */
+.desktop-icons[data-label-effect="shadow"] .desktop-icon-label {
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.85), 0 0 5px rgba(0, 0, 0, 0.6);
 }
 
 .window-layer {
@@ -2697,6 +2706,10 @@ textarea:focus-visible,
 
 .settings-choice-grid.is-two {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.settings-choice-grid.is-three {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
 .settings-choice {

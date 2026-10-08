@@ -2381,6 +2381,12 @@
             + settingsRangeMarkup('window_width', '默认宽度', clampWindowRatio(preferences.window_width, 78))
             + settingsRangeMarkup('window_height', '默认高度', clampWindowRatio(preferences.window_height, 80))
             + '</section>'
+            + '<section class="settings-card"><div class="settings-card-title"><i class="fa fa-font"></i><div>'
+            + '<strong>图标文字效果</strong><small>桌面图标名称文字的显示效果，默认无效果</small></div></div><div class="settings-choice-grid is-three">'
+            + settingsChoice('set-label-effect', 'none', 'fa-circle-o', '无效果', (preferences.label_effect || 'none') === 'none')
+            + settingsChoice('set-label-effect', 'shadow', 'fa-adjust', '文字阴影', preferences.label_effect === 'shadow')
+            + settingsChoice('set-label-effect', 'shield', 'fa-square', '深色底衬', preferences.label_effect === 'shield')
+            + '</div></section>'
             + '<section class="settings-card"><div class="settings-card-title"><i class="fa fa-magic"></i><div>'
             + '<strong>交互体验</strong><small>控制窗口与面板的过渡效果</small></div></div>'
             + '<button class="settings-toggle" type="button" data-toggle-webos-setting="motion" aria-pressed="'
@@ -8193,6 +8199,10 @@
     function applyWorkspacePreferences() {
         var preferences = state.workspace.preferences;
         root.dataset.wallpaper = preferences.wallpaper || 'webos-default';
+        // 图标文字效果挂桌面容器 data 属性（CSS 作用域切换：none/shadow/shield），避免逐个图标改类
+        if (elements.desktopIcons) {
+            elements.desktopIcons.dataset.labelEffect = preferences.label_effect || 'none';
+        }
         // 自定义壁纸优先，未设置时回退系统默认壁纸
         var wallpaperUrl = preferences.wallpaper_url
             ? '/' + String(preferences.wallpaper_url).replace(/^\/+/, '')
@@ -9193,6 +9203,10 @@
             var wallpaper = event.target.closest('[data-set-webos-wallpaper]');
             if (wallpaper) { setWebosPreference('wallpaper', wallpaper.dataset.setWebosWallpaper, '桌面外观已更新'); }
 
+            // 图标文字效果三选一（无效果/文字阴影/深色底衬），随工作区偏好持久化
+            var labelEffect = event.target.closest('[data-set-label-effect]');
+            if (labelEffect) { setWebosPreference('label_effect', labelEffect.dataset.setLabelEffect, '图标文字效果已更新'); }
+
             var wallpaperUpload = event.target.closest('[data-upload-wallpaper]');
             if (wallpaperUpload) {
                 var wallpaperInput = document.querySelector('[data-wallpaper-input]');
@@ -9477,6 +9491,7 @@
             wallpaper: 'webos-default',
             wallpaper_url: '',
             icon_size: 'medium',
+            label_effect: 'none',
             window_tabs: false,
             menu_open_launcher: false,
             taskbar_alignment: 'left',

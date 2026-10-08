@@ -14,6 +14,7 @@ class WorkspaceService
         'wallpaper' => 'webos-default',
         'wallpaper_url' => '',
         'icon_size' => 'medium',
+        'label_effect' => 'none',
         'window_tabs' => false,
         'menu_open_launcher' => false,
         'taskbar_alignment' => 'left',
@@ -136,6 +137,10 @@ class WorkspaceService
         $preferences['icon_size'] = in_array($preferences['icon_size'] ?? '', ['small', 'medium', 'large'], true)
             ? $preferences['icon_size']
             : self::DEFAULT_PREFERENCES['icon_size'];
+        // 图标文字效果（OS 设置单选）：none=无效果（默认）、shadow=Win11 风格文字阴影、shield=半透明深色底衬
+        $preferences['label_effect'] = in_array($preferences['label_effect'] ?? '', ['none', 'shadow', 'shield'], true)
+            ? $preferences['label_effect']
+            : self::DEFAULT_PREFERENCES['label_effect'];
         // 应用窗口多选项卡（OS 设置开关，默认关闭）
         $preferences['window_tabs'] = (bool) ($preferences['window_tabs'] ?? false);
         // 点击菜单进入（OS 设置开关，默认关闭=打开系统菜单面板；开启=直接进入「全部功能」启动台）

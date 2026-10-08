@@ -1,7 +1,7 @@
 # CmsPro WebOS 管理桌面 · 特性清单
 
-> 文档版本：2.1.2 | 更新日期：2026-10-08
-> 应用版本：2.1.2 | 应用 ID：`cmspro.webos`
+> 文档版本：2.1.3 | 更新日期：2026-10-08
+> 应用版本：2.1.3 | 应用 ID：`cmspro.webos`
 
 ## 一、应用定位
 
@@ -118,6 +118,7 @@ CmsproWebos/
 
 | 版本 | 日期 | 说明 |
 |---|---|---|
+| 2.1.3 | 2026-10-08 | 图标文字效果设置化（用户需求：桌面图标文字的半透明深色底衬移入 OS 设置→基本设置，默认关闭可自行开启；新增文字阴影效果，参考 Win11；底衬与阴影单选）：① 新增偏好 `label_effect` 三选一——`none`（无效果，默认）/ `shadow`（Win11 风格四周柔和文字阴影，无底衬）/ `shield`（半透明深色底衬，即 2.1.1 引入的效果）；② WorkspaceService 白名单校验（非法值回退 none），normalizePreferences 补默认值；③ 效果挂 .desktop-icons 容器 data-label-effect 属性（applyWorkspacePreferences 统一应用），CSS 作用域切换避免逐图标改类；④ OS 设置→基本设置新增「图标文字效果」卡片（settings-choice-grid is-three 三列单选，setWebosPreference 持久化并即时生效）；116 测试 1183 断言通过。 |
 | 2.1.2 | 2026-10-08 | 系统菜单「最近」与任务栏全屏切换（用户需求：① 常用右侧内容下方增加最近，显示最近打开的 6 个项目；② 状态栏地球与铃铛图标之间增加全屏/退出全屏按钮）：① 最近区块 renderStartRecent——blade 新增 `#start-recent` 容器（start-app-grid 下方），仅「常用」分类且非搜索时显示；数据复用使用统计 usage_stats（recordEntryUsage 已记录 last_opened_at）按最近打开时间降序取前 6，副标题「上次打开 月-日 时:分」；卡片结构与常用一致（图标/名称/添加到桌面 pin 按钮），点击与键盘打开复用 root 级 `[data-menu-id]` 委托；从未打开过应用时隐藏区块；② 全屏切换 toggleFullscreen——`#fullscreen-button` 位于 website-button 与 notification-button 之间，requestFullscreen/exitFullscreen（含 webkit 前缀兼容），fullscreenchange/webkitfullscreenchange 驱动 syncFullscreenButton 同步图标（fa-expand/fa-compress）、aria-label、title 与 is-active 高亮；不支持全屏或被拒绝时 toast 提示。116 测试 1173 断言通过。 |
 | 2.1.1 | 2026-10-08 | 桌面图标越界修复与动态自适应（用户反馈：新增桌面图标不考虑任务栏与可视高度，一直向下排列落在非可视区域；需按可视高度/宽度自动排列，适配任务栏移动与不同屏幕）：① 新增 desktopGridCapacity——行列数由 .desktop-icons 容器可视宽高与当前档位格子尺寸决定（容器 inset 随任务栏位置自动扣除任务栏与边距），容器不可测量时返回 0 供调用方降级；② addDesktopEntry 改列优先找空位（Windows 桌面风格）——二维 Set 记录 (x,y) 占用，第一列放满自动进入下一列，可视格子全部占满时提示「桌面可视区域已满」不再越界；③ normalizeDesktopLayout 扩展容量归一化：纵向越界（y ≥ 行数）与横向越界（x ≥ 列数，含历史数据中旧版无限制产生的坐标）的图标按列优先规则放回第一个空格并静默保存，容量已满保留原坐标不强排；④ 归一化触发点覆盖全部容量变化场景：首次渲染、目录刷新、**窗口缩放/浏览器跨屏拖动**（独立 rAF 节流 resize 监听）、**任务栏移动位置**（setTaskbarPosition）、**图标档位切换**（大/中/小格子尺寸变化）；⑤ 与拖拽 clamp（可视区内落点）行为一致；⑥ 桌面右键新增「自动排列图标」——全部可见图标按 (y,x) 顺序列优先紧凑重排（autoArrangeDesktopIcons，行列数由可视容量决定，超容量保留原坐标，无变化时提示「图标已是整齐排列」）；⑦ 键盘操作支持（无障碍）：Tab 聚焦图标后 Ctrl+A 全选、方向键移动到目标方向最近图标、Enter 打开（与双击同规则，跳过拖动误触）、Delete 删除（多选整批删除，删除后焦点移回首个图标）；⑧ 图标标签浅色壁纸可读性增强：.desktop-icon-label 由 block 改 inline-block 并加半透明深色底衬（rgba(15,23,42,.42)+圆角+内边距，底衬贴合文字宽度），保留阴影。115 测试 1157 断言通过。 |
 | 2.1.0 | 2026-10-07 | 会话过期无刷新恢复（用户需求：WebOS 出现 41901「页面已过期」不应刷新页面，要像操作系统一样恢复）：① api()/fetchText 统一拦截 419/401 自动恢复并带新 Token 重放一次（parseApiResponse 抽取复用）；② **419 先静默刷新 Token**：新增 refreshCsrfToken 原生 fetch `GET /api/admin/csrf-token`（框架新增，AuthController@csrfToken，GET 不受 CSRF 校验限制），成功则直接重放失败请求、全程无感不弹层——修复「Token 轮换失配（另一标签页登录/修改密码等）但登录态仍有效时误弹恢复层」问题；刷新失败（401）或登录态确实丢失才弹恢复层；③ 会话恢复层 `#session-recovery-layer`：iframe 内嵌 `/admin/login`（完整复用验证码、失败锁定等安全机制），父页每 2 秒原生 fetch 轮询 `auth/user`，成功后静默换取新 Token 更新 runtime.csrfToken；④ 恢复单例：并发失败请求共享一次恢复；用户取消后 10 分钟内不再自动弹出；⑤ 心跳保活 startSessionHeartbeat：每 5 分钟静默请求 auth/user 重置 Session 空闲计时，登录态正常时顺带同步最新 Token（自动对齐 Token 轮换），异常时先静默刷新自愈（防网络抖动误判），仍失败才弹层。配套框架：`GET /api/admin/csrf-token` 路由 + AuthController::csrfToken（CsrfTokenApiTest 2 用例）。WebOS 115 测试 1146 断言通过。 |
