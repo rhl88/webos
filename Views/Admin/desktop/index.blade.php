@@ -228,10 +228,6 @@
         <button id="website-button" class="taskbar-button website-button" type="button" aria-label="访问前台首页" data-website-url="{{ url('/') }}">
             <i class="fa fa-globe" aria-hidden="true"></i>
         </button>
-        {{-- 全屏切换：图标与提示由 JS 随 fullscreenchange 同步（进入/退出全屏） --}}
-        <button id="fullscreen-button" class="taskbar-button fullscreen-button" type="button" aria-label="全屏显示" title="全屏显示">
-            <i class="fa fa-expand" aria-hidden="true"></i>
-        </button>
         <button id="notification-button" class="taskbar-button notification-button" type="button" aria-label="打开通知中心" aria-expanded="false">
             <i class="fa fa-bell" aria-hidden="true"></i>
             <span id="notification-badge" class="notification-badge" hidden>0</span>

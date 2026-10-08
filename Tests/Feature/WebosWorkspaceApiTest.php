@@ -634,8 +634,8 @@ class WebosWorkspaceApiTest extends WebosTestCase
         $this->assertStringContainsString('if ((rows > 0 && y >= rows) || (cols > 0 && x >= cols)) {', $script);
         $this->assertStringContainsString('overflow.forEach(function (item) {', $script);
         $this->assertStringContainsString('if (changed) { saveWorkspace(false).catch(function () {}); }', $script);
-        // 归一化触发点：目录刷新、首次渲染、窗口缩放自适应、任务栏移动、图标档位切换
-        $this->assertSame(5, substr_count($script, 'normalizeDesktopLayout();'));
+        // 归一化触发点：目录刷新、首次渲染、窗口缩放自适应、任务栏移动、图标档位切换、内置浏览器补齐归位
+        $this->assertSame(6, substr_count($script, 'normalizeDesktopLayout();'));
         // 桌面右键「自动排列图标」：列优先紧凑重排（复用可视容量，拖乱后一键恢复整齐）
         $this->assertStringContainsString('function autoArrangeDesktopIcons', $script);
         $this->assertStringContainsString("['自动排列图标', 'fa-magic', 'auto-arrange', '', null]", $script);
@@ -660,7 +660,7 @@ class WebosWorkspaceApiTest extends WebosTestCase
         $this->assertStringContainsString("['none', 'shadow', 'shield']", $service);
     }
 
-    /** 系统菜单「最近」区块（常用下方显示最近打开 6 项）与任务栏全屏切换按钮 */
+    /** 系统菜单「最近」区块（常用下方显示最近打开 6 项）与桌面右键菜单全屏切换项 */
     public function test_start_menu_recent_section_and_fullscreen_toggle(): void
     {
         $script = file_get_contents(dirname(__DIR__, 2) . '/Assets/js/webos.js');
@@ -670,23 +670,69 @@ class WebosWorkspaceApiTest extends WebosTestCase
         $this->assertIsString($script);
         $this->assertIsString($stylesheet);
         $this->assertIsString($view);
-        // Blade：最近区块容器（常用网格下方）与任务栏全屏按钮（地球与铃铛之间）
+        // Blade：最近区块容器（常用网格下方）；任务栏全屏按钮已移除（全屏入口迁至桌面右键菜单）
         $this->assertStringContainsString('<div id="start-recent" class="start-recent" hidden></div>', $view);
-        $this->assertStringContainsString('<button id="fullscreen-button" class="taskbar-button fullscreen-button"', $view);
+        $this->assertStringNotContainsString('fullscreen-button', $view);
         // JS：最近区块复用 usage_stats 的 last_opened_at 降序取前 6，副标题「上次打开 月-日 时:分」；无记录时隐藏
         $this->assertStringContainsString('function renderStartRecent(groups, query)', $script);
         $this->assertStringContainsString('renderStartRecent(groups, query);', $script);
         $this->assertStringContainsString("statistics[right.start_key].last_opened_at.localeCompare(statistics[left.start_key].last_opened_at)", $script);
         $this->assertStringContainsString("'<span class=\"start-app-item-text\"><strong>' + escapeHtml(item.start_title) + '</strong><small>上次打开 '", $script);
         $this->assertStringContainsString('host.hidden = true;', $script);
-        // JS：全屏切换与状态同步（图标 expand/compress、提示、激活态）
+        // JS：全屏切换（保留 toggleFullscreen）+ 桌面右键菜单「显示桌面」下方动态文案项（每次渲染实时读取状态）
         $this->assertStringContainsString('function toggleFullscreen()', $script);
-        $this->assertStringContainsString('function syncFullscreenButton()', $script);
-        $this->assertStringContainsString("document.addEventListener('fullscreenchange', syncFullscreenButton);", $script);
-        $this->assertStringContainsString("icon.className = 'fa ' + (fullscreen ? 'fa-compress' : 'fa-expand');", $script);
-        // CSS：最近标题与全屏按钮激活态
+        $this->assertStringContainsString('var fullscreenActive = Boolean(document.fullscreenElement || document.webkitFullscreenElement);', $script);
+        $this->assertStringContainsString(
+            "[fullscreenActive ? '退出全屏' : '全屏显示', fullscreenActive ? 'fa-compress' : 'fa-expand', 'toggle-fullscreen', '', null]",
+            $script
+        );
+        $this->assertStringContainsString("if (action === 'toggle-fullscreen') {", $script);
+        $this->assertStringNotContainsString('syncFullscreenButton', $script);
+        // CSS：最近标题保留；旧全屏按钮激活态样式已随按钮一并移除
         $this->assertStringContainsString('.start-recent-title {', $stylesheet);
-        $this->assertStringContainsString('.fullscreen-button.is-active {', $stylesheet);
+        $this->assertStringNotContainsString('.fullscreen-button', $stylesheet);
+    }
+
+    /** 内置浏览器：默认内置不可删除、多标签 iframe 窗口、地址栏导航与刷新/新窗口兜底 */
+    public function test_builtin_browser_window(): void
+    {
+        $script = file_get_contents(dirname(__DIR__, 2) . '/Assets/js/webos.js');
+        $stylesheet = file_get_contents(dirname(__DIR__, 2) . '/Assets/css/webos.css');
+
+        $this->assertIsString($script);
+        $this->assertIsString($stylesheet);
+        // 入口定义：special=browser + 空 path（内容不走应用 iframe path，由 renderBrowserWindow 管理）
+        $this->assertStringContainsString('function webosBrowserEntry()', $script);
+        $this->assertStringContainsString("id: 'webos-browser',", $script);
+        $this->assertStringContainsString("special: 'browser'", $script);
+        // 内置窗口白名单（不读管理员偏好尺寸）与固定单实例 key
+        $this->assertStringContainsString("BUILTIN_WINDOW_KEYS = ['webos-app-center', 'webos-settings', 'webos-official-news', 'webos-browser']", $script);
+        $this->assertStringContainsString("if (entry.id === 'webos-browser') {\n            return 'webos-browser';", $script);
+        // 桌面初始预置与存量补齐（超管：应用中心+浏览器；非超管仅浏览器）
+        $this->assertStringContainsString('var selected = isSuperAdmin ? [applicationCenterEntry(), webosBrowserEntry()] : [webosBrowserEntry()];', $script);
+        $this->assertStringContainsString("return item.id === 'webos-browser';", $script);
+        // 右键菜单不可删除（与应用中心同待遇）
+        $this->assertStringContainsString("context.entry.id === 'webos-app-center' || context.entry.id === 'webos-browser'", $script);
+        // 窗口默认 90%×86% + 特殊窗口骨架（无侧栏 page host）
+        $this->assertStringContainsString('if (key === \'webos-browser\') {', $script);
+        $this->assertStringContainsString("content = '<div class=\"webos-browser-shell\" data-webos-browser></div>';", $script);
+        // 核心链路：URL 规范化（仅 http(s)）/渲染/更新/导航/刷新/关闭标签/事件绑定
+        $this->assertStringContainsString('function normalizeBrowserUrl(input)', $script);
+        $this->assertStringContainsString('function renderBrowserWindow(windowState)', $script);
+        $this->assertStringContainsString('function updateBrowserWindow(windowState)', $script);
+        $this->assertStringContainsString('function browserNavigate(windowState, tab, input)', $script);
+        $this->assertStringContainsString('function browserReload(windowState, tab)', $script);
+        $this->assertStringContainsString('function browserCloseTab(windowState, tabId)', $script);
+        $this->assertStringContainsString('function bindBrowserEvents(shell, windowState)', $script);
+        // 起始页 srcdoc 引导与 iframe 保活（按标签 id 显隐，不重建已加载页面）
+        $this->assertStringContainsString('function browserStartPageMarkup()', $script);
+        $this->assertStringContainsString('frame.srcdoc = browserStartPageMarkup();', $script);
+        $this->assertStringContainsString("viewsHost.querySelector('[data-browser-view=\"' + tab.id + '\"]')", $script);
+        // CSS：浏览器外壳/标签条/标签页/iframe 视图铺满
+        $this->assertStringContainsString('.webos-browser-shell {', $stylesheet);
+        $this->assertStringContainsString('.browser-tabbar {', $stylesheet);
+        $this->assertStringContainsString('.browser-tab {', $stylesheet);
+        $this->assertStringContainsString('.browser-views iframe {', $stylesheet);
     }
 
     /** 桌面右键「查看」子菜单切换大/中/小图标：三档格子换算、偏好持久化与后端白名单校验 */
@@ -714,6 +760,11 @@ class WebosWorkspaceApiTest extends WebosTestCase
         $this->assertStringContainsString("action === 'icon-large' || action === 'icon-medium' || action === 'icon-small'", $script);
         $this->assertStringContainsString('desktop-context-submenu', $stylesheet);
         $this->assertStringContainsString('.webos-desktop[data-icon-size="large"] .desktop-icon-badge', $stylesheet);
+        // 子菜单防闪烁：与父菜单重叠 2px 消除间隙断点 + 常驻透明 hover 桥（指针缓慢斜移经过不再消失）
+        $this->assertStringContainsString('left: calc(100% - 2px);', $stylesheet);
+        $this->assertStringContainsString('.desktop-context-group.has-children::after {', $stylesheet);
+        // 右键菜单紧凑化：行高调小（多菜单项时不再显得过高）
+        $this->assertStringContainsString('.desktop-context-item {', $stylesheet);
         // 偏好默认中图标 + 后端白名单与枚举校验
         $this->assertStringContainsString("icon_size: 'medium',", $script);
         $this->assertStringContainsString("'icon_size' => 'medium',", $service);
@@ -734,8 +785,8 @@ class WebosWorkspaceApiTest extends WebosTestCase
         $this->assertStringContainsString("'is_super_admin' => \$admin->isSuperAdmin(),", $controller);
         // 前端读取超管标记
         $this->assertStringContainsString('var isSuperAdmin = !!(runtime.admin && runtime.admin.is_super_admin);', $script);
-        // 初始预置：非超管不固定应用中心
-        $this->assertStringContainsString('var selected = isSuperAdmin ? [applicationCenterEntry()] : [];', $script);
+        // 初始预置：非超管不固定应用中心（内置浏览器对所有角色可用）
+        $this->assertStringContainsString('var selected = isSuperAdmin ? [applicationCenterEntry(), webosBrowserEntry()] : [webosBrowserEntry()];', $script);
         // 图标过滤：非超管的桌面/任务栏不显示应用中心（含历史工作区数据）
         $this->assertStringContainsString("if (entryId === 'webos-app-center') { return isSuperAdmin; }", $script);
         // 升级提醒：非超管跳过 WebOS 自身版本检测
@@ -1217,8 +1268,8 @@ class WebosWorkspaceApiTest extends WebosTestCase
         $this->assertStringContainsString('function closeDesktopContextMenu()', $script);
         $this->assertStringContainsString('function runDesktopContextAction(action, iconId)', $script);
         $this->assertStringContainsString("['删除图标', 'fa-thumb-tack', 'remove']", $script);
-        // 应用中心为内置入口：右键不显示删除项，removeDesktopEntry 对其拦截兜底
-        $this->assertStringContainsString("context.entry.id !== 'webos-app-center'", $script);
+        // 应用中心/内置浏览器均为内置入口：右键不显示删除项，removeDesktopEntry 对应用中心拦截兜底
+        $this->assertStringContainsString("context.entry.id === 'webos-app-center' || context.entry.id === 'webos-browser'", $script);
         $this->assertStringContainsString("if (id === 'webos-app-center') {", $script);
         $this->assertStringContainsString('应用中心为内置入口，不允许删除', $script);
         $this->assertStringContainsString("['卸载应用', 'fa-times-circle', 'uninstall', 'danger']", $script);
@@ -1597,9 +1648,9 @@ class WebosWorkspaceApiTest extends WebosTestCase
 
         $this->assertIsString($script);
 
-        // “窗口默认尺寸”只作用于应用窗口；WebOS 内置窗口固定使用出厂默认（官网动态固定 600×500）
+        // “窗口默认尺寸”只作用于应用窗口；WebOS 内置窗口固定使用出厂默认（官网动态固定 600×500，浏览器 90%×86%）
         $this->assertStringContainsString(
-            "var BUILTIN_WINDOW_KEYS = ['webos-app-center', 'webos-settings', 'webos-official-news'];",
+            "var BUILTIN_WINDOW_KEYS = ['webos-app-center', 'webos-settings', 'webos-official-news', 'webos-browser'];",
             $script
         );
         $this->assertMatchesRegularExpression(
@@ -1813,13 +1864,14 @@ class WebosWorkspaceApiTest extends WebosTestCase
         $this->assertStringNotContainsString('<i class="fa fa-user" aria-hidden="true"></i>', $view);
     }
 
-    /** 初始数据：超管首次进入桌面只固定「应用中心」；非超管不预置（应用中心仅超管可用） */
-    public function test_initial_desktop_pins_only_application_center(): void
+    /** 初始数据：超管首次进入桌面固定「应用中心 + 浏览器」；非超管仅浏览器（应用中心仅超管可用） */
+    public function test_initial_desktop_pins_default_builtin_entries(): void
     {
         $script = file_get_contents(dirname(__DIR__, 2) . '/Assets/js/webos.js');
 
         $this->assertIsString($script);
-        $this->assertStringContainsString('var selected = isSuperAdmin ? [applicationCenterEntry()] : [];', $script);
+        // 初始预置：超管 = 应用中心 + 内置浏览器；非超管 = 仅内置浏览器（浏览器无权限要求）
+        $this->assertStringContainsString('var selected = isSuperAdmin ? [applicationCenterEntry(), webosBrowserEntry()] : [webosBrowserEntry()];', $script);
         $this->assertStringContainsString('if (isSuperAdmin && !state.workspace.taskbar_items.length) {', $script);
         $this->assertStringNotContainsString("var preferred = ['文件', '内容', '系统'];", $script);
         $this->assertStringNotContainsString('selected = selected.slice(0, 3);', $script);

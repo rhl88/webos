@@ -4841,8 +4841,8 @@ textarea:focus-visible,
     z-index: 4000;
     display: grid;
     min-width: 148px;
-    padding: 6px;
-    gap: 2px;
+    padding: 5px;
+    gap: 1px;
     border: 1px solid #d4dfe8;
     border-radius: 8px;
     background: #fff;
@@ -4852,7 +4852,7 @@ textarea:focus-visible,
 .desktop-context-item {
     display: flex;
     align-items: center;
-    padding: 8px 10px;
+    padding: 6px 10px;
     gap: 9px;
     border: 0;
     border-radius: 6px;
@@ -4901,11 +4901,22 @@ textarea:focus-visible,
     opacity: 0.55;
 }
 
-/* 子菜单（查看 > 大/中/小图标）：hover 父项或子菜单本身时保持展开 */
+/* 子菜单 hover 桥：透明块覆盖父项与子菜单之间的衔接区，指针缓慢斜移经过时 group:hover 不断开（修复子菜单闪烁消失） */
+.desktop-context-group.has-children::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: calc(100% - 2px);
+    width: 6px;
+}
+
+/* 子菜单（查看 > 大/中/小图标）：hover 父项或子菜单本身时保持展开；
+   与父菜单重叠 2px 消除间隙断点（间隙中两个 hover 都不成立会导致子菜单消失） */
 .desktop-context-submenu {
     position: absolute;
     top: -6px;
-    left: calc(100% + 4px);
+    left: calc(100% - 2px);
     z-index: 1;
     display: none;
     min-width: 132px;
@@ -5624,8 +5635,181 @@ textarea:focus-visible,
     background: #eaf8f6;
 }
 
-/* 任务栏全屏切换按钮：处于全屏时高亮（图标已由 JS 切换为 fa-compress） */
-.fullscreen-button.is-active {
+/* ===================== 内置浏览器（多标签 iframe） ===================== */
+
+.webos-browser-shell {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    min-height: 0;
+    background: #fff;
+}
+
+.browser-tabbar {
+    display: flex;
+    align-items: flex-end;
+    gap: 6px;
+    padding: 8px 10px 0;
+    background: #eef3f8;
+    border-bottom: 1px solid #dce5ee;
+}
+
+.browser-tabs {
+    display: flex;
+    align-items: flex-end;
+    gap: 4px;
+    overflow-x: auto;
+    scrollbar-width: thin;
+}
+
+.browser-tab {
+    display: flex;
+    align-items: center;
+    flex: none;
+    width: 176px;
+    max-width: 176px;
+    padding: 7px 8px 7px 12px;
+    gap: 8px;
+    border: 1px solid transparent;
+    border-bottom: 0;
+    border-radius: 8px 8px 0 0;
+    background: rgba(15, 23, 42, 0.05);
+    color: #51637a;
+    cursor: pointer;
+    font-size: 13px;
+    white-space: nowrap;
+    user-select: none;
+}
+
+.browser-tab:hover {
+    background: rgba(15, 23, 42, 0.09);
+}
+
+.browser-tab.is-active {
+    background: #fff;
+    border-color: #dce5ee;
+    color: #1f3247;
+    font-weight: 600;
+}
+
+.browser-tab > i {
+    flex: none;
+    font-size: 12px;
+    opacity: 0.7;
+}
+
+.browser-tab > span {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.browser-tab-close {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex: none;
+    width: 20px;
+    height: 20px;
+    border: 0;
+    border-radius: 4px;
+    background: transparent;
+    color: inherit;
+    cursor: pointer;
+    font-size: 11px;
+    opacity: 0.55;
+}
+
+.browser-tab-close:hover {
+    background: rgba(178, 60, 66, 0.12);
+    color: #b23c42;
+    opacity: 1;
+}
+
+.browser-tab-new {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex: none;
+    width: 26px;
+    height: 26px;
+    margin-bottom: 4px;
+    border: 0;
+    border-radius: 6px;
+    background: transparent;
+    color: #51637a;
+    cursor: pointer;
+    font-size: 12px;
+}
+
+.browser-tab-new:hover {
+    background: rgba(15, 23, 42, 0.09);
     color: #087f75;
+}
+
+.browser-toolbar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 10px;
+    background: #fff;
+    border-bottom: 1px solid #dce5ee;
+}
+
+.browser-tool {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex: none;
+    width: 30px;
+    height: 30px;
+    border: 0;
+    border-radius: 6px;
+    background: transparent;
+    color: #51637a;
+    cursor: pointer;
+    font-size: 13px;
+}
+
+.browser-tool:hover {
     background: #eaf8f6;
+    color: #087f75;
+}
+
+.browser-address-form {
+    flex: 1;
+    min-width: 0;
+}
+
+.browser-address {
+    width: 100%;
+    padding: 6px 14px;
+    border: 1px solid #d4dfe8;
+    border-radius: 16px;
+    background: #f6f9fb;
+    color: #1f3247;
+    font: inherit;
+    font-size: 13px;
+    outline: none;
+}
+
+.browser-address:focus {
+    border-color: #087f75;
+    background: #fff;
+}
+
+.browser-views {
+    position: relative;
+    flex: 1;
+    min-height: 0;
+    background: #fff;
+}
+
+.browser-views iframe {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    border: 0;
 }
