@@ -3489,57 +3489,61 @@
         var element = target.element;
 
         element.addEventListener('pointerdown', function () { focusWindow(key); });
-        // 拖动源：常规窗口为标题栏；内置浏览器窗口标题栏隐藏（CSS），由标签栏空白区承担拖动
-        // （遍历所有 data-window-drag 源逐一绑定，排除按钮/标签/输入控件避免交互冲突）
-        element.querySelectorAll('[data-window-drag]').forEach(function (dragHost) {
-            dragHost.addEventListener('pointerdown', function (event) {
-                if (event.target.closest('button, .browser-tab, input, select, textarea') || target.maximized) {
-                    return;
-                }
-                var startX = event.clientX;
-                var startY = event.clientY;
-                var startLeft = element.offsetLeft;
-                var startTop = element.offsetTop;
-                var pointerId = event.pointerId;
-                var scheduleMove = createFrameScheduler(function (point) {
-                    var left = Math.max(0, Math.min(window.innerWidth - 180, startLeft + point.x - startX));
-                    var top = Math.max(0, Math.min(window.innerHeight - 120, startTop + point.y - startY));
-                    element.style.left = left + 'px';
-                    element.style.top = top + 'px';
-                });
-                element.classList.add('is-window-gesturing');
-                dragHost.setPointerCapture(event.pointerId);
-                function move(moveEvent) {
-                    scheduleMove({ x: moveEvent.clientX, y: moveEvent.clientY });
-                }
-                function end() {
-                    scheduleMove.flush();
-                    element.classList.remove('is-window-gesturing');
-                    dragHost.removeEventListener('pointermove', move);
-                    dragHost.removeEventListener('pointerup', end);
-                    dragHost.removeEventListener('pointercancel', end);
-                    dragHost.removeEventListener('lostpointercapture', end);
-                    if (dragHost.hasPointerCapture(pointerId)) {
-                        dragHost.releasePointerCapture(pointerId);
-                    }
-                }
-                dragHost.addEventListener('pointermove', move);
-                dragHost.addEventListener('pointerup', end);
-                dragHost.addEventListener('pointercancel', end);
-                dragHost.addEventListener('lostpointercapture', end);
+        // 拖动手势采用事件委托：内置浏览器窗口的标签栏（data-window-drag）在本函数之后才由
+        // renderBrowserWindow 动态创建，逐元素绑定会漏绑，故统一在窗口元素上委托分发；
+        // 交互排除按钮/标签/输入控件，避免点击标签、控制按钮时误触发拖动
+        element.addEventListener('pointerdown', function (event) {
+            var dragHost = event.target.closest('[data-window-drag]');
+            if (!dragHost
+                || event.target.closest('button, .browser-tab, input, select, textarea')
+                || target.maximized) {
+                return;
+            }
+            var startX = event.clientX;
+            var startY = event.clientY;
+            var startLeft = element.offsetLeft;
+            var startTop = element.offsetTop;
+            var pointerId = event.pointerId;
+            var scheduleMove = createFrameScheduler(function (point) {
+                var left = Math.max(0, Math.min(window.innerWidth - 180, startLeft + point.x - startX));
+                var top = Math.max(0, Math.min(window.innerHeight - 120, startTop + point.y - startY));
+                element.style.left = left + 'px';
+                element.style.top = top + 'px';
             });
+            element.classList.add('is-window-gesturing');
+            dragHost.setPointerCapture(event.pointerId);
+            function move(moveEvent) {
+                scheduleMove({ x: moveEvent.clientX, y: moveEvent.clientY });
+            }
+            function end() {
+                scheduleMove.flush();
+                element.classList.remove('is-window-gesturing');
+                dragHost.removeEventListener('pointermove', move);
+                dragHost.removeEventListener('pointerup', end);
+                dragHost.removeEventListener('pointercancel', end);
+                dragHost.removeEventListener('lostpointercapture', end);
+                if (dragHost.hasPointerCapture(pointerId)) {
+                    dragHost.releasePointerCapture(pointerId);
+                }
+            }
+            dragHost.addEventListener('pointermove', move);
+            dragHost.addEventListener('pointerup', end);
+            dragHost.addEventListener('pointercancel', end);
+            dragHost.addEventListener('lostpointercapture', end);
+        });
 
-            // 双击拖动区（品牌区/标签栏空白处）切换最大化还原（Windows 桌面惯例）；控制区按钮双击不触发
-            dragHost.addEventListener('dblclick', function (event) {
-                if (event.target.closest('button, .browser-tab, input, select, textarea')) {
-                    return;
-                }
-                if (target.maximized) {
-                    restoreWindow(key);
-                } else {
-                    maximizeWindow(key);
-                }
-            });
+        // 双击拖动区（标题栏品牌区/浏览器标签栏空白处）切换最大化还原（Windows 桌面惯例）；
+        // 控制区按钮、标签、输入控件双击不触发
+        element.addEventListener('dblclick', function (event) {
+            if (!event.target.closest('[data-window-drag]')
+                || event.target.closest('button, .browser-tab, input, select, textarea')) {
+                return;
+            }
+            if (target.maximized) {
+                restoreWindow(key);
+            } else {
+                maximizeWindow(key);
+            }
         });
 
         element.querySelectorAll('[data-window-resize]').forEach(function (handle) {

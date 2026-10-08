@@ -261,10 +261,10 @@ class WebosWorkspaceApiTest extends WebosTestCase
             $script
         );
         $this->assertStringContainsString("'tab-close-others'", $script);
-        // 双击拖动区切换最大化还原：dblclick 绑定在所有 data-window-drag 源（标题栏/浏览器标签栏）上，
-        // 控制区按钮、标签、输入控件（closest('button, .browser-tab, input, select, textarea')）不触发
+        // 双击拖动区切换最大化还原：dblclick 委托在窗口元素上按 closest('[data-window-drag]') 分发
+        // （浏览器标签栏是手势绑定后才动态创建的，逐元素绑定会漏绑），按钮/标签/输入控件不触发
         $this->assertMatchesRegularExpression(
-            "/dragHost\.addEventListener\('dblclick', function \(event\) \{\s*if \(event\.target\.closest\('button, \.browser-tab, input, select, textarea'\)\) \{\s*return;\s*\}\s*if \(target\.maximized\) \{\s*restoreWindow\(key\);\s*\} else \{\s*maximizeWindow\(key\);\s*\}\s*\}\);/",
+            "/element\.addEventListener\('dblclick', function \(event\) \{\s*if \(!event\.target\.closest\('\[data-window-drag\]'\)\s*\|\| event\.target\.closest\('button, \.browser-tab, input, select, textarea'\)\) \{\s*return;\s*\}\s*if \(target\.maximized\) \{\s*restoreWindow\(key\);\s*\} else \{\s*maximizeWindow\(key\);\s*\}\s*\}\);/",
             $script
         );
         $this->assertStringContainsString("'tab-close-all'", $script);
@@ -761,10 +761,10 @@ class WebosWorkspaceApiTest extends WebosTestCase
         $this->assertStringContainsString('.browser-tab-favicon {', $stylesheet);
         $this->assertStringContainsString("data-page-meta-url=\"{{ url('/admin/cmspro/webos/api/page-meta') }}\"", $view);
         $this->assertStringContainsString('function pageMeta(Request $request)', $controller);
-        // 浏览器窗口无标题栏：控制按钮内嵌标签栏右侧，标签栏空白区承担窗口拖动（多拖动源遍历绑定）
+        // 浏览器窗口无标题栏：控制按钮内嵌标签栏右侧，标签栏空白区承担窗口拖动（手势事件委托到窗口元素）
         $this->assertStringContainsString("'<div class=\"browser-tabbar\" data-window-drag>", $script);
         $this->assertStringContainsString('browser-window-controls', $script);
-        $this->assertStringContainsString("querySelectorAll('[data-window-drag]')", $script);
+        $this->assertStringContainsString("event.target.closest('[data-window-drag]')", $script);
         $this->assertStringContainsString("querySelectorAll('[data-window-action=\"maximize\"]')", $script);
         $this->assertStringContainsString('[data-window-key="webos-browser"] .window-titlebar', $stylesheet);
         $this->assertStringContainsString('.browser-window-controls {', $stylesheet);

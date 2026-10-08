@@ -1,7 +1,7 @@
 # CmsPro WebOS 管理桌面 · 特性清单
 
-> 文档版本：2.1.12 | 更新日期：2026-10-08
-> 应用版本：2.1.12 | 应用 ID：`cmspro.webos`
+> 文档版本：2.1.13 | 更新日期：2026-10-08
+> 应用版本：2.1.13 | 应用 ID：`cmspro.webos`
 
 ## 一、应用定位
 
@@ -122,6 +122,7 @@ CmsproWebos/
 
 | 版本 | 日期 | 说明 |
 |---|---|---|
+| 2.1.13 | 2026-10-08 | 浏览器标签栏拖动失效修复（用户反馈）：根因是**绑定时机**——`bindWindowGestures` 在窗口打开时逐元素绑定 `[data-window-drag]`，而浏览器标签栏是其后 `renderBrowserWindow` 才动态创建的，逐元素绑定永远漏掉它；改为**事件委托**——pointerdown/dblclick 委托到窗口元素，handler 内 `closest('[data-window-drag]')` 分发（动态创建的拖动区自动生效），pointer capture 与 move/up/end 仍挂实际拖动区，排除集 `button, .browser-tab, input, select, textarea` 不变。124 测试 1268 断言通过。 |
 | 2.1.12 | 2026-10-08 | 浏览器窗口去标题栏（用户反馈：标题栏+标签栏双栏过高突兀）：① `.app-window[data-window-key="webos-browser"] .window-titlebar { display: none; }` 隐藏原生标题栏；② 标签栏右侧内嵌 `.browser-window-controls`（最小化/最大化/关闭，复用 `.window-control` 样式与 data-window-action 委托，40×34 贴右边缘），最大化/还原图标同步改为 `querySelectorAll('[data-window-action="maximize"]')` 遍历（隐藏标题栏内旧按钮一并更新）；③ 窗口拖动多源化——`bindWindowGestures` 由单标题栏改为 `querySelectorAll('[data-window-drag]')` 遍历绑定 pointerdown 拖动与 dblclick 最大化还原，交互排除集扩展为 `button, .browser-tab, input, select, textarea`（标签点击/切换、新建标签、控制按钮均不触发拖动），常规窗口行为不变；④ 标签栏右 padding 归零使按钮贴边。124 测试 1268 断言通过。 |
 | 2.1.11 | 2026-10-08 | 短标签布局修复（用户反馈：两字标题在大/小图标下与图标同行）：`.desktop-icon` 图形与 `.desktop-icon-label`（inline-block，底衬贴合文字需要）均为行内级，短标签宽度 + 图标宽度 ≤ 容器宽时挤进同一行；`.desktop-icon` 改 `display: flex; flex-direction: column; align-items: center;` 强制垂直堆叠，flex item 宽度 fit-content 保持底衬贴合文字与水平居中，右上角更新角标（absolute）不受影响。124 测试 1262 断言通过。 |
 | 2.1.10 | 2026-10-08 | 桌面浏览器图标真正修复 + 标签站点图标与标题（用户反馈两项）：① **图标根因补全**——2.1.9 修了 normalizeDesktopItems 加载过滤，本轮发现 `entryAssigned(id)` 渲染权限过滤同样漏了 webos-browser 特判（应用中心/OS 设置都有），浏览器项被判「未分配」在 renderDesktop 与 assignedDesktopItems（网格占用/找空位）中双重排除，导致图标始终不显示；补 `if (entryId === 'webos-browser') { return true; }`；② **页面元信息代理**——新增 `GET /api/page-meta?url=`（PageMetaService）：后端代抓目标页解析 `<title>`（兼容 GBK/GB2312/BIG5 转码，60 字符截断）与 favicon（`<link rel="icon">` 声明优先、缺省探测 `/favicon.ico`，限 30KB、图片类型校验，转 base64 data URI），Http 超时 4s/连接 2s/重定向 2 次，仅 http(s) 协议（SSRF 基础防护），结果 Cache 1 天；前端 fetchPageMeta 导航后异步拉取（metaPending 防并发、过期响应不应用、失败静默回退域名标题），标签条渲染 `<img class="browser-tab-favicon">`（14px，未取到回退罗盘/地球图标）；③ 新增 PageMetaServiceTest（5 用例：协议拒绝不发请求/title+声明图标解析/默认 favicon 探测/请求失败回退/404 与非法图标类型忽略）与接口测试 test_page_meta_api_returns_parsed_site_info（Http fake）。124 测试 1260 断言通过。 |
