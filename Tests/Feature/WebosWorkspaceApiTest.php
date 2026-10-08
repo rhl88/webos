@@ -737,6 +737,14 @@ class WebosWorkspaceApiTest extends WebosTestCase
         // 全屏下任务栏地球图标改为在内置浏览器窗口打开（新标签页会退出全屏）
         $this->assertStringContainsString('function openBrowserWithURL(url)', $script);
         $this->assertStringContainsString('openBrowserWithURL(elements.websiteButton.dataset.websiteUrl);', $script);
+        // 桌面项加载过滤放行内置浏览器空 path（safePath('') 为 false 会把浏览器图标每次加载都丢掉）
+        $this->assertStringContainsString("(item.id === 'webos-browser' || safePath(item.path))", $script);
+        // 应用窗口 iframe 内框架「前台」地球链接：全屏改在内置浏览器打开，非全屏保持 target=_blank 新窗口
+        $this->assertStringContainsString('function bindWindowFrame(frame)', $script);
+        $this->assertStringContainsString("target.closest('a.layui-icon-website')", $script);
+        $this->assertStringContainsString('openBrowserWithURL(link.href);', $script);
+        $this->assertStringContainsString('bindWindowFrame(frame);', $script);
+        $this->assertStringContainsString('bindWindowFrame(windowFrame);', $script);
         // CSS：浏览器外壳/标签条/标签页/iframe 视图铺满
         $this->assertStringContainsString('.webos-browser-shell {', $stylesheet);
         $this->assertStringContainsString('.browser-tabbar {', $stylesheet);

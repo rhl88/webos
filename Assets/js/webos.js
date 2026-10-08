@@ -625,7 +625,8 @@
 
     function normalizeDesktopItems(items) {
         return (items || []).filter(function (item) {
-            return item && item.id && safePath(item.path);
+            // 内置浏览器入口 path 为空（内容按 id 特判渲染），仅要求合法 id；其余项仍须站内路径
+            return item && item.id && (item.id === 'webos-browser' || safePath(item.path));
         }).map(function (item, index) {
             return Object.assign({}, item, {
                 icon: safeIcon(item.icon),
@@ -3075,6 +3076,39 @@
         syncWindowTabsBar(windowState);
     }
 
+    /**
+     * 应用窗口 iframe 内框架「前台」地球链接（a.layui-icon-website，target=_blank）点击分流：
+     * 全屏下新窗口会打断全屏体验，改为在桌面内置浏览器窗口打开；非全屏保持浏览器默认新窗口行为。
+     * iframe 每次导航（同源）contentDocument 都是新对象，故绑在 frame 的 load 事件上逐次绑定，
+     * 以 doc 上的标记防重复；跨域页面 contentDocument 不可访问，静默跳过。
+     */
+    function bindWindowFrame(frame) {
+        frame.addEventListener('load', function () {
+            var doc;
+            try {
+                doc = frame.contentDocument;
+            } catch (error) {
+                return;
+            }
+            if (!doc || doc.__webosFrontLinkBound) {
+                return;
+            }
+            doc.__webosFrontLinkBound = true;
+            doc.addEventListener('click', function (event) {
+                var target = event.target instanceof Element ? event.target : null;
+                var link = target ? target.closest('a.layui-icon-website') : null;
+                if (!link || !link.href) {
+                    return;
+                }
+                if (!(document.fullscreenElement || document.webkitFullscreenElement)) {
+                    return;
+                }
+                event.preventDefault();
+                openBrowserWithURL(link.href);
+            }, true);
+        });
+    }
+
     function renderWindowPage(windowState, entry) {
         var host = windowState && windowState.element.querySelector('[data-window-page-host]');
         if (!host) {
@@ -3106,6 +3140,10 @@
                 } else {
                     page.innerHTML = '<iframe src="' + escapeHtml(tab.path) + '" title="'
                         + escapeHtml(tab.title) + '"></iframe>';
+                    var frame = page.querySelector('iframe');
+                    if (frame) {
+                        bindWindowFrame(frame);
+                    }
                 }
             }
             host.querySelectorAll('.window-page').forEach(function (node) {
@@ -3127,6 +3165,10 @@
         }
         host.innerHTML = '<iframe src="' + escapeHtml(entry.path) + '" title="'
             + escapeHtml(entry.title) + '"></iframe>';
+        var windowFrame = host.querySelector('iframe');
+        if (windowFrame) {
+            bindWindowFrame(windowFrame);
+        }
         // iframe 重建后遮罩丢失，按当前聚焦状态补挂
         syncWindowShields();
     }
