@@ -621,11 +621,15 @@ class WebosWorkspaceApiTest extends WebosTestCase
         $this->assertMatchesRegularExpression('/return state\.workspace\.desktop_items\.filter\(function \(item\) \{\s*[\r\n]+\s*return entryAssigned\(item\.id\);/', $script);
         // 拖拽落点占用集合仅统计可见图标（未分配入口的格子可移入）
         $this->assertStringContainsString('var occupied = new Set(assignedDesktopItems().filter(function (entry) {', $script);
-        // 新增入口找空行仅统计可见图标
-        $this->assertStringContainsString('var occupied = assignedDesktopItems().map(function (item) { return Number(item.y) || 0; });', $script);
-        // 布局归一化：坐标冲突的重新启用图标按 (y,x) 顺序下移到第一个空白格并静默保存
+        // 新增入口列优先找空位：可视行数由容器高度决定（扣除任务栏），第一列放满后进入下一列，不再无限向下越界
+        $this->assertStringContainsString('var rows = Math.max(1, Math.floor(elements.desktopIcons.clientHeight / size.cellH));', $script);
+        $this->assertStringContainsString('if (!occupied.has(column + \':\' + row)) {', $script);
+        // 布局归一化：坐标冲突的重新启用图标按 (y,x) 顺序下移到第一个空白格并静默保存；
+        // 超出可视行数的历史越界图标按列优先规则放回第一个空格
         $this->assertStringContainsString('function normalizeDesktopLayout', $script);
         $this->assertStringContainsString('while (occupied.has(x + \',\' + y) && guard < 200) {', $script);
+        $this->assertStringContainsString('if (rows > 0 && y >= rows) {', $script);
+        $this->assertStringContainsString('overflow.forEach(function (item) {', $script);
         $this->assertStringContainsString('if (changed) { saveWorkspace(false).catch(function () {}); }', $script);
         // 目录刷新与首次渲染前均执行归一化
         $this->assertSame(2, substr_count($script, 'normalizeDesktopLayout();'));
@@ -647,8 +651,8 @@ class WebosWorkspaceApiTest extends WebosTestCase
         $this->assertStringContainsString('medium: { cellW: 102, cellH: 104, iconW: 88, iconH: 96 }', $script);
         $this->assertStringContainsString('small: { cellW: 86, cellH: 88, iconW: 72, iconH: 78 }', $script);
         $this->assertStringContainsString('function desktopIconSize', $script);
-        // 渲染与拖拽落点按档位换算（renderDesktop 与拖拽 move 各一处）
-        $this->assertSame(2, substr_count($script, 'var size = desktopIconSize();'));
+        // 渲染、拖拽 move、新增图标找空位、布局归一化四处按档位换算
+        $this->assertSame(4, substr_count($script, 'var size = desktopIconSize();'));
         $this->assertStringContainsString('var dropSize = desktopIconSize();', $script);
         $this->assertStringContainsString('root.dataset.iconSize = ', $script);
         // 右键「查看」子菜单与切档动作（当前档位勾选）

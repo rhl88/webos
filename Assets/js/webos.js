@@ -1012,13 +1012,33 @@
             toast('该入口已经在桌面上');
             return;
         }
-        // 找空行时仅统计可见图标：停用应用不再占位，新图标可以落在其格子
-        var occupied = assignedDesktopItems().map(function (item) { return Number(item.y) || 0; });
-        var row = 0;
-        while (occupied.indexOf(row) >= 0) {
-            row += 1;
+        // 找空位时仅统计可见图标：停用应用不再占位，新图标可以落在其格子。
+        // 列优先扫描（Windows 桌面风格）：每列可容纳行数由 .desktop-icons 可视高度决定
+        // （容器 inset 已扣除任务栏与边距），第一列放满后进入下一列，避免新图标一直向下
+        // 排列落到任务栏下方或屏幕外的非可视区域
+        var size = desktopIconSize();
+        var rows = Math.max(1, Math.floor(elements.desktopIcons.clientHeight / size.cellH));
+        var occupied = new Set(assignedDesktopItems().map(function (item) {
+            return (Math.max(0, Number(item.x) || 0)) + ':' + (Math.max(0, Number(item.y) || 0));
+        }));
+        var slot = null;
+        var column = 0;
+        while (slot === null) {
+            for (var row = 0; row < rows; row += 1) {
+                if (!occupied.has(column + ':' + row)) {
+                    slot = { x: column, y: row };
+                    break;
+                }
+            }
+            if (slot === null) {
+                column += 1;
+                // 极端兜底（可视格子全部占满的小屏场景）：回到第一列向下延续，防止死循环
+                if (column > 999) {
+                    slot = { x: 0, y: rows };
+                }
+            }
         }
-        state.workspace.desktop_items.push(Object.assign({}, entry, { x: 0, y: row }));
+        state.workspace.desktop_items.push(Object.assign({}, entry, { x: slot.x, y: slot.y }));
         renderDesktop();
         renderStartMenu();
         saveWorkspace(false).then(function () { toast('已添加到桌面'); });
@@ -7337,7 +7357,10 @@
     /**
      * 桌面布局归一化：应用停用期间其格子被其它图标占用后，重新启用时坐标冲突的图标
      * 自动按 (y,x) 顺序下移到第一个空白格（未冲突则保持原位），布局有变化时静默保存。
-     * 隐藏（未分配）项不参与网格占用，原始坐标保留不动。
+     * 同时归一化越界图标：每列可容纳行数由 .desktop-icons 可视高度决定（容器 inset 已扣除
+     * 任务栏与边距），历史数据中超出可视行数（旧版新增逻辑无高度限制排到任务栏/屏幕外）的
+     * 图标按列优先规则放回第一个空格，与新增图标 addDesktopEntry 的落点规则一致。
+     * 隐藏（未分配）项不参与网格占用，原始坐标保留不动；容器高度不可测量时降级为仅做冲突下移。
      */
     function normalizeDesktopLayout() {
         var items = assignedDesktopItems().slice().sort(function (a, b) {
@@ -7345,21 +7368,52 @@
         });
         if (!items.length) { return; }
 
+        var size = desktopIconSize();
+        var rows = elements.desktopIcons ? Math.floor(elements.desktopIcons.clientHeight / size.cellH) : 0;
         var occupied = new Set();
+        var overflow = [];
         var changed = false;
         items.forEach(function (item) {
             var x = Math.max(0, Math.min(99, Number(item.x) || 0));
             var y = Math.max(0, Math.min(99, Number(item.y) || 0));
+            // 历史越界项：收集后统一列优先重排，不再无限下移
+            if (rows > 0 && y >= rows) {
+                overflow.push(item);
+                return;
+            }
             var guard = 0;
             while (occupied.has(x + ',' + y) && guard < 200) {
                 y += 1;
                 guard += 1;
+            }
+            if (rows > 0 && y >= rows) {
+                overflow.push(item);
+                return;
             }
             occupied.add(x + ',' + y);
             if (item.x !== x || item.y !== y) {
                 item.x = x;
                 item.y = y;
                 changed = true;
+            }
+        });
+
+        overflow.forEach(function (item) {
+            for (var column = 0; column < 100; column += 1) {
+                var placed = false;
+                for (var row = 0; row < rows; row += 1) {
+                    if (!occupied.has(column + ',' + row)) {
+                        occupied.add(column + ',' + row);
+                        if (item.x !== column || item.y !== row) {
+                            item.x = column;
+                            item.y = row;
+                            changed = true;
+                        }
+                        placed = true;
+                        break;
+                    }
+                }
+                if (placed) { break; }
             }
         });
 
