@@ -756,7 +756,12 @@ class WebosWorkspaceApiTest extends WebosTestCase
         $this->assertStringContainsString('bindWindowFrame(windowFrame);', $script);
         // 标签站点图标与标题：后端元信息代理（跨域 iframe 读不到 title/favicon）
         $this->assertStringContainsString('function fetchPageMeta(tab)', $script);
-        $this->assertStringContainsString("api(endpoint + '?url=' + encodeURIComponent(tab.url))", $script);
+        $this->assertStringContainsString('var requestedUrl = tab.url;', $script);
+        $this->assertStringContainsString('tab.url !== requestedUrl', $script);
+        $this->assertStringContainsString('fetchPageMeta(tab);', $script);
+        // 元信息代理失败结果短缓存：瞬时失败不会被固化成空结果一整天（成功缓存 1 天）
+        $service = file_get_contents(dirname(__DIR__, 2) . '/Services/PageMetaService.php');
+        $this->assertStringContainsString('Cache::put($key, $meta, $succeeded ? now()->addDay() : now()->addMinutes(5));', $service);
         $this->assertStringContainsString('\'<img class="browser-tab-favicon" src="\' + escapeHtml(tab.icon)', $script);
         $this->assertStringContainsString('.browser-tab-favicon {', $stylesheet);
         $this->assertStringContainsString("data-page-meta-url=\"{{ url('/admin/cmspro/webos/api/page-meta') }}\"", $view);

@@ -1266,10 +1266,11 @@
             return;
         }
         tab.metaPending = true;
-        api(endpoint + '?url=' + encodeURIComponent(tab.url)).then(function (meta) {
+        var requestedUrl = tab.url;
+        api(endpoint + '?url=' + encodeURIComponent(requestedUrl)).then(function (meta) {
             tab.metaPending = false;
             // 响应期间标签可能已导航到其它页面或回到新标签页，过期结果不应用
-            if (!meta || !tab.url) {
+            if (!meta || !tab.url || tab.url !== requestedUrl) {
                 return;
             }
             if (meta.title) {
@@ -1294,6 +1295,8 @@
         if (frame) {
             frame.src = tab.url;
         }
+        // 重载的同时重拉页面元信息：首次抓取失败（结果仅短缓存 5 分钟）后用户刷新即可补上标题/图标
+        fetchPageMeta(tab);
     }
 
     /** 关闭标签：激活相邻标签；全部关闭时自动保留一个新标签页（窗口不空置） */

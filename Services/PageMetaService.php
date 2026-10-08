@@ -31,7 +31,19 @@ class PageMetaService
             return ['title' => '', 'icon' => ''];
         }
 
-        return Cache::remember('webos:page-meta:' . md5($url), now()->addDay(), fn (): array => $this->request($url));
+        $key = 'webos:page-meta:' . md5($url);
+        $cached = Cache::get($key);
+        if (is_array($cached)) {
+            return $cached;
+        }
+
+        $meta = $this->request($url);
+        // 成功结果缓存 1 天；失败结果短缓存 5 分钟：避免高频重试打目标站，
+        // 也防止瞬时失败（网络抖动/目标站瞬断）被固化成空结果一整天
+        $succeeded = $meta['title'] !== '' || $meta['icon'] !== '';
+        Cache::put($key, $meta, $succeeded ? now()->addDay() : now()->addMinutes(5));
+
+        return $meta;
     }
 
     /** @return array{title:string,icon:string} */
