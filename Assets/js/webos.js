@@ -980,7 +980,9 @@
         }).join('') : '<div class="panel-empty"><i class="fa '
             + (!query && current && current.id === 'common' ? 'fa-star-o' : 'fa-search') + '"></i>'
             + (!query && current && current.id === 'common' ? '打开应用后，常用入口会显示在这里' : '没有匹配的入口') + '</div>';
-        renderStartRecent(groups, query);
+        // 「最近」区块仅在「常用」分类且非搜索时渲染（其它分类/搜索结果中不出现），
+        // 其余情况传 null 由 renderStartRecent 隐藏
+        renderStartRecent(!query && current && current.id === 'common' ? groups : null, query);
     }
 
     /**
@@ -997,7 +999,8 @@
         if (!statistics || Array.isArray(statistics)) {
             statistics = {};
         }
-        var recent = !query
+        // groups 为 null（非「常用」分类或搜索中）时 recent 保持空数组，区块隐藏
+        var recent = groups && !query
             ? groups.filter(function (group) { return group.id !== 'common'; }).reduce(function (all, group) { return all.concat(group.items); }, []).filter(function (item) {
                 return statistics[item.start_key] && statistics[item.start_key].last_opened_at;
             }).sort(function (left, right) {

@@ -680,7 +680,9 @@ class WebosWorkspaceApiTest extends WebosTestCase
         $this->assertStringNotContainsString('fullscreen-button', $view);
         // JS：最近区块复用 usage_stats 的 last_opened_at 降序取前 6，副标题相对时间（x 秒/分钟/小时/天/月前打开）；无记录时隐藏
         $this->assertStringContainsString('function renderStartRecent(groups, query)', $script);
-        $this->assertStringContainsString('renderStartRecent(groups, query);', $script);
+        // 「最近」区块仅在「常用」分类且非搜索时渲染：其它分类/搜索传 null，renderStartRecent 内隐藏
+        $this->assertStringContainsString("renderStartRecent(!query && current && current.id === 'common' ? groups : null, query);", $script);
+        $this->assertStringContainsString('var recent = groups && !query', $script);
         $this->assertStringContainsString("statistics[right.start_key].last_opened_at.localeCompare(statistics[left.start_key].last_opened_at)", $script);
         // 数据源排除「常用」虚拟分组（commonGroup 条目与原始分组同 start_key，不排除会成对重复）
         $this->assertStringContainsString("groups.filter(function (group) { return group.id !== 'common'; })", $script);
