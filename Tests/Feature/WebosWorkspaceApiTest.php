@@ -1082,6 +1082,13 @@ class WebosWorkspaceApiTest extends WebosTestCase
         $this->assertStringContainsString("var cacheBust = '?_t=' + Date.now();", $script);
         $this->assertStringContainsString('.start-category-button.is-drop-target', $stylesheet);
         $this->assertStringContainsString('.start-app-item[draggable="true"]', $stylesheet);
+        // 顶级分类拖拽挂为其它分类的子菜单（2.1.18）：超管渲染可拖分类按钮（复用 data-move-ids 链路），
+        // 防拖到自身（dragover 不放行 + drop 兜底），拖拽中高亮类清理通用化覆盖分类按钮
+        $this->assertStringContainsString("var draggable = isSuperAdmin && group.id !== 'common';", $script);
+        $this->assertStringContainsString("if (draggingMoveIds.length === 1 && category.dataset.groupId === String(draggingMoveIds[0])) { return; }", $script);
+        $this->assertStringContainsString("if (moveIds.length === 1 && category.dataset.groupId === String(moveIds[0])) { return; }", $script);
+        $this->assertStringContainsString("querySelectorAll('.is-dragging')", $script);
+        $this->assertStringContainsString('.start-category-button[draggable="true"]', $stylesheet);
     }
 
     public function test_market_cards_use_remote_icon_and_install_state(): void

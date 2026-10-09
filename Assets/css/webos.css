@@ -1374,6 +1374,15 @@ textarea:focus-visible,
     opacity: 0.45;
 }
 
+/* 超管拖拽顶级分类换归属：可拖分类按钮抓手光标，拖拽中半透明（悬停高亮复用 is-drop-target） */
+.start-category-button[draggable="true"] {
+    cursor: grab;
+}
+
+.start-category-button.is-dragging {
+    opacity: 0.45;
+}
+
 .start-content {
     flex: 1 1 auto;
     min-width: 0;

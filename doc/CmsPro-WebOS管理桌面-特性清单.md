@@ -1,7 +1,7 @@
 # CmsPro WebOS 管理桌面 · 特性清单
 
-> 文档版本：2.1.17 | 更新日期：2026-10-09
-> 应用版本：2.1.17 | 应用 ID：`cmspro.webos`
+> 文档版本：2.1.18 | 更新日期：2026-10-09
+> 应用版本：2.1.18 | 应用 ID：`cmspro.webos`
 
 ## 一、应用定位
 
@@ -122,6 +122,7 @@ CmsproWebos/
 
 | 版本 | 日期 | 说明 |
 |---|---|---|
+| 2.1.18 | 2026-10-09 | 顶级分类拖拽挂为其它分类的子菜单（用户需求，超管可用、框架菜单全局生效）：开始菜单左侧分类按钮（非「常用」）对超管渲染 `draggable + data-move-ids`（分类按钮复用入口卡片的 data-move-ids → `PUT /api/admin/menus/move`（MenuService::batchMove，服务端防环形引用+事务+仅移动顶层防子树拍平）→ 成功 refreshCatalog 重绘）；防拖到自身（dragover 不放行即不可放置 + drop 兜底校验），「常用」虚拟分组不可拖/不可作为目标；拖拽中半透明与悬停高亮（is-drop-target 复用）；拖拽高亮类清理选择器通用化（.is-dragging 覆盖卡片与分类按钮）。后端零改动纯复用框架接口。124 测试 1280 断言通过。 |
 | 2.1.17 | 2026-10-09 | 「最近」区块仅「常用」分类显示（用户反馈）：renderStartMenu 调用 renderStartRecent 时无条件传入分组，其它分类也渲染了最近区块（注释声称仅常用但实现漏了条件，2.1.5 改造时丢失）；改为仅当前分类为 common 且非搜索时传入 groups，其余传 null 由 renderStartRecent 隐藏。124 测试 1275 断言通过。 |
 | 2.1.16 | 2026-10-09 | 面板收起补齐（用户反馈：开始菜单打开时点击已打开窗口的 iframe 内容不收起，非 iframe 区域正常）：iframe 内 click 留在子文档不会冒泡到父页面，document click 的「点击面板外收起」监听收不到；新增 `window blur` 监听——点击 iframe 内容时浏览器把焦点移入 iframe 文档，父窗口触发 blur 且 `activeElement` 为该 iframe，据此与点击面板外部一致执行 `closePanels()`；Alt+Tab 切窗口时 activeElement 是 body 不误收起。124 测试 1272 断言通过。 |
 | 2.1.15 | 2026-10-08 | 浏览器多标签切换内容不更新修复（用户反馈：点击标签内容停留在最后打开的标签）：根因是 **CSS 级联优先级**——`.window-content iframe { display: block }`（作者样式）永远压过 UA 样式表的 `[hidden] { display: none }`，JS 设置 `frame.hidden = true` 从未生效，所有标签的 iframe 一直叠加渲染，视觉上停留在 DOM 最后的（最后打开的）标签；新增 `.browser-views iframe[hidden] { display: none; }` 显式修复（与项目内其余 21 处 `[hidden]` 覆盖坑同款处理），并加测试断言防回归。124 测试 1272 断言通过。 |

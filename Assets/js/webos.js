@@ -938,9 +938,16 @@
             state.activeGroup = groups.length ? groups[0].id : '';
         }
         elements.startCategories.innerHTML = groups.map(function (group) {
+            // 超管可将顶级分类拖拽到其它分类上挂为子菜单（复用入口卡片拖拽链路 data-move-ids →
+            // PUT /api/admin/menus/move）；「常用」为虚拟分组不可拖；group.id 非数字菜单 id 时
+            // dragstart 内按无效 ids 自动取消拖拽
+            var draggable = isSuperAdmin && group.id !== 'common';
             return '<button class="start-category-button ' + (state.activeGroup === group.id ? 'is-active' : '')
-                + '" type="button" data-group-id="' + escapeHtml(group.id) + '"><i class="' + safeIcon(group.icon)
-                + '"></i>' + escapeHtml(group.title) + '</button>';
+                + '" type="button" data-group-id="' + escapeHtml(group.id) + '"'
+                + (draggable
+                    ? ' draggable="true" data-move-ids="' + escapeHtml(group.id) + '" title="拖拽到其它分类上，可将其挂为该分类的子菜单"'
+                    : '')
+                + '><i class="' + safeIcon(group.icon) + '"></i>' + escapeHtml(group.title) + '</button>';
         }).join('');
 
         var current = groups.find(function (group) { return group.id === state.activeGroup; });
@@ -9171,6 +9178,8 @@
             if (!draggingMoveIds) { return; }
             var category = event.target.closest('.start-category-button');
             if (!category || category.dataset.groupId === 'common') { return; }
+            // 分类对分类拖拽时禁止放到自身（不阻止默认行为即不可放置）
+            if (draggingMoveIds.length === 1 && category.dataset.groupId === String(draggingMoveIds[0])) { return; }
             event.preventDefault();
             event.dataTransfer.dropEffect = 'move';
             if (dragOverCategory !== category) {
@@ -9186,8 +9195,11 @@
             if (dragOverCategory) { dragOverCategory.classList.remove('is-drop-target'); dragOverCategory = null; }
             var moveIds = draggingMoveIds;
             draggingMoveIds = null;
-            document.querySelectorAll('.start-app-item.is-dragging').forEach(function (card) { card.classList.remove('is-dragging'); });
+            // 清理选择器用通用 .is-dragging：入口卡片与分类按钮拖拽共用该类
+            document.querySelectorAll('.is-dragging').forEach(function (card) { card.classList.remove('is-dragging'); });
             if (!category || category.dataset.groupId === 'common') { return; }
+            // 分类对分类拖拽时禁止挂到自身下（服务端 batchMove 同样有环形引用校验兜底）
+            if (moveIds.length === 1 && category.dataset.groupId === String(moveIds[0])) { return; }
             api('/api/admin/menus/move', { method: 'PUT', body: { ids: moveIds, parent_id: Number(category.dataset.groupId) } })
                 .then(function () {
                     toast('已移动到「' + (category.textContent || '').trim() + '」分类', 'success');
@@ -9198,7 +9210,7 @@
         document.addEventListener('dragend', function () {
             if (dragOverCategory) { dragOverCategory.classList.remove('is-drop-target'); dragOverCategory = null; }
             draggingMoveIds = null;
-            document.querySelectorAll('.start-app-item.is-dragging').forEach(function (card) { card.classList.remove('is-dragging'); });
+            document.querySelectorAll('.is-dragging').forEach(function (card) { card.classList.remove('is-dragging'); });
         });
 
         // 点击窗口 iframe 内容时：click 留在 iframe 子文档不会冒泡到父页面（上面的「点击面板外收起」
