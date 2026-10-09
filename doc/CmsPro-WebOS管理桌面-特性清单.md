@@ -1,7 +1,7 @@
 # CmsPro WebOS 管理桌面 · 特性清单
 
-> 文档版本：2.1.15 | 更新日期：2026-10-08
-> 应用版本：2.1.15 | 应用 ID：`cmspro.webos`
+> 文档版本：2.1.16 | 更新日期：2026-10-09
+> 应用版本：2.1.16 | 应用 ID：`cmspro.webos`
 
 ## 一、应用定位
 
@@ -122,6 +122,7 @@ CmsproWebos/
 
 | 版本 | 日期 | 说明 |
 |---|---|---|
+| 2.1.16 | 2026-10-09 | 面板收起补齐（用户反馈：开始菜单打开时点击已打开窗口的 iframe 内容不收起，非 iframe 区域正常）：iframe 内 click 留在子文档不会冒泡到父页面，document click 的「点击面板外收起」监听收不到；新增 `window blur` 监听——点击 iframe 内容时浏览器把焦点移入 iframe 文档，父窗口触发 blur 且 `activeElement` 为该 iframe，据此与点击面板外部一致执行 `closePanels()`；Alt+Tab 切窗口时 activeElement 是 body 不误收起。124 测试 1272 断言通过。 |
 | 2.1.15 | 2026-10-08 | 浏览器多标签切换内容不更新修复（用户反馈：点击标签内容停留在最后打开的标签）：根因是 **CSS 级联优先级**——`.window-content iframe { display: block }`（作者样式）永远压过 UA 样式表的 `[hidden] { display: none }`，JS 设置 `frame.hidden = true` 从未生效，所有标签的 iframe 一直叠加渲染，视觉上停留在 DOM 最后的（最后打开的）标签；新增 `.browser-views iframe[hidden] { display: none; }` 显式修复（与项目内其余 21 处 `[hidden]` 覆盖坑同款处理），并加测试断言防回归。124 测试 1272 断言通过。 |
 | 2.1.14 | 2026-10-08 | 部分站点标签无标题/图标修复（用户反馈：正常打开的 cmspro.cn 只显示网址，被拒绝的 qq.com 反而正常）：tinker 实测后端对 cmspro.cn 抓取 200 且 title/favicon 解析完全正常，根因是**瞬时失败（首次抓取网络抖动等）的空结果被 Cache::remember 固化 1 天**——首次失败后该站点 24h 内都返回空；qq.com 首次成功所以正常。修复：① **失败结果短缓存 5 分钟**（Cache::remember 改 get/put，成功 1 天/失败 5 分钟）——瞬时失败自愈，又不至于高频重试打目标站；② **过期响应防串扰**——fetchPageMeta 记录请求时 URL，响应时 tab.url !== requestedUrl 不应用（快速切换标签/导航时旧响应不再错写新标签）；③ **browserReload 重拉元信息**——刷新标签同时 fetchPageMeta，首次抓取失败后用户点刷新即可补上标题/图标。124 测试 1271 断言通过。 |
 | 2.1.13 | 2026-10-08 | 浏览器标签栏拖动失效修复（用户反馈）：根因是**绑定时机**——`bindWindowGestures` 在窗口打开时逐元素绑定 `[data-window-drag]`，而浏览器标签栏是其后 `renderBrowserWindow` 才动态创建的，逐元素绑定永远漏掉它；改为**事件委托**——pointerdown/dblclick 委托到窗口元素，handler 内 `closest('[data-window-drag]')` 分发（动态创建的拖动区自动生效），pointer capture 与 move/up/end 仍挂实际拖动区，排除集 `button, .browser-tab, input, select, textarea` 不变。124 测试 1268 断言通过。 |

@@ -762,6 +762,10 @@ class WebosWorkspaceApiTest extends WebosTestCase
         // 标签 iframe 显隐用 hidden 属性：必须显式覆盖 .window-content iframe 的 display:block，
         // 否则作者样式压过 UA 的 [hidden] 默认样式，切换标签时内容停留在最后打开的标签
         $this->assertStringContainsString('.browser-views iframe[hidden] {', $stylesheet);
+        // iframe 内点击不冒泡到父文档：通过 window blur + activeElement 为 IFRAME 判定，
+        // 点击已打开窗口 iframe 内容时同样收起开始菜单等面板（与点击面板外部一致）
+        $this->assertStringContainsString("window.addEventListener('blur', function () {", $script);
+        $this->assertStringContainsString("active.tagName === 'IFRAME'", $script);
         // 元信息代理失败结果短缓存：瞬时失败不会被固化成空结果一整天（成功缓存 1 天）
         $service = file_get_contents(dirname(__DIR__, 2) . '/Services/PageMetaService.php');
         $this->assertStringContainsString('Cache::put($key, $meta, $succeeded ? now()->addDay() : now()->addMinutes(5));', $service);

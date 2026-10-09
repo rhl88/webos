@@ -9198,6 +9198,17 @@
             document.querySelectorAll('.start-app-item.is-dragging').forEach(function (card) { card.classList.remove('is-dragging'); });
         });
 
+        // 点击窗口 iframe 内容时：click 留在 iframe 子文档不会冒泡到父页面（上面的「点击面板外收起」
+        // 收不到），但浏览器会把焦点移入 iframe 文档——父窗口触发 blur 且 activeElement 为该 iframe，
+        // 借此判定「点击了窗口 iframe 内容」，与点击面板外部一致收起所有面板；
+        // Alt+Tab 切窗口时 activeElement 是 body，不会误收起
+        window.addEventListener('blur', function () {
+            var active = document.activeElement;
+            if (active && active.tagName === 'IFRAME') {
+                closePanels();
+            }
+        });
+
         document.addEventListener('click', function (event) {
             // 点击前台菜单下拉框外部时收起所有已展开的前台菜单
             if (!event.target.closest('[data-window-home-menu]')) {
