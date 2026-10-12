@@ -1634,6 +1634,35 @@
         positionDesktopMenu(clientX, clientY);
     }
 
+    /**
+     * 系统菜单应用卡片右键菜单项：打开（所有人）/ 停用(启用) / 卸载（仅超级管理员）。
+     * 停用复用应用中心状态开关（POST /api/admin/apps/{app_id}/disable|enable），
+     * 卸载复用卸载确认流程（openUninstallDialog，含系统应用与启用状态拦截）；
+     * 内置窗口（应用中心/浏览器/OS 设置等）与系统应用不提供停用与卸载。
+     */
+    function startItemContextMenuItems(entryId) {
+        var entry = findEntry(entryId) || findStartItem(entryId);
+        if (!entry) { return null; }
+        var items = [['打开', 'fa-external-link', 'open']];
+        var application = entry.app_id ? findApplication(entry.app_id) : null;
+        if (isSuperAdmin && application && Number(application.is_system) !== 1) {
+            var enabled = Number(application.status) === 1;
+            items.push([enabled ? '停用' : '启用', enabled ? 'fa-pause-circle' : 'fa-play-circle', 'toggle-app-status']);
+            items.push(['卸载', 'fa-times-circle', 'uninstall', 'danger']);
+        }
+        return items;
+    }
+
+    function openStartItemContextMenu(entryId, clientX, clientY) {
+        closeDesktopContextMenu();
+        closeTaskbarContextMenu();
+        closeAppRowMenus();
+        var items = startItemContextMenuItems(entryId);
+        if (!items) { return; }
+        menuMarkupInto('#desktop-context-menu', 'desktop-context-menu', items, entryId);
+        positionDesktopMenu(clientX, clientY);
+    }
+
     /** 判断右键目标是否属于桌面空白区域：仅桌面根节点与图标层空白处，窗口、任务栏、面板、弹窗一律排除 */
     function isDesktopSurface(target) {
         if (!target || typeof target.closest !== 'function') {
@@ -1742,6 +1771,14 @@
             openEntry(context.entry || findDesktopItem(iconId));
             return;
         }
+        // 系统菜单右键「停用/启用」：与应用中心状态开关同一接口（成功后应用目录已刷新）
+        if (action === 'toggle-app-status') {
+            if (context.application) {
+                closePanels();
+                toggleAppStatus(context.application.app_id, Number(context.application.status) !== 1, null, null);
+            }
+            return;
+        }
         if (action === 'remove') {
             removeDesktopEntry(iconId);
             return;
@@ -1774,6 +1811,8 @@
             return;
         }
         if (action === 'uninstall' && context.application) {
+            // 卸载确认弹窗层级高于开始菜单面板，先收起面板避免遮挡
+            closePanels();
             openUninstallDialog(context.application);
         }
     }
@@ -9096,6 +9135,18 @@
             }
             event.preventDefault();
             openDesktopContextMenu(button.dataset.desktopId, event.clientX, event.clientY);
+        });
+
+        // 开始菜单应用卡片右键：打开/停用/卸载（最近区块卡片同款结构一并支持）；
+        // 菜单项点击复用 root 级 data-desktop-action 委托，动作走 runDesktopContextAction
+        elements.startPanel.addEventListener('contextmenu', function (event) {
+            var card = event.target.closest('.start-app-item[data-menu-id]');
+            if (!card) {
+                return;
+            }
+            event.preventDefault();
+            event.stopPropagation();
+            openStartItemContextMenu(card.dataset.menuId, event.clientX, event.clientY);
         });
 
         // 桌面空白区域右键：仅在桌面本身生效，窗口、任务栏、面板、弹窗内右键不触发

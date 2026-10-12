@@ -665,6 +665,22 @@ class WebosWorkspaceApiTest extends WebosTestCase
         $this->assertStringContainsString("['none', 'shadow', 'shield']", $service);
     }
 
+    /** 系统菜单应用卡片右键菜单：打开（所有人）/ 停用(启用)/卸载（仅超管，复用应用中心接口与卸载流程） */
+    public function test_start_item_context_menu_supports_open_disable_uninstall(): void
+    {
+        $javascript = file_get_contents(dirname(__DIR__, 2) . '/Assets/js/webos.js');
+
+        $this->assertIsString($javascript);
+        $this->assertStringContainsString('function startItemContextMenuItems', $javascript);
+        $this->assertStringContainsString("items.push([enabled ? '停用' : '启用'", $javascript);
+        $this->assertStringContainsString("items.push(['卸载', 'fa-times-circle', 'uninstall', 'danger']);", $javascript);
+        // 停用/启用复用应用中心状态开关，卸载前收起开始菜单面板避免弹窗遮挡
+        $this->assertStringContainsString("action === 'toggle-app-status'", $javascript);
+        $this->assertStringContainsString('function openUninstallDialog', $javascript);
+        // 开始面板右键委托绑定（含「最近」区块卡片）
+        $this->assertStringContainsString("elements.startPanel.addEventListener('contextmenu'", $javascript);
+    }
+
     /** 系统菜单「最近」区块（常用下方显示最近打开 6 项）与桌面右键菜单全屏切换项 */
     public function test_start_menu_recent_section_and_fullscreen_toggle(): void
     {
