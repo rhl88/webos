@@ -1154,6 +1154,12 @@ class WebosWorkspaceApiTest extends WebosTestCase
         $this->assertStringContainsString('max-height: calc(100vh - 60px);', $stylesheet);
         $this->assertStringContainsString('.action-dialog-card .dialog-body {', $stylesheet);
         $this->assertStringContainsString('overflow-y: auto;', $stylesheet);
+        // 确认弹窗（卸载/安装等）内容允许选中复制：对话框不在 .window-body 内，
+        // 继承了桌面全局 user-select: none，需在 .dialog-body 显式恢复文本可选
+        $this->assertStringContainsString(".dialog-body {
+    padding: 18px 20px;
+    user-select: text;
+}", $stylesheet);
     }
 
     public function test_calendar_api_returns_lunar_and_solar_term_data(): void

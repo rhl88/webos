@@ -2188,8 +2188,11 @@ textarea:focus-visible,
     letter-spacing: 0.08em;
 }
 
+/* 对话框内容恢复文本可选：桌面全局禁选仅用于防框选图标/拖动误选，
+   确认弹窗（卸载/安装/应用设置等）的提示文字与应用名称需可选中复制 */
 .dialog-body {
     padding: 18px 20px;
+    user-select: text;
 }
 
 .install-app-summary {
