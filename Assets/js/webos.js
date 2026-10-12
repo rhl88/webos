@@ -878,6 +878,8 @@
                     ? safeIcon(applicationIcon)
                     : (representative.folder_icon || representative.group_icon || 'fa fa-folder'),
                 start_subtitle: entries.length + (application ? ' 个菜单' : ' 个子菜单'),
+                // 应用被禁用时开始菜单仍展示，但置灰不可点击（右键可启用/卸载）
+                start_disabled: Boolean(application && Number(application.status) !== 1),
                 start_search: [application ? application.name : representative.folder_title, entries.map(function (entry) {
                     return entry.title;
                 }).join(' ')].join(' '),
@@ -974,7 +976,8 @@
             var moveIds = isSuperAdmin && !item.special && item.move_ids && item.move_ids.length
                 ? item.move_ids.join(',') : '';
             return '<div class="start-app-item ' + (isFolderStartItem(item) ? 'is-folder' : '')
-                + '" tabindex="0" role="button" data-menu-id="' + escapeHtml(item.id) + '" data-start-kind="'
+                + (item.start_disabled ? ' is-disabled' : '')
+                + '" tabindex="0" role="button" aria-disabled="' + (item.start_disabled ? 'true' : 'false') + '" data-menu-id="' + escapeHtml(item.id) + '" data-start-kind="'
                 + escapeHtml(item.start_kind) + '"'
                 + (moveIds ? ' draggable="true" data-move-ids="' + moveIds + '"' : '') + '>'
                 + (isFolderStartItem(item)
@@ -1026,7 +1029,8 @@
                     + escapeHtml(item.id) + '" title="' + (isPinned ? '从桌面移除' : '添加到桌面')
                     + '"><i class="fa ' + (isPinned ? 'fa-thumb-tack' : 'fa-plus') + '"></i></button>';
                 return '<div class="start-app-item ' + (isFolderStartItem(item) ? 'is-folder' : '')
-                    + '" tabindex="0" role="button" data-menu-id="' + escapeHtml(item.id) + '" data-start-kind="'
+                    + (item.start_disabled ? ' is-disabled' : '')
+                    + '" tabindex="0" role="button" aria-disabled="' + (item.start_disabled ? 'true' : 'false') + '" data-menu-id="' + escapeHtml(item.id) + '" data-start-kind="'
                     + escapeHtml(item.start_kind) + '">'
                     + (isFolderStartItem(item)
                         ? '<span class="start-app-item-icon"><i class="' + safeIcon(item.start_icon) + '"></i></span>'
@@ -1643,11 +1647,12 @@
     function startItemContextMenuItems(entryId) {
         var entry = findEntry(entryId) || findStartItem(entryId);
         if (!entry) { return null; }
-        var items = [['打开', 'fa-external-link', 'open']];
         var application = entry.app_id ? findApplication(entry.app_id) : null;
+        // 禁用应用：「打开」置灰不可点击，仅提供 启用/卸载（仅超管）
+        var disabled = Boolean(application && Number(application.status) !== 1);
+        var items = [[disabled ? '打开（应用已禁用）' : '打开', 'fa-external-link', disabled ? '' : 'open', disabled ? 'disabled' : '']];
         if (isSuperAdmin && application && Number(application.is_system) !== 1) {
-            var enabled = Number(application.status) === 1;
-            items.push([enabled ? '停用' : '启用', enabled ? 'fa-pause-circle' : 'fa-play-circle', 'toggle-app-status']);
+            items.push([disabled ? '启用' : '停用', disabled ? 'fa-play-circle' : 'fa-pause-circle', 'toggle-app-status']);
             items.push(['卸载', 'fa-times-circle', 'uninstall', 'danger']);
         }
         return items;
@@ -1718,7 +1723,10 @@
                 }).join('') + '</div>'
                 : '';
             return '<div class="desktop-context-group">'
-                + '<button class="desktop-context-item ' + (item[3] ? 'is-danger' : '') + (children ? ' has-children' : '') + '" type="button" role="menuitem"'
+                + '<button class="desktop-context-item ' + (item[3] === 'danger' ? 'is-danger' : '')
+                + (item[3] === 'disabled' ? ' is-disabled' : '') + (children ? ' has-children' : '')
+                + '" type="button" role="menuitem"'
+                + (item[3] === 'disabled' ? ' disabled' : '')
                 + (item[2] ? ' data-desktop-action="' + item[2] + '"' : '')
                 + ' data-desktop-id="' + escapeHtml(iconId) + '">'
                 + '<i class="fa ' + item[1] + '"></i>' + item[0] + '</button>'
@@ -1775,7 +1783,9 @@
         if (action === 'toggle-app-status') {
             if (context.application) {
                 closePanels();
-                toggleAppStatus(context.application.app_id, Number(context.application.status) !== 1, null, null);
+                toggleAppStatus(context.application.app_id, Number(context.application.status) !== 1, function () {
+                    renderStartMenu();
+                }, null);
             }
             return;
         }
@@ -7801,7 +7811,7 @@
         var statusToggle = event.target.closest('[data-toggle-app-status]');
         if (statusToggle) {
             toggleAppStatus(statusToggle.dataset.toggleAppStatus,
-                statusToggle.getAttribute('aria-pressed') !== 'true', null, statusToggle);
+                statusToggle.getAttribute('aria-pressed') !== 'true', function () { renderStartMenu(); }, statusToggle);
             return;
         }
 
@@ -9331,7 +9341,8 @@
             }
 
             var menuButton = event.target.closest('[data-menu-id]');
-            if (menuButton && !event.target.closest('[data-pin-id]')) { openEntry(findEntry(menuButton.dataset.menuId)); }
+            // 禁用应用的开始菜单卡片置灰不可点击（右键菜单中可启用）
+            if (menuButton && !event.target.closest('[data-pin-id]') && !menuButton.classList.contains('is-disabled')) { openEntry(findEntry(menuButton.dataset.menuId)); }
 
             var pinnedLaunch = event.target.closest('[data-pinned-launch-id]');
             if (pinnedLaunch) {
@@ -9967,7 +9978,8 @@
             }
 
             var startItem = event.target.closest('.start-app-item[data-menu-id]');
-            if (startItem && event.target === startItem && (event.key === 'Enter' || event.key === ' ')) {
+            // 禁用应用的开始菜单卡片键盘激活同样拦截（与点击一致）
+            if (startItem && !startItem.classList.contains('is-disabled') && event.target === startItem && (event.key === 'Enter' || event.key === ' ')) {
                 event.preventDefault();
                 openEntry(findEntry(startItem.dataset.menuId));
                 return;

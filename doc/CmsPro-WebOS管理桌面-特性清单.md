@@ -1,7 +1,7 @@
 # CmsPro WebOS 管理桌面 · 特性清单
 
-> 文档版本：2.1.21 | 更新日期：2026-10-12
-> 应用版本：2.1.21 | 应用 ID：`cmspro.webos`
+> 文档版本：2.1.22 | 更新日期：2026-10-12
+> 应用版本：2.1.22 | 应用 ID：`cmspro.webos`
 
 ## 一、应用定位
 
@@ -122,6 +122,7 @@ CmsproWebos/
 
 | 版本 | 日期 | 说明 |
 |---|---|---|
+| 2.1.22 | 2026-10-12 | 开始菜单禁用应用灰化展示且不可点击（用户需求）：startItemsForGroup 带出 start_disabled 状态，卡片渲染 is-disabled + aria-disabled（常用与「最近」区块一致），整体透明度降低且图标文字灰度化；点击与键盘激活（Enter/Space）均拦截；右键菜单「打开」项置灰不可点击（文案「打开（应用已禁用）」+ button disabled + is-disabled 样式），并提供 启用/卸载（仅超管）；menuMarkupInto 危险项改精确比较（item[3] === 'danger'）避免 disabled 误染红色；右键启用与应用中心状态开关成功后均回调 renderStartMenu 同步开始菜单。126 测试 1305 断言通过。 |
 | 2.1.21 | 2026-10-12 | 系统菜单应用卡片支持右键菜单（用户需求）：打开（所有人）/ 停用(启用)/卸载（仅超级管理员）；「最近」区块卡片同款支持。停用/启用复用应用中心状态开关（POST /api/admin/apps/{app_id}/disable\|enable，执行前收起面板），卸载复用卸载确认流程（含系统应用与启用状态拦截，执行前收起面板）；系统应用与内置窗口（应用中心/浏览器/OS 设置等）不提供停用与卸载；菜单项点击复用桌面右键菜单容器与 data-desktop-action 委托。 |
 | 2.1.20 | 2026-10-12 | 弹出层对话文字选中复制扩展到整层（用户需求：其它类似弹出层也需支持）：2.1.19 仅 .dialog-body 恢复可选，弹窗标题（dialog-header，如「确认卸载『xx』」）与安装摘要仍在禁选区；收敛为容器级恢复——.webos-dialog 整层与 .session-recovery-card（会话恢复提示）声明 user-select: text，.webos-dialog button 另行禁选防拖选干扰点击；.dialog-body 仅保留 padding。 |
 | 2.1.19 | 2026-10-12 | 确认弹窗文字允许选中复制（用户反馈：卸载确认弹窗的提示文字与应用名称无法选中）：对话框不在 .window-body 内（.window-body 已恢复可选），继承了 .webos-desktop 全局 user-select: none；在 .dialog-body 显式声明 user-select: text，覆盖卸载/安装/应用设置等全部确认弹窗。 |

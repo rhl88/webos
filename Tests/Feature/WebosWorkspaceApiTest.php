@@ -672,13 +672,43 @@ class WebosWorkspaceApiTest extends WebosTestCase
 
         $this->assertIsString($javascript);
         $this->assertStringContainsString('function startItemContextMenuItems', $javascript);
-        $this->assertStringContainsString("items.push([enabled ? '停用' : '启用'", $javascript);
+        // 禁用应用：菜单项为 打开（置灰不可点击）/ 启用 / 卸载（仅超管）
+        $this->assertStringContainsString("var disabled = Boolean(application && Number(application.status) !== 1);", $javascript);
+        $this->assertStringContainsString("disabled ? '打开（应用已禁用）' : '打开'", $javascript);
+        $this->assertStringContainsString("items.push([disabled ? '启用' : '停用'", $javascript);
         $this->assertStringContainsString("items.push(['卸载', 'fa-times-circle', 'uninstall', 'danger']);", $javascript);
+        // 右键菜单 disabled 项渲染为灰化且 button disabled；danger 项精确比较避免 disabled 误染红色
+        $this->assertStringContainsString("item[3] === 'danger' ? 'is-danger'", $javascript);
+        $this->assertStringContainsString("item[3] === 'disabled' ? ' is-disabled'", $javascript);
+        $this->assertStringContainsString("item[3] === 'disabled' ? ' disabled'", $javascript);
         // 停用/启用复用应用中心状态开关，卸载前收起开始菜单面板避免弹窗遮挡
         $this->assertStringContainsString("action === 'toggle-app-status'", $javascript);
         $this->assertStringContainsString('function openUninstallDialog', $javascript);
         // 开始面板右键委托绑定（含「最近」区块卡片）
         $this->assertStringContainsString("elements.startPanel.addEventListener('contextmenu'", $javascript);
+    }
+
+    /** 开始菜单禁用应用：卡片灰化不可点击（点击/键盘激活拦截），右键菜单可启用，启用后开始菜单同步刷新 */
+    public function test_start_menu_disables_disabled_application_cards(): void
+    {
+        $javascript = file_get_contents(dirname(__DIR__, 2) . '/Assets/js/webos.js');
+        $stylesheet = file_get_contents(dirname(__DIR__, 2) . '/Assets/css/webos.css');
+
+        $this->assertIsString($javascript);
+        $this->assertIsString($stylesheet);
+        // 开始菜单数据带出禁用状态，卡片渲染 is-disabled + aria-disabled（常用与「最近」两处）
+        $this->assertStringContainsString("start_disabled: Boolean(application && Number(application.status) !== 1)", $javascript);
+        $this->assertStringContainsString("(item.start_disabled ? ' is-disabled' : '')", $javascript);
+        $this->assertStringContainsString('(item.start_disabled ? \'true\' : \'false\')', $javascript);
+        // 点击与键盘激活均拦截 is-disabled 卡片
+        $this->assertStringContainsString("!menuButton.classList.contains('is-disabled')", $javascript);
+        $this->assertStringContainsString("!startItem.classList.contains('is-disabled')", $javascript);
+        // 状态切换成功后开始菜单同步重渲染（右键与应用中心两处调用）
+        $this->assertStringContainsString("function () {\n                    renderStartMenu();\n                }", $javascript);
+        $this->assertStringContainsString("function () { renderStartMenu(); }", $javascript);
+        // 灰化样式：开始菜单卡片与右键菜单禁用项
+        $this->assertStringContainsString('.start-app-item.is-disabled', $stylesheet);
+        $this->assertStringContainsString('.desktop-context-item.is-disabled', $stylesheet);
     }
 
     /** 系统菜单「最近」区块（常用下方显示最近打开 6 项）与桌面右键菜单全屏切换项 */

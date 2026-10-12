@@ -1485,6 +1485,24 @@ textarea:focus-visible,
     background: var(--webos-folder);
 }
 
+/* 禁用应用的开始菜单卡片：整体灰化且不可点击（右键菜单中可启用/卸载） */
+.start-app-item.is-disabled {
+    cursor: not-allowed;
+    opacity: 0.55;
+}
+
+.start-app-item.is-disabled:hover,
+.start-app-item.is-disabled:focus-visible {
+    border-color: transparent;
+    background: transparent;
+}
+
+.start-app-item.is-disabled .start-app-item-icon,
+.start-app-item.is-disabled strong,
+.start-app-item.is-disabled small {
+    filter: grayscale(1);
+}
+
 .start-app-item-text {
     min-width: 0;
 }
@@ -4905,6 +4923,18 @@ textarea:focus-visible,
 
 .desktop-context-item.is-danger:hover {
     background: #fdeff0;
+}
+
+/* 右键菜单禁用项（如禁用应用的「打开」）：灰化不可点击 */
+.desktop-context-item.is-disabled,
+.desktop-context-item.is-disabled:hover {
+    color: #a3b1c2;
+    background: transparent;
+    cursor: not-allowed;
+}
+
+.desktop-context-item.is-disabled i {
+    opacity: 0.6;
 }
 
 .desktop-context-item i {
