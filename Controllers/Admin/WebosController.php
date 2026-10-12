@@ -7,10 +7,13 @@ use App\Apps\CmsproWebos\Services\PageMetaService;
 use App\Apps\CmsproWebos\Services\WallpaperService;
 use App\Apps\CmsproWebos\Services\WebosNotificationService;
 use App\Apps\CmsproWebos\Services\WorkspaceService;
+use App\Enums\AppStatus;
+use App\Enums\Status;
 use App\Http\Controllers\Controller;
 use App\Http\Responses\ApiResponse;
 use App\Models\AdminMenu;
 use App\Models\AdminTodoRead;
+use App\Models\AppModel;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -83,6 +86,41 @@ class WebosController extends Controller
 
             return $todo;
         }, app(WebosNotificationService::class)->allTodos())));
+    }
+
+    /**
+     * 当前管理员可见的「停用应用菜单」扁平列表（开始菜单灰化展示用）。
+     *
+     * 应用停用时框架会把其菜单联动置为禁用（AppManagerService::disableMenus），
+     * /api/admin/menus/user 因此不再返回这些菜单，开始菜单无从灰化展示停用应用；
+     * 本接口按 userMenus 相同的可见性口径（超管全量 / 普通管理员按角色授权），
+     * 仅返回「已停用应用」的禁用菜单，由前端并入开始菜单数据源（桌面仍隐藏停用应用）。
+     */
+    public function startDisabledMenus(): JsonResponse
+    {
+        $disabledAppIds = AppModel::query()
+            ->where('status', '!=', AppStatus::ENABLED->value)
+            ->pluck('app_id');
+        if ($disabledAppIds->isEmpty()) {
+            return response()->json(ApiResponse::success([]));
+        }
+
+        $user = Auth::guard('admin')->user();
+        $query = AdminMenu::query()
+            ->whereIn('app_id', $disabledAppIds)
+            ->where('status', Status::DISABLED->value)
+            ->where('visible', 1)
+            ->orderBy('sort', 'asc');
+        if (! $user->isSuperAdmin()) {
+            // 与 userMenus 一致：普通管理员仅返回角色已授权的菜单
+            $query->whereHas('roles', function ($query) use ($user) {
+                $query->whereIn('admin_roles.id', $user->roles->pluck('id'));
+            });
+        }
+
+        return response()->json(ApiResponse::success(
+            $query->get(['id', 'parent_id', 'app_id', 'name', 'path', 'icon', 'open_type', 'sort'])->toArray()
+        ));
     }
 
     /**

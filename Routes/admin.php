@@ -14,6 +14,8 @@ Route::prefix('api')->name('api.')->group(function () {
     Route::delete('/wallpaper', [WebosController::class, 'destroyWallpaper'])->name('wallpaper.destroy');
     Route::get('/calendar', [WebosController::class, 'calendar'])->name('calendar');
     Route::get('/all-todos', [WebosController::class, 'allTodos'])->name('all-todos');
+    // 停用应用菜单列表（开始菜单灰化展示停用应用用；应用停用时框架联动禁用其菜单，userMenus 不再返回）
+    Route::get('/start-disabled-menus', [WebosController::class, 'startDisabledMenus'])->name('start-disabled-menus');
     // 前台菜单链接兼容转换（域名绑定/子域名部署 → 可直达 URL）
     Route::get('/home-menu-urls', [WebosController::class, 'homeMenuUrls'])->name('home-menu-urls');
     // 内置浏览器页面元信息（title/favicon 代抓，跨域 iframe 读不到）

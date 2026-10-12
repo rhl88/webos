@@ -714,6 +714,70 @@ class WebosWorkspaceApiTest extends WebosTestCase
         $this->assertStringContainsString('.desktop-context-item.is-disabled', $stylesheet);
     }
 
+    /** 开始菜单显示停用应用：停用应用菜单接口按 userMenus 口径返回禁用菜单（userMenus 已联动过滤不再返回） */
+    public function test_start_disabled_menus_api_returns_disabled_app_menus(): void
+    {
+        $admin = $this->actingAdmin();
+        $superRole = \App\Models\AdminRole::create(['name' => '超级管理员', 'code' => 'super_admin', 'status' => 1]);
+        DB::table('admin_user_roles')->insert(['user_id' => $admin->id, 'role_id' => $superRole->id]);
+
+        // 启用应用菜单（对照组）：userMenus 正常返回
+        $category = AdminMenu::create(['name' => '内容管理', 'parent_id' => 0, 'terminal_type' => 'admin', 'status' => 1, 'visible' => 1, 'sort' => 1]);
+        $enabledGroup = AdminMenu::create(['name' => '启用应用', 'parent_id' => $category->id, 'app_id' => 'cmspro.enabled_test', 'terminal_type' => 'admin', 'status' => 1, 'visible' => 1, 'sort' => 2]);
+        AdminMenu::create(['name' => '启用菜单', 'parent_id' => $enabledGroup->id, 'app_id' => 'cmspro.enabled_test', 'path' => '/admin/enabled-test/index', 'terminal_type' => 'admin', 'status' => 1, 'visible' => 1, 'sort' => 3]);
+
+        // 停用应用菜单：应用停用时框架联动把菜单置为禁用（AppManagerService::disableMenus）
+        $disabledGroup = AdminMenu::create(['name' => '停用应用', 'parent_id' => $category->id, 'app_id' => 'cmspro.disabled_test', 'terminal_type' => 'admin', 'status' => 0, 'visible' => 1, 'sort' => 4]);
+        AdminMenu::create(['name' => '停用菜单', 'parent_id' => $disabledGroup->id, 'app_id' => 'cmspro.disabled_test', 'path' => '/admin/disabled-test/index', 'terminal_type' => 'admin', 'status' => 0, 'visible' => 1, 'sort' => 5]);
+        // 隐藏菜单不返回（与 userMenus 的 visible 口径一致）
+        AdminMenu::create(['name' => '停用隐藏菜单', 'parent_id' => $category->id, 'app_id' => 'cmspro.disabled_test', 'path' => '/admin/disabled-test/hidden', 'terminal_type' => 'admin', 'status' => 0, 'visible' => 0, 'sort' => 6]);
+
+        // 停用应用记录（status=2 DISABLED）；启用应用不入 apps 表（对照其菜单不应出现在停用列表）
+        \App\Models\AppModel::create([
+            'app_id' => 'cmspro.disabled_test',
+            'name' => '停用测试应用',
+            'version' => '1.0.0',
+            'status' => \App\Enums\AppStatus::DISABLED->value,
+            'is_system' => false,
+        ]);
+
+        // 现状：userMenus 已不再返回停用应用菜单（开始菜单因此无数据）
+        $userTree = $this->getJson('/api/admin/menus/user')
+            ->assertOk()
+            ->assertJsonPath('code', 0)
+            ->json('data');
+        $this->assertNotContains('停用应用', collect($userTree)->pluck('name')->all());
+
+        // 停用应用菜单接口：仅返回停用应用的可见禁用菜单（含应用文件夹节点与叶子）
+        $data = $this->getJson('/admin/cmspro/webos/api/start-disabled-menus')
+            ->assertOk()
+            ->assertJsonPath('code', 0)
+            ->json('data');
+        $names = collect($data)->pluck('name')->all();
+        $this->assertContains('停用应用', $names);
+        $this->assertContains('停用菜单', $names);
+        $this->assertNotContains('启用应用', $names, '启用应用的菜单不应出现在停用列表');
+        $this->assertNotContains('停用隐藏菜单', $names, '隐藏菜单不应出现在停用列表');
+        // 停用应用带 app_id，前端据此挂树并按应用状态灰化
+        $this->assertSame('cmspro.disabled_test', collect($data)->firstWhere('name', '停用应用')['app_id']);
+    }
+
+    /** 开始菜单数据源并入停用应用菜单：仅开始菜单使用 startFlatMenus，桌面仍基于 flatMenus 不显示停用应用 */
+    public function test_start_menu_merges_disabled_app_menus(): void
+    {
+        $script = file_get_contents(dirname(__DIR__, 2) . '/Assets/js/webos.js');
+
+        $this->assertIsString($script);
+        // 目录加载并行请求停用应用菜单（失败降级为空列表，不阻塞目录渲染）
+        $this->assertStringContainsString("api('/admin/cmspro/webos/api/start-disabled-menus' + cacheBust).catch(function () { return []; })", $script);
+        // 停用菜单并入目录树：组内按 parent_id 组子树，顶层挂目录树对应分类，父缺失丢弃
+        $this->assertStringContainsString('function mergeDisabledMenus(tree, disabledMenus)', $script);
+        $this->assertStringContainsString('function findMenuNode(tree, menuId)', $script);
+        // 开始菜单用并入后的 startFlatMenus；flatMenus 保持不含停用应用（桌面/任务栏「已分配」口径不变）
+        $this->assertStringContainsString('state.startFlatMenus = flattenMenus(mergeDisabledMenus(state.catalog.menus, responses[2]));', $script);
+        $this->assertStringContainsString('state.startFlatMenus.forEach(function (item) {', $script);
+    }
+
     /** 系统菜单「最近」区块（常用下方显示最近打开 6 项）与桌面右键菜单全屏切换项 */
     public function test_start_menu_recent_section_and_fullscreen_toggle(): void
     {

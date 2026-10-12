@@ -41,6 +41,8 @@
         desktopSelection: new Set(),
         catalog: { menus: [], applications: [], operation_logs: [] },
         flatMenus: [],
+        // 开始菜单数据源：flatMenus 并入停用应用菜单后的展开项（桌面/任务栏仍用 flatMenus，不含停用应用）
+        startFlatMenus: [],
         activeGroup: '',
         windows: new Map(),
         zIndex: 20,
@@ -556,6 +558,57 @@
         return output;
     }
 
+    /** 递归查找目录树中指定菜单 id 的节点 */
+    function findMenuNode(tree, menuId) {
+        var found = null;
+        (tree || []).some(function (item) {
+            if (Number(item.id) === menuId) {
+                found = item;
+                return true;
+            }
+            found = findMenuNode(item.children, menuId);
+            return Boolean(found);
+        });
+        return found;
+    }
+
+    /**
+     * 停用应用菜单并入开始菜单目录树（仅开始菜单使用，桌面/任务栏仍基于原目录树）：
+     * 返回列表为树形结构（应用文件夹节点 + 叶子），先在列表内部按 parent_id 组子树，
+     * 顶层节点再按 parent_id 挂到目录树对应分类；父节点不在目录树中（分类被停用/未授权）时丢弃，
+     * 与 userMenus 的权限口径保持一致。避免直接污染 state.flatMenus，否则停用应用会重新出现在桌面。
+     */
+    function mergeDisabledMenus(tree, disabledMenus) {
+        var merged = JSON.parse(JSON.stringify(tree || []));
+        var menus = (disabledMenus || []).filter(function (menu) {
+            return menu && menu.app_id && menu.app_id !== 'cmspro.webos';
+        });
+        if (!menus.length) {
+            return merged;
+        }
+        var byId = new Map();
+        menus.forEach(function (menu) {
+            byId.set(Number(menu.id), Object.assign({}, menu, { children: [] }));
+        });
+        var roots = [];
+        byId.forEach(function (node) {
+            var parent = byId.get(Number(node.parent_id));
+            if (parent) {
+                parent.children.push(node);
+            } else {
+                roots.push(node);
+            }
+        });
+        roots.forEach(function (node) {
+            var parent = node.parent_id ? findMenuNode(merged, Number(node.parent_id)) : null;
+            if (parent) {
+                parent.children = parent.children || [];
+                parent.children.push(node);
+            }
+        });
+        return merged;
+    }
+
     function applicationCenterEntry() {
         return {
             id: 'webos-app-center',
@@ -815,7 +868,7 @@
 
     function menuGroups() {
         var groups = new Map();
-        state.flatMenus.forEach(function (item) {
+        state.startFlatMenus.forEach(function (item) {
             // WebOS 自身菜单不在系统菜单显示：用户已在 WebOS 桌面内，无需从系统菜单再开 WebOS
             // （应用中心入口保留在桌面与任务栏，不受影响）
             if (item.app_id === 'cmspro.webos') {
@@ -8168,12 +8221,17 @@
         var cacheBust = '?_t=' + Date.now();
         return Promise.all([
             api('/api/admin/apps' + cacheBust),
-            api('/api/admin/menus/user' + cacheBust)
+            api('/api/admin/menus/user' + cacheBust),
+            // 停用应用菜单（应用停用时框架联动禁用其菜单，userMenus 不再返回；开始菜单需灰化展示）
+            api('/admin/cmspro/webos/api/start-disabled-menus' + cacheBust).catch(function () { return []; })
         ]).then(function (responses) {
             state.catalog.applications = responses[0] || [];
             state.catalog.menus = filterAdminMenus(responses[1]);
             state.catalog.operation_logs = [];
+            // flatMenus 供桌面/任务栏等「已分配」判断使用（不含停用应用菜单）；
+            // 开始菜单用并入停用应用菜单后的 startFlatMenus，停用应用灰化展示
             state.flatMenus = flattenMenus(state.catalog.menus);
+            state.startFlatMenus = flattenMenus(mergeDisabledMenus(state.catalog.menus, responses[2]));
             return state.catalog;
         });
     }
