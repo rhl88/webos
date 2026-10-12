@@ -1651,6 +1651,16 @@
         // 禁用应用：「打开」置灰不可点击，仅提供 启用/卸载（仅超管）
         var disabled = Boolean(application && Number(application.status) !== 1);
         var items = [[disabled ? '打开（应用已禁用）' : '打开', 'fa-external-link', disabled ? '' : 'open', disabled ? 'disabled' : '']];
+        // 固定到桌面：非文件夹入口按当前固定状态显示 添加到桌面/从桌面移除（与卡片图钉按钮同链路）；
+        // 禁用应用桌面不渲染图标，不提供「添加到桌面」，但保留「从桌面移除」用于清理残留固定项
+        if (!isFolderStartItem(entry)) {
+            var pinned = state.workspace.desktop_items.some(function (item) { return item.id === entry.id; });
+            if (pinned) {
+                items.push(['从桌面移除', 'fa-trash-o', 'toggle-pin']);
+            } else if (!disabled) {
+                items.push(['添加到桌面', 'fa-thumb-tack', 'toggle-pin']);
+            }
+        }
         if (isSuperAdmin && application && Number(application.is_system) !== 1) {
             items.push([disabled ? '启用' : '停用', disabled ? 'fa-play-circle' : 'fa-pause-circle', 'toggle-app-status']);
             items.push(['卸载', 'fa-times-circle', 'uninstall', 'danger']);
@@ -1777,6 +1787,14 @@
         }
         if (action === 'open') {
             openEntry(context.entry || findDesktopItem(iconId));
+            return;
+        }
+        // 开始菜单右键「添加到桌面/从桌面移除」：与卡片图钉按钮同链路（toggleDesktopEntry 按固定状态双向切换）
+        if (action === 'toggle-pin') {
+            var pinEntry = context.entry || findStartItem(iconId);
+            if (pinEntry) {
+                toggleDesktopEntry(pinEntry.id, pinEntry);
+            }
             return;
         }
         // 系统菜单右键「停用/启用」：与应用中心状态开关同一接口（成功后应用目录已刷新）

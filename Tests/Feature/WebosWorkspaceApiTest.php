@@ -665,7 +665,7 @@ class WebosWorkspaceApiTest extends WebosTestCase
         $this->assertStringContainsString("['none', 'shadow', 'shield']", $service);
     }
 
-    /** 系统菜单应用卡片右键菜单：打开（所有人）/ 停用(启用)/卸载（仅超管，复用应用中心接口与卸载流程） */
+    /** 系统菜单应用卡片右键菜单：打开（所有人）/ 添加到桌面(从桌面移除) / 停用(启用)/卸载（仅超管，复用应用中心接口与卸载流程） */
     public function test_start_item_context_menu_supports_open_disable_uninstall(): void
     {
         $javascript = file_get_contents(dirname(__DIR__, 2) . '/Assets/js/webos.js');
@@ -677,6 +677,9 @@ class WebosWorkspaceApiTest extends WebosTestCase
         $this->assertStringContainsString("disabled ? '打开（应用已禁用）' : '打开'", $javascript);
         $this->assertStringContainsString("items.push([disabled ? '启用' : '停用'", $javascript);
         $this->assertStringContainsString("items.push(['卸载', 'fa-times-circle', 'uninstall', 'danger']);", $javascript);
+        // 固定到桌面：按当前固定状态显示 添加到桌面/从桌面移除（与卡片图钉按钮同链路 toggleDesktopEntry）
+        $this->assertStringContainsString("items.push(['从桌面移除', 'fa-trash-o', 'toggle-pin']);", $javascript);
+        $this->assertStringContainsString("items.push(['添加到桌面', 'fa-thumb-tack', 'toggle-pin']);", $javascript);
         // 右键菜单 disabled 项渲染为灰化且 button disabled；danger 项精确比较避免 disabled 误染红色
         $this->assertStringContainsString("item[3] === 'danger' ? 'is-danger'", $javascript);
         $this->assertStringContainsString("item[3] === 'disabled' ? ' is-disabled'", $javascript);
