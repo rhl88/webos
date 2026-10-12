@@ -2142,6 +2142,10 @@ textarea:focus-visible,
     padding: 24px;
     background: rgba(6, 25, 46, 0.42);
     backdrop-filter: blur(5px);
+    /* 弹出层对话（确认弹窗/安装弹窗等）整层恢复文本可选：桌面全局禁选仅用于防框选图标/
+       拖动误选——标题（如「确认卸载『xx』」）、正文、摘要文字均需可选中复制；
+       按钮文字另行禁选防拖选干扰点击 */
+    user-select: text;
 }
 
 /* 安装弹窗精简皮肤（layui 风格）：纯色遮罩、无毛玻璃特效、小圆角白卡片 */
@@ -2188,11 +2192,13 @@ textarea:focus-visible,
     letter-spacing: 0.08em;
 }
 
-/* 对话框内容恢复文本可选：桌面全局禁选仅用于防框选图标/拖动误选，
-   确认弹窗（卸载/安装/应用设置等）的提示文字与应用名称需可选中复制 */
+/* 对话框内按钮文字禁选：容器已恢复文本可选，按钮保持禁选防止拖选干扰点击 */
+.webos-dialog button {
+    user-select: none;
+}
+
 .dialog-body {
     padding: 18px 20px;
-    user-select: text;
 }
 
 .install-app-summary {
@@ -5596,6 +5602,8 @@ textarea:focus-visible,
     border-radius: 14px;
     background: #fff;
     box-shadow: 0 24px 64px rgba(15, 23, 42, 0.35);
+    /* 会话恢复提示文字可选中复制（与确认弹窗一致，桌面全局禁选仅用于防框选/拖动误选） */
+    user-select: text;
 }
 
 .session-recovery-head {

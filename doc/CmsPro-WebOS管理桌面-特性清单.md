@@ -1,7 +1,7 @@
 # CmsPro WebOS 管理桌面 · 特性清单
 
-> 文档版本：2.1.19 | 更新日期：2026-10-12
-> 应用版本：2.1.19 | 应用 ID：`cmspro.webos`
+> 文档版本：2.1.20 | 更新日期：2026-10-12
+> 应用版本：2.1.20 | 应用 ID：`cmspro.webos`
 
 ## 一、应用定位
 
@@ -122,6 +122,7 @@ CmsproWebos/
 
 | 版本 | 日期 | 说明 |
 |---|---|---|
+| 2.1.20 | 2026-10-12 | 弹出层对话文字选中复制扩展到整层（用户需求：其它类似弹出层也需支持）：2.1.19 仅 .dialog-body 恢复可选，弹窗标题（dialog-header，如「确认卸载『xx』」）与安装摘要仍在禁选区；收敛为容器级恢复——.webos-dialog 整层与 .session-recovery-card（会话恢复提示）声明 user-select: text，.webos-dialog button 另行禁选防拖选干扰点击；.dialog-body 仅保留 padding。 |
 | 2.1.19 | 2026-10-12 | 确认弹窗文字允许选中复制（用户反馈：卸载确认弹窗的提示文字与应用名称无法选中）：对话框不在 .window-body 内（.window-body 已恢复可选），继承了 .webos-desktop 全局 user-select: none；在 .dialog-body 显式声明 user-select: text，覆盖卸载/安装/应用设置等全部确认弹窗。 |
 | 2.1.18 | 2026-10-09 | 顶级分类拖拽挂为其它分类的子菜单（用户需求，超管可用、框架菜单全局生效）：开始菜单左侧分类按钮（非「常用」）对超管渲染 `draggable + data-move-ids`（分类按钮复用入口卡片的 data-move-ids → `PUT /api/admin/menus/move`（MenuService::batchMove，服务端防环形引用+事务+仅移动顶层防子树拍平）→ 成功 refreshCatalog 重绘）；防拖到自身（dragover 不放行即不可放置 + drop 兜底校验），「常用」虚拟分组不可拖/不可作为目标；拖拽中半透明与悬停高亮（is-drop-target 复用）；拖拽高亮类清理选择器通用化（.is-dragging 覆盖卡片与分类按钮）。后端零改动纯复用框架接口。124 测试 1280 断言通过。 |
 | 2.1.17 | 2026-10-09 | 「最近」区块仅「常用」分类显示（用户反馈）：renderStartMenu 调用 renderStartRecent 时无条件传入分组，其它分类也渲染了最近区块（注释声称仅常用但实现漏了条件，2.1.5 改造时丢失）；改为仅当前分类为 common 且非搜索时传入 groups，其余传 null 由 renderStartRecent 隐藏。124 测试 1275 断言通过。 |
