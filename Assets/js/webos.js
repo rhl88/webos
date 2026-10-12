@@ -5463,14 +5463,9 @@
             + '<i class="fa ' + safeIcon(icon) + '"></i><span>' + escapeHtml(message) + '</span></div>';
     }
 
-    function renderInstallMenuFields(terminals, menuTrees) {
-        state.installTerminals = terminals;
-        if (!terminals.length) {
-            renderInstallMenuStatus('fa-info-circle', '此应用未声明后台、用户端或前端菜单，将直接安装应用文件。', false);
-            return;
-        }
-
-        elements.installParents.innerHTML = terminals.map(function (terminal) {
+    /** 安装菜单挂载选择区 HTML：常规安装弹窗与上传安装弹层共用，提示文案按场景传入 */
+    function installMenuFieldsMarkup(terminals, menuTrees, hintText) {
+        return terminals.map(function (terminal) {
             var label = INSTALL_TERMINAL_LABELS[terminal] || terminal;
             var options = '<option value="">安装为独立顶级菜单</option>' + (menuTrees[terminal] || []).map(function (menu) {
                 return '<option value="' + Number(menu.id || 0) + '">' + escapeHtml(menu.name || '未命名菜单') + '</option>';
@@ -5478,7 +5473,17 @@
             return '<label class="menu-parent-field"><span><i class="fa '
                 + safeIcon(INSTALL_TERMINAL_ICONS[terminal]) + '"></i>' + escapeHtml(label) + '菜单挂载位置</span>'
                 + '<select data-install-terminal="' + escapeHtml(terminal) + '">' + options + '</select></label>';
-        }).join('') + '<p class="install-menu-hint">不选择则安装为独立顶级菜单，仅显示应用清单中实际声明的终端。</p>';
+        }).join('') + '<p class="install-menu-hint">' + escapeHtml(hintText) + '</p>';
+    }
+
+    function renderInstallMenuFields(terminals, menuTrees) {
+        state.installTerminals = terminals;
+        if (!terminals.length) {
+            renderInstallMenuStatus('fa-info-circle', '此应用未声明后台、用户端或前端菜单，将直接安装应用文件。', false);
+            return;
+        }
+
+        elements.installParents.innerHTML = installMenuFieldsMarkup(terminals, menuTrees, '不选择则安装为独立顶级菜单，仅显示应用清单中实际声明的终端。');
     }
 
     function loadInstallMenuFields(target, source, requestId) {
@@ -6040,8 +6045,8 @@
         });
     }
 
-    /** 上传安装成功后，定位本次新安装的应用（已安装未启用 status===0）并询问是否启用 */
-    function promptEnableFirstInstalledApp() {
+    /** 上传安装成功后，定位本次新安装的应用（已安装未启用 status===0）：按需创建桌面快捷方式并询问是否启用 */
+    function promptEnableFirstInstalledApp(withShortcut) {
         legacyAjax({
             url: '/api/admin/apps',
             type: 'GET',
@@ -6050,9 +6055,20 @@
                     return;
                 }
                 var fresh = (res.data || []).filter(function (item) { return item.status === 0; });
-                if (fresh.length === 1) {
-                    promptEnableApp(fresh[0].app_id, fresh[0].name);
+                if (fresh.length !== 1) {
+                    return;
                 }
+                var app = fresh[0];
+                if (withShortcut) {
+                    var entry = state.flatMenus.find(function (item) { return item.app_id === app.app_id; });
+                    if (entry) {
+                        // 与常规安装一致：桌面快捷方式显示应用名称，而非菜单名称
+                        addDesktopEntry(Object.assign({}, entry, { title: app.name || entry.title }));
+                    } else {
+                        toast('应用已安装，但未声明可用的后台菜单入口');
+                    }
+                }
+                promptEnableApp(app.app_id, app.name);
             }
         });
     }
@@ -6078,7 +6094,7 @@
     function openAppUploadDialog() {
         openUploadDialog('上传安装应用', '/api/admin/apps/upload', function (res) {
             return res.message || '操作成功';
-        });
+        }, null, { installOptions: true });
     }
 
     function openManualUpgradeDialog(app) {
@@ -6087,8 +6103,8 @@
         }, { app_id: app.app_id });
     }
 
-    /** 上传安装与手动升级共用的弹层：拖拽区 + 文件回显 + 提交按钮禁用态 */
-    function openUploadDialog(title, submitUrl, onSuccess, extraData) {
+    /** 上传安装与手动升级共用的弹层：拖拽区 + 文件回显 + 提交按钮禁用态；上传安装额外提供与常规安装一致的安装选项 */
+    function openUploadDialog(title, submitUrl, onSuccess, extraData, options) {
         var layer = layuiLayer();
         var fileInput = layuiJquery()(
             '<input type="file" accept=".zip" style="position:absolute;top:0;left:0;width:0;height:0;opacity:0;">'
@@ -6102,20 +6118,38 @@
             submitUrl: submitUrl,
             onSuccess: onSuccess,
             extraData: extraData,
+            options: options || {},
+            menuMountsReady: false,
             layero: null,
             dialogIndex: 0
         };
         context.dialogIndex = layer.open({
             type: 1,
             title: title || '上传安装应用',
-            area: ['480px', '400px'],
-            content: uploadZoneMarkup(title),
+            // 上传安装含快捷方式与菜单挂载选项区，高度自适应
+            area: context.options.installOptions ? ['480px', 'auto'] : ['480px', '400px'],
+            content: uploadZoneMarkup(title, context.options),
             end: function () { fileInput.remove(); },
-            success: function (layero) { bindUploadPicker(context, layero); }
+            success: function (layero) {
+                bindUploadPicker(context, layero);
+                if (context.options.installOptions) {
+                    loadUploadMenuMounts(context);
+                }
+            }
         });
     }
 
-    function uploadZoneMarkup(title) {
+    function uploadZoneMarkup(title, options) {
+        // 上传安装时提供与常规安装一致的安装选项：创建桌面快捷方式 + 各终端菜单挂载位置
+        var installOptions = (options && options.installOptions)
+            ? '<label class="install-shortcut-option">'
+                + '<input type="checkbox" id="dlgCreateShortcut" name="upload_create_shortcut">'
+                + '<span>创建桌面快捷方式</span><small>可选，勾选后将应用入口固定到桌面</small>'
+                + '</label>'
+                + '<section id="dlgUploadMounts" class="install-menu-parents" aria-live="polite">'
+                + '<div class="install-menu-status"><i class="fa fa-circle-o-notch fa-spin"></i><span>正在加载菜单挂载选项…</span></div>'
+                + '</section>'
+            : '';
         return '<div style="padding:20px;">'
             + '<div class="app-upload-zone" id="dlgUploadZone">'
             + '<div class="app-upload-icon"><i class="fa fa-cloud-upload"></i></div>'
@@ -6135,6 +6169,7 @@
             + '<button type="button" class="app-upload-file-remove" id="dlgBtnRemoveFile">'
             + '<i class="fa fa-times"></i></button>'
             + '</div></div>'
+            + installOptions
             + '<div style="text-align:center;margin-top:15px;">'
             + '<button type="button" class="layui-btn layui-btn-disabled" id="dlgBtnSubmit" disabled>'
             + '<i class="fa fa-download"></i> ' + (title || '开始安装') + '</button>'
@@ -6174,6 +6209,24 @@
         layero.find('#dlgBtnSubmit').on('click', function () { submitUploadPackage(context); });
     }
 
+    /** 上传安装弹层的菜单挂载选项：应用包上传前无法识别声明终端，固定提供三终端选择（未声明终端的选择会被后端忽略） */
+    function loadUploadMenuMounts(context) {
+        var requests = INSTALL_TERMINALS.map(function (terminal) {
+            return api('/api/admin/menus/tree?terminal_type=' + encodeURIComponent(terminal)).catch(function () { return []; });
+        });
+        Promise.all(requests).then(function (trees) {
+            var menuTrees = {};
+            INSTALL_TERMINALS.forEach(function (terminal, index) { menuTrees[terminal] = trees[index] || []; });
+            context.menuMountsReady = true;
+            updateUploadSubmitState(context);
+            context.layero.find('#dlgUploadMounts').html(installMenuFieldsMarkup(
+                INSTALL_TERMINALS,
+                menuTrees,
+                '不选择则安装为独立顶级菜单；应用包未声明某终端菜单时，该终端的挂载选择将被忽略。'
+            ));
+        });
+    }
+
     function setUploadFile(context, file) {
         if (!file || !file.name.endsWith('.zip')) {
             context.layer.msg('请选择 .zip 格式的应用包', { icon: 2 });
@@ -6184,7 +6237,7 @@
         context.layero.find('#dlgUploadFileSize').text(formatSize(file.size));
         context.layero.find('#dlgUploadZone').hide();
         context.layero.find('#dlgUploadFileInfo').show();
-        context.layero.find('#dlgBtnSubmit').prop('disabled', false).removeClass('layui-btn-disabled');
+        updateUploadSubmitState(context);
     }
 
     function clearUploadFile(context) {
@@ -6192,7 +6245,23 @@
         context.fileInput.val('');
         context.layero.find('#dlgUploadZone').show();
         context.layero.find('#dlgUploadFileInfo').hide();
-        context.layero.find('#dlgBtnSubmit').prop('disabled', true).addClass('layui-btn-disabled');
+        updateUploadSubmitState(context);
+    }
+
+    /** 提交按钮可用状态：已选择文件，且上传安装时菜单挂载选项已加载完成 */
+    function updateUploadSubmitState(context) {
+        var ready = Boolean(context.file) && (!context.options.installOptions || context.menuMountsReady);
+        context.layero.find('#dlgBtnSubmit').prop('disabled', !ready).toggleClass('layui-btn-disabled', !ready);
+    }
+
+    /** 上传安装时附带各终端选择的菜单挂载位置（与常规安装的 parent_menu_ids 同构） */
+    function appendUploadMenuMounts(context, form) {
+        INSTALL_TERMINALS.forEach(function (terminal) {
+            var select = context.layero.find('select[data-install-terminal="' + terminal + '"]');
+            if (select.length && select.val()) {
+                form.append('parent_menu_ids[' + terminal + ']', select.val());
+            }
+        });
     }
 
     function submitUploadPackage(context) {
@@ -6204,6 +6273,9 @@
         Object.keys(context.extraData || {}).forEach(function (key) {
             form.append(key, context.extraData[key]);
         });
+        if (context.options.installOptions) {
+            appendUploadMenuMounts(context, form);
+        }
         // 执行时仅显示加载特效，不带文字提示
         var loadIndex = context.layer.load(2);
         legacyAjax({
@@ -6236,13 +6308,17 @@
         }
         var message = context.onSuccess ? context.onSuccess(res) : '操作成功';
         context.layer.msg(message, { icon: 1, time: 1500 }, function () {
+            var createShortcut = context.options.installOptions
+                && context.layero.find('#dlgCreateShortcut').prop('checked');
             context.layer.close(context.dialogIndex);
-            reloadInstalledAppCenter();
-            if (appId) {
-                promptEnableAfterUpgrade(appId);
-            } else {
-                promptEnableFirstInstalledApp();
-            }
+            // 先刷新目录（同步 flatMenus），再按需处理桌面快捷方式与启用询问
+            reloadInstalledAppCenter().then(function () {
+                if (appId) {
+                    promptEnableAfterUpgrade(appId);
+                } else {
+                    promptEnableFirstInstalledApp(createShortcut);
+                }
+            });
         });
     }
 

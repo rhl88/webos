@@ -1961,6 +1961,36 @@ class WebosWorkspaceApiTest extends WebosTestCase
         $this->assertStringContainsString('.app-upload-file-info {', $stylesheet);
     }
 
+    /** 上传安装：执行安装时与常规安装一致，可选择创建桌面快捷方式与各终端菜单挂载位置；手动升级弹层不受影响 */
+    public function test_app_upload_install_offers_install_options(): void
+    {
+        $script = file_get_contents(dirname(__DIR__, 2) . '/Assets/js/webos.js');
+        $stylesheet = file_get_contents(dirname(__DIR__, 2) . '/Assets/css/webos.css');
+
+        $this->assertIsString($script);
+        $this->assertIsString($stylesheet);
+        // 上传安装入口携带 installOptions，手动升级不携带（弹层保持原样）
+        $this->assertStringContainsString("null, { installOptions: true });", $script);
+        $this->assertStringContainsString("{ app_id: app.app_id });", $script);
+        // 弹层内选项区：创建桌面快捷方式 + 菜单挂载位置（复用常规安装样式类）
+        $this->assertStringContainsString('id="dlgCreateShortcut"', $script);
+        $this->assertStringContainsString('id="dlgUploadMounts"', $script);
+        $this->assertStringContainsString('.install-shortcut-option {', $stylesheet);
+        $this->assertStringContainsString('.install-menu-parents {', $stylesheet);
+        // 菜单挂载选项与常规安装共用渲染函数，并加载三终端菜单树
+        $this->assertStringContainsString('function installMenuFieldsMarkup(terminals, menuTrees, hintText)', $script);
+        $this->assertStringContainsString('function loadUploadMenuMounts(context)', $script);
+        $this->assertStringContainsString("'/api/admin/menus/tree?terminal_type='", $script);
+        // 提交按钮状态：已选文件且菜单挂载选项就绪才可提交
+        $this->assertStringContainsString('function updateUploadSubmitState(context)', $script);
+        // FormData 附加各终端挂载位置，与常规安装 parent_menu_ids 同构
+        $this->assertStringContainsString("form.append('parent_menu_ids[' + terminal + ']', select.val());", $script);
+        // 安装成功：先刷新目录（同步 flatMenus），再按需创建桌面快捷方式并询问启用
+        $this->assertStringContainsString('function promptEnableFirstInstalledApp(withShortcut)', $script);
+        $this->assertStringContainsString('promptEnableFirstInstalledApp(createShortcut);', $script);
+        $this->assertStringContainsString('reloadInstalledAppCenter().then(function () {', $script);
+    }
+
     /** 备份：照抄后台三步分卷备份与三步恢复，含分卷设置、进度条、删除与下载 */
     public function test_app_backup_uses_three_step_volume_flow(): void
     {
