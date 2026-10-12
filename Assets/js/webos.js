@@ -863,7 +863,10 @@
                 }
             }
             return '<button class="' + classes + '" type="button" data-pinned-launch-id="' + escapeHtml(item.id) + '" title="' + escapeHtml(item.title) + '">'
-                + entryIconMarkup(entry, 'taskbar-app-icon') + '</button>';
+                + entryIconMarkup(entry, 'taskbar-app-icon')
+                // 图标+文字模式（CSS 按偏好控制显隐）：显示应用标题
+                + '<span class="taskbar-button-label" aria-hidden="true">' + escapeHtml(item.title) + '</span>'
+                + '</button>';
         }).join('');
     }
 
@@ -2897,6 +2900,11 @@
             + positions.map(function (item) {
                 return settingsChoice('set-taskbar-position', item[0], item[1], item[2], preferences.taskbar_position === item[0]);
             }).join('') + '</div></section>'
+            + '<section class="settings-card"><div class="settings-card-title"><i class="fa fa-list-alt"></i><div>'
+            + '<strong>任务栏图标显示</strong><small>参考 Windows 任务栏：仅显示图标或图标+文字</small></div></div><div class="settings-choice-grid is-two">'
+            + settingsChoice('set-taskbar-button-style', 'icon', 'fa-window-maximize', '纯图标', (preferences.taskbar_button_style || 'icon') === 'icon')
+            + settingsChoice('set-taskbar-button-style', 'text', 'fa-columns', '图标+文字', preferences.taskbar_button_style === 'text')
+            + '</div></section>'
             + '<section class="settings-card"><div class="settings-card-title"><i class="fa fa-arrows-v"></i><div>'
             + '<strong>任务栏行为</strong><small>对齐 Windows 任务栏：自动隐藏与锁定</small></div></div>'
             + '<button class="settings-toggle" type="button" data-toggle-webos-setting="taskbar_autohide" aria-pressed="'
@@ -3628,7 +3636,10 @@
                 : windowIdentity(windowState.entry);
             return '<button class="taskbar-app-button is-running ' + (windowState.element.classList.contains('is-focused') && !windowState.minimized ? 'is-active' : '')
                 + '" type="button" data-task-window="' + escapeHtml(key) + '" title="' + escapeHtml(identity.title) + '">'
-                + entryIconMarkup(windowState.entry, 'taskbar-app-icon') + '</button>';
+                + entryIconMarkup(windowState.entry, 'taskbar-app-icon')
+                // 图标+文字模式（CSS 按偏好控制显隐）：显示窗口标题
+                + '<span class="taskbar-button-label" aria-hidden="true">' + escapeHtml(identity.title) + '</span>'
+                + '</button>';
         }).join('');
         renderPinnedApps();
     }
@@ -8891,6 +8902,8 @@
         // 任务栏自动隐藏与锁定：挂桌面容器 data 属性，CSS 按任务栏停靠方向收起，锁定禁用固定图标拖动
         root.dataset.taskbarAutohide = preferences.taskbar_autohide ? 'on' : 'off';
         root.dataset.taskbarLocked = preferences.taskbar_locked ? 'on' : 'off';
+        // 任务栏图标显示方式（Windows 式）：icon=纯图标、text=图标+文字
+        root.dataset.taskbarButtonStyle = preferences.taskbar_button_style === 'text' ? 'text' : 'icon';
         root.style.setProperty('--webos-window-width', clampWindowRatio(preferences.window_width, 78) + '%');
         root.style.setProperty('--webos-window-height', clampWindowRatio(preferences.window_height, 80) + '%');
         applyTaskbarPosition();
@@ -9918,6 +9931,10 @@
             var taskbarPosition = event.target.closest('[data-set-taskbar-position]');
             if (taskbarPosition) { setTaskbarPosition(taskbarPosition.dataset.setTaskbarPosition); }
 
+            // 任务栏图标显示方式（Windows 式）：纯图标 / 图标+文字，dataset 驱动 CSS 即时切换
+            var taskbarButtonStyle = event.target.closest('[data-set-taskbar-button-style]');
+            if (taskbarButtonStyle) { setWebosPreference('taskbar_button_style', taskbarButtonStyle.dataset.setTaskbarButtonStyle, '任务栏图标显示已更新'); }
+
             var wallpaper = event.target.closest('[data-set-webos-wallpaper]');
             if (wallpaper) { setWebosPreference('wallpaper', wallpaper.dataset.setWebosWallpaper, '桌面外观已更新'); }
 
@@ -10222,6 +10239,7 @@
             window_height: 80,
             taskbar_autohide: false,
             taskbar_locked: false,
+            taskbar_button_style: 'icon',
             usage_stats: {}
         }, preferences || {});
     }

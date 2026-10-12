@@ -1012,6 +1012,44 @@ textarea:focus-visible,
     font-size: 17px;
 }
 
+/* 任务栏图标显示方式（Windows 式）：默认纯图标；图标+文字模式按钮拉宽显示标题 */
+.taskbar-button-label {
+    display: none;
+    min-width: 0;
+    overflow: hidden;
+    font-size: 12px;
+    line-height: 1;
+    text-align: left;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+}
+
+.webos-desktop[data-taskbar-button-style="text"] .taskbar-app-button {
+    width: auto;
+    max-width: 160px;
+    gap: 6px;
+    padding: 0 12px;
+}
+
+.webos-desktop[data-taskbar-button-style="text"] .taskbar-button-label {
+    display: block;
+    flex: 0 1 auto;
+}
+
+/* 左右停靠为竖排任务栏（同 Windows）：保持纯图标，不显示文字 */
+.webos-desktop[data-taskbar-position="left"] .taskbar-button-label,
+.webos-desktop[data-taskbar-position="right"] .taskbar-button-label {
+    display: none;
+}
+
+.webos-desktop[data-taskbar-position="left"][data-taskbar-button-style="text"] .taskbar-app-button,
+.webos-desktop[data-taskbar-position="right"][data-taskbar-button-style="text"] .taskbar-app-button {
+    width: 44px;
+    max-width: 44px;
+    gap: 0;
+    padding: 0;
+}
+
 .taskbar-spacer {
     flex: 1 1 auto;
 }

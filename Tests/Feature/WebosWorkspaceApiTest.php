@@ -169,6 +169,51 @@ class WebosWorkspaceApiTest extends WebosTestCase
             ->assertJsonPath('code', 40201);
     }
 
+    /** 任务栏图标显示方式偏好（Windows 式：纯图标/图标+文字）：保存往返持久化，非法值校验拒绝 */
+    public function test_workspace_api_persists_taskbar_button_style_preference(): void
+    {
+        $this->actingAdmin();
+
+        $this->putJson('/admin/cmspro/webos/api/workspace', [
+            'preferences' => ['taskbar_button_style' => 'text'],
+        ])->assertOk()
+            ->assertJsonPath('code', 0)
+            ->assertJsonPath('data.preferences.taskbar_button_style', 'text');
+
+        $this->getJson('/admin/cmspro/webos/api/workspace')
+            ->assertOk()
+            ->assertJsonPath('data.preferences.taskbar_button_style', 'text');
+
+        $this->putJson('/admin/cmspro/webos/api/workspace', [
+            'preferences' => ['taskbar_button_style' => 'both'],
+        ])->assertUnprocessable()
+            ->assertJsonPath('code', 40201);
+    }
+
+    /** 任务栏图标显示方式：固定图标与运行窗口按钮渲染标题 label，CSS 按偏好控制显隐（竖排保持纯图标） */
+    public function test_taskbar_button_style_renders_labels_with_css_scope(): void
+    {
+        $script = file_get_contents(dirname(__DIR__, 2) . '/Assets/js/webos.js');
+        $stylesheet = file_get_contents(dirname(__DIR__, 2) . '/Assets/css/webos.css');
+
+        $this->assertIsString($script);
+        $this->assertIsString($stylesheet);
+        // 设置面板：任务栏位置下新增「任务栏图标显示」choice（纯图标 / 图标+文字）
+        $this->assertStringContainsString('<strong>任务栏图标显示</strong>', $script);
+        $this->assertStringContainsString("settingsChoice('set-taskbar-button-style', 'icon'", $script);
+        $this->assertStringContainsString("settingsChoice('set-taskbar-button-style', 'text'", $script);
+        $this->assertStringContainsString('[data-set-taskbar-button-style]', $script);
+        // 偏好驱动：dataset 作用域 + 默认值声明
+        $this->assertStringContainsString('root.dataset.taskbarButtonStyle', $script);
+        $this->assertStringContainsString("taskbar_button_style: 'icon'", $script);
+        // 固定图标与运行窗口按钮均渲染标题 label（CSS 控制显隐，切换偏好无需重渲染）
+        $this->assertStringContainsString('<span class="taskbar-button-label" aria-hidden="true">', $script);
+        $this->assertStringContainsString('.taskbar-button-label {', $stylesheet);
+        $this->assertStringContainsString('[data-taskbar-button-style="text"] .taskbar-app-button', $stylesheet);
+        $this->assertStringContainsString('[data-taskbar-button-style="text"] .taskbar-button-label', $stylesheet);
+        $this->assertStringContainsString('[data-taskbar-position="left"] .taskbar-button-label', $stylesheet);
+    }
+
     /** 任务栏空白右键菜单（Windows 式）：自动隐藏/锁定/任务栏设置 + 设置面板开关与 CSS 收起样式 */
     public function test_taskbar_shell_context_menu_and_settings(): void
     {

@@ -26,6 +26,7 @@ class WorkspaceService
         'window_height' => 80,
         'taskbar_autohide' => false,
         'taskbar_locked' => false,
+        'taskbar_button_style' => 'icon',
         'override_admin_home' => false,
         'usage_stats' => [],
     ];
@@ -175,6 +176,10 @@ class WorkspaceService
         // 任务栏行为（Windows 式）：自动隐藏任务栏、锁定任务栏（锁定后固定图标不可拖动）
         $preferences['taskbar_autohide'] = (bool) $preferences['taskbar_autohide'];
         $preferences['taskbar_locked'] = (bool) $preferences['taskbar_locked'];
+        // 任务栏图标显示方式（Windows 式）：icon=纯图标（默认）、text=图标+文字
+        $preferences['taskbar_button_style'] = in_array($preferences['taskbar_button_style'] ?? '', ['icon', 'text'], true)
+            ? $preferences['taskbar_button_style']
+            : self::DEFAULT_PREFERENCES['taskbar_button_style'];
         $preferences['usage_stats'] = $this->sanitizeUsageStats($preferences['usage_stats']);
 
         return $preferences;
