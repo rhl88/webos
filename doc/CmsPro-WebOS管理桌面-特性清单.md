@@ -1,7 +1,7 @@
 # CmsPro WebOS 管理桌面 · 特性清单
 
-> 文档版本：2.1.25 | 更新日期：2026-10-12
-> 应用版本：2.1.25 | 应用 ID：`cmspro.webos`
+> 文档版本：2.1.26 | 更新日期：2026-10-12
+> 应用版本：2.1.26 | 应用 ID：`cmspro.webos`
 
 ## 一、应用定位
 
@@ -122,6 +122,7 @@ CmsproWebos/
 
 | 版本 | 日期 | 说明 |
 |---|---|---|
+| 2.1.26 | 2026-10-12 | 任务栏空白处右键菜单（Windows 任务栏式，用户需求）：右键空白弹出「自动隐藏任务栏/锁定任务栏/任务栏设置」，固定图标与运行窗口按钮保留各自右键菜单；新增偏好 taskbar_autohide（CSS 按停靠方向收起保留 4px 唤出边，hover/focus-within 弹出）与 taskbar_locked（锁定后固定图标不可拖动排序，左键打开不受影响）；「任务栏设置」直达 WebOS 个性化设置基本设置 Tab，面板新增「任务栏行为」卡（复用 data-toggle-webos-setting 通用开关）；后端 WorkspaceService DEFAULT_PREFERENCES、sanitizePreferences 与控制器验证规则同步补键。131 测试 1366 断言通过。 |
 | 2.1.25 | 2026-10-12 | 停用应用在系统菜单右侧区域显示（用户反馈 2.1.22 灰化未生效）：根因是应用停用时框架联动禁用其菜单（AppManagerService::disableMenus），/api/admin/menus/user 只返回 status=1 菜单，开始菜单数据源里根本没有停用应用；修复为应用级新增 GET /api/start-disabled-menus（userMenus 相同可见性口径，仅返回停用应用的可见禁用菜单，普通管理员按角色授权），loadCatalog 并行拉取后 mergeDisabledMenus 并入目录树产出独立的 startFlatMenus（组内按 parent_id 组子树、顶层挂目录树对应分类、父缺失丢弃），menuGroups 改用 startFlatMenus——停用应用卡片灰化展示（右键启用/卸载），flatMenus 保持不含停用应用，桌面/任务栏「已分配」口径与禁用图标不占位行为不变。129 测试 1339 断言通过。 |
 | 2.1.24 | 2026-10-12 | 上传安装执行安装时与常规安装一致可选安装选项（用户需求）：上传安装弹层新增「创建桌面快捷方式」复选框与后台/用户端/前端三终端「菜单挂载位置」下拉（复用常规安装样式与 installMenuFieldsMarkup 渲染函数，上传前无法识别包内声明终端故全终端提供、未声明终端的选择被后端忽略），提交 FormData 附加 parent_menu_ids[terminal]，菜单树加载完成前提交按钮保持禁用；安装成功先刷新目录再按需 addDesktopEntry（桌面快捷方式显示应用名称）并询问启用；手动升级弹层不受影响。后端配套（经用户确认的保护区最小改动）：AppController::upload 透传 parseParentMenuIds、AppInstallerService::uploadAndInstall 签名加 parentMenuIds 并传入安装分支（升级分支不变，不传参行为与原版一致）。127 测试 1323 断言通过。 |
 | 2.1.23 | 2026-10-12 | 开始菜单应用右键菜单新增 添加到桌面/从桌面移除（用户需求）：非文件夹入口按当前固定状态显示其一（未固定→「添加到桌面」，已固定→「从桌面移除」），复用卡片图钉按钮同链路 toggleDesktopEntry（addDesktopEntry/removeDesktopEntry 已内置重复保护、内置入口删除保护、桌面与开始菜单重渲染及 toast 反馈）；禁用应用桌面不渲染图标故不提供「添加到桌面」，但保留「从桌面移除」用于清理残留固定项。126 测试 1307 断言通过。 |

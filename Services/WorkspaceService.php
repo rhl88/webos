@@ -24,6 +24,8 @@ class WorkspaceService
         'motion' => true,
         'window_width' => 78,
         'window_height' => 80,
+        'taskbar_autohide' => false,
+        'taskbar_locked' => false,
         'override_admin_home' => false,
         'usage_stats' => [],
     ];
@@ -170,6 +172,9 @@ class WorkspaceService
             self::DEFAULT_PREFERENCES['window_height']
         );
         $preferences['override_admin_home'] = (bool) $preferences['override_admin_home'];
+        // 任务栏行为（Windows 式）：自动隐藏任务栏、锁定任务栏（锁定后固定图标不可拖动）
+        $preferences['taskbar_autohide'] = (bool) $preferences['taskbar_autohide'];
+        $preferences['taskbar_locked'] = (bool) $preferences['taskbar_locked'];
         $preferences['usage_stats'] = $this->sanitizeUsageStats($preferences['usage_stats']);
 
         return $preferences;

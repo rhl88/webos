@@ -898,6 +898,27 @@ textarea:focus-visible,
     box-shadow: -8px 0 24px rgba(0, 25, 52, 0.16);
 }
 
+/* 自动隐藏任务栏：按停靠方向收起并保留 4px 唤出边，鼠标靠近边缘（hover）或键盘聚焦（focus-within）时弹出 */
+.webos-taskbar {
+    transition: transform 0.22s ease;
+}
+
+.webos-desktop[data-taskbar-autohide="on"][data-taskbar-position="bottom"] .webos-taskbar:not(:hover):not(:focus-within) {
+    transform: translateY(calc(100% - 4px));
+}
+
+.webos-desktop[data-taskbar-autohide="on"][data-taskbar-position="top"] .webos-taskbar:not(:hover):not(:focus-within) {
+    transform: translateY(calc(-100% + 4px));
+}
+
+.webos-desktop[data-taskbar-autohide="on"][data-taskbar-position="left"] .webos-taskbar:not(:hover):not(:focus-within) {
+    transform: translateX(calc(-100% + 4px));
+}
+
+.webos-desktop[data-taskbar-autohide="on"][data-taskbar-position="right"] .webos-taskbar:not(:hover):not(:focus-within) {
+    transform: translateX(calc(100% - 4px));
+}
+
 .taskbar-button,
 .account-button,
 .clock-button {

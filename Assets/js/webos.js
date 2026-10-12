@@ -79,6 +79,7 @@
         startGroupCount: document.getElementById('start-group-count'),
         taskbarPinned: document.getElementById('taskbar-pinned'),
         taskbarWindows: document.getElementById('taskbar-windows'),
+        taskbar: document.querySelector('.webos-taskbar'),
         websiteButton: document.getElementById('website-button'),
         notificationButton: document.getElementById('notification-button'),
         notificationPanel: document.getElementById('notification-panel'),
@@ -2004,6 +2005,24 @@
         return items;
     }
 
+    /** 任务栏空白处右键菜单：对齐 Windows 任务栏（自动隐藏 / 锁定 / 任务栏设置入口），状态用文案表达 */
+    function taskbarShellMenuItems() {
+        var preferences = state.workspace.preferences;
+        return [
+            {
+                label: preferences.taskbar_autohide ? '取消自动隐藏任务栏' : '自动隐藏任务栏',
+                icon: 'fa-arrows-v',
+                action: 'taskbar-autohide'
+            },
+            {
+                label: preferences.taskbar_locked ? '解锁任务栏' : '锁定任务栏',
+                icon: 'fa-unlock-alt',
+                action: 'taskbar-locked'
+            },
+            { label: '任务栏设置', icon: 'fa-sliders', action: 'taskbar-settings' }
+        ];
+    }
+
     function openTaskbarContextMenu(items, clientX, clientY) {
         closeTaskbarContextMenu();
         closeDesktopContextMenu();
@@ -2030,6 +2049,25 @@
     }
 
     function runTaskbarContextAction(action, dataset) {
+        if (action === 'taskbar-autohide' || action === 'taskbar-locked') {
+            // 空白右键的任务栏行为切换：无 taskbarId，放在固定/窗口动作前分发
+            var name = action === 'taskbar-autohide' ? 'taskbar_autohide' : 'taskbar_locked';
+            var nextValue = !state.workspace.preferences[name];
+            var messages = {
+                taskbar_autohide: nextValue ? '任务栏自动隐藏已开启，鼠标移开任务栏后收起' : '任务栏自动隐藏已关闭',
+                taskbar_locked: nextValue ? '任务栏已锁定，固定图标不可拖动' : '任务栏已解锁'
+            };
+            setWebosPreference(name, nextValue, messages[name]);
+            return;
+        }
+        if (action === 'taskbar-settings') {
+            // 与桌面右键「个性设置」同链路：打开 WebOS 个性化设置的基本设置 Tab
+            osSettingsTab = 'general';
+            closePanels();
+            openEntry(webosSettingsEntry());
+            renderWebosSettings();
+            return;
+        }
         if (action === 'maximize' || action === 'minimize' || action === 'close' || action === 'restore') {
             var key = dataset.taskbarKey;
             if (!key) {
@@ -2859,6 +2897,14 @@
             + positions.map(function (item) {
                 return settingsChoice('set-taskbar-position', item[0], item[1], item[2], preferences.taskbar_position === item[0]);
             }).join('') + '</div></section>'
+            + '<section class="settings-card"><div class="settings-card-title"><i class="fa fa-arrows-v"></i><div>'
+            + '<strong>任务栏行为</strong><small>对齐 Windows 任务栏：自动隐藏与锁定</small></div></div>'
+            + '<button class="settings-toggle" type="button" data-toggle-webos-setting="taskbar_autohide" aria-pressed="'
+            + (preferences.taskbar_autohide ? 'true' : 'false') + '"><span><strong>自动隐藏任务栏</strong>'
+            + '<small>鼠标移开任务栏后自动收起，靠近屏幕边缘唤出；也可在任务栏空白处右键切换</small></span><i></i></button>'
+            + '<button class="settings-toggle" type="button" data-toggle-webos-setting="taskbar_locked" aria-pressed="'
+            + (preferences.taskbar_locked ? 'true' : 'false') + '"><span><strong>锁定任务栏</strong>'
+            + '<small>锁定后任务栏固定图标不可拖动排序</small></span><i></i></button></section>'
             + '<section class="settings-card"><div class="settings-card-title"><i class="fa fa-clock-o"></i><div>'
             + '<strong>时间显示</strong><small>设置时钟格式与精度</small></div></div><div class="settings-choice-grid is-two">'
             + settingsChoice('set-clock-format', '24h', 'fa-clock-o', '24 小时', preferences.clock_format === '24h')
@@ -8842,6 +8888,9 @@
             : (root.dataset.wallpaperUrl || '');
         root.style.setProperty('--webos-wallpaper-image', 'url("' + wallpaperUrl + '")');
         root.dataset.motion = preferences.motion === false ? 'off' : 'on';
+        // 任务栏自动隐藏与锁定：挂桌面容器 data 属性，CSS 按任务栏停靠方向收起，锁定禁用固定图标拖动
+        root.dataset.taskbarAutohide = preferences.taskbar_autohide ? 'on' : 'off';
+        root.dataset.taskbarLocked = preferences.taskbar_locked ? 'on' : 'off';
         root.style.setProperty('--webos-window-width', clampWindowRatio(preferences.window_width, 78) + '%');
         root.style.setProperty('--webos-window-height', clampWindowRatio(preferences.window_height, 80) + '%');
         applyTaskbarPosition();
@@ -9331,10 +9380,10 @@
             uploadWallpaper(file);
         });
 
-        // 任务栏固定图标：左键按住可拖动排序（独立于桌面顺序）
+        // 任务栏固定图标：左键按住可拖动排序（独立于桌面顺序）；锁定任务栏时禁止拖动
         elements.taskbarPinned.addEventListener('pointerdown', function (event) {
             var button = event.target.closest('[data-pinned-launch-id]');
-            if (button && event.button === 0) {
+            if (button && event.button === 0 && root.dataset.taskbarLocked !== 'on') {
                 dragTaskbarIcon(button, event);
             }
         });
@@ -9357,6 +9406,16 @@
             if (items.length) {
                 openTaskbarContextMenu(items, event.clientX, event.clientY);
             }
+        });
+
+        // 任务栏空白处右键：Windows 任务栏式菜单（自动隐藏 / 锁定 / 任务栏设置），固定与窗口按钮保留各自菜单
+        elements.taskbar.addEventListener('contextmenu', function (event) {
+            if (event.target.closest('.taskbar-app-button')) {
+                return;
+            }
+            event.preventDefault();
+            closePanels();
+            openTaskbarContextMenu(taskbarShellMenuItems(), event.clientX, event.clientY);
         });
 
         // 窗口选项卡右键：关闭当前 / 关闭其它 / 关闭全部（右键同时聚焦所在窗口）
@@ -10161,6 +10220,8 @@
             motion: true,
             window_width: 78,
             window_height: 80,
+            taskbar_autohide: false,
+            taskbar_locked: false,
             usage_stats: {}
         }, preferences || {});
     }

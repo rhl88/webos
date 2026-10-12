@@ -146,6 +146,60 @@ class WebosWorkspaceApiTest extends WebosTestCase
             ->assertJsonPath('code', 40201);
     }
 
+    /** 任务栏行为偏好（Windows 式自动隐藏/锁定）：保存往返持久化，非法值校验拒绝 */
+    public function test_workspace_api_persists_taskbar_behavior_preferences(): void
+    {
+        $this->actingAdmin();
+
+        $this->putJson('/admin/cmspro/webos/api/workspace', [
+            'preferences' => ['taskbar_autohide' => true, 'taskbar_locked' => true],
+        ])->assertOk()
+            ->assertJsonPath('code', 0)
+            ->assertJsonPath('data.preferences.taskbar_autohide', true)
+            ->assertJsonPath('data.preferences.taskbar_locked', true);
+
+        $this->getJson('/admin/cmspro/webos/api/workspace')
+            ->assertOk()
+            ->assertJsonPath('data.preferences.taskbar_autohide', true)
+            ->assertJsonPath('data.preferences.taskbar_locked', true);
+
+        $this->putJson('/admin/cmspro/webos/api/workspace', [
+            'preferences' => ['taskbar_autohide' => 'yes'],
+        ])->assertUnprocessable()
+            ->assertJsonPath('code', 40201);
+    }
+
+    /** 任务栏空白右键菜单（Windows 式）：自动隐藏/锁定/任务栏设置 + 设置面板开关与 CSS 收起样式 */
+    public function test_taskbar_shell_context_menu_and_settings(): void
+    {
+        $script = file_get_contents(dirname(__DIR__, 2) . '/Assets/js/webos.js');
+        $stylesheet = file_get_contents(dirname(__DIR__, 2) . '/Assets/css/webos.css');
+
+        $this->assertIsString($script);
+        $this->assertIsString($stylesheet);
+        // 任务栏空白右键：固定/窗口按钮保留各自菜单，空白处弹出 Windows 式菜单
+        $this->assertStringContainsString('function taskbarShellMenuItems()', $script);
+        $this->assertStringContainsString('elements.taskbar.addEventListener(\'contextmenu\'', $script);
+        $this->assertStringContainsString("event.target.closest('.taskbar-app-button')", $script);
+        // 菜单动作：自动隐藏切换 / 锁定切换 / 打开任务栏设置（基本设置 Tab）
+        $this->assertStringContainsString("action: 'taskbar-autohide'", $script);
+        $this->assertStringContainsString("action: 'taskbar-locked'", $script);
+        $this->assertStringContainsString("action: 'taskbar-settings'", $script);
+        $this->assertStringContainsString("action === 'taskbar-autohide' || action === 'taskbar-locked'", $script);
+        $this->assertStringContainsString("osSettingsTab = 'general';", $script);
+        // 锁定任务栏：禁用固定图标拖动（左键打开不受影响）
+        $this->assertStringContainsString("root.dataset.taskbarLocked !== 'on'", $script);
+        // 自动隐藏：桌面容器 data 属性驱动 CSS，按停靠方向收起
+        $this->assertStringContainsString('root.dataset.taskbarAutohide', $script);
+        $this->assertStringContainsString('[data-taskbar-autohide="on"]', $stylesheet);
+        $this->assertStringContainsString('.webos-desktop[data-taskbar-autohide="on"][data-taskbar-position="bottom"] .webos-taskbar:not(:hover):not(:focus-within)', $stylesheet);
+        // 设置面板「任务栏行为」卡与默认偏好声明
+        $this->assertStringContainsString('data-toggle-webos-setting="taskbar_autohide"', $script);
+        $this->assertStringContainsString('data-toggle-webos-setting="taskbar_locked"', $script);
+        $this->assertStringContainsString('taskbar_autohide: false,', $script);
+        $this->assertStringContainsString('taskbar_locked: false,', $script);
+    }
+
     /** 桌面图标三档尺寸（右键「查看」切换）：控制器验证必须保留 icon_size 键并持久化（回归：无规则时 $validated 丢弃导致勾选回退中图标） */
     public function test_workspace_api_persists_icon_size_preference(): void
     {
