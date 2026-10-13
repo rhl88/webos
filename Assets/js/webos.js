@@ -35,7 +35,8 @@
                 motion: true,
                 window_width: 78,
                 window_height: 80,
-                usage_stats: {}
+                usage_stats: {},
+                ignored_updates: []
             }
         },
         desktopSelection: new Set(),
@@ -809,12 +810,14 @@
             ? state.workspace.preferences.icon_size
             : 'medium';
         // 渲染复用已分配集合口径：未分配入口与文件夹子项（浮层内展示）不占桌面格子
+        // 桌面「应用中心」角标口径与「应用更新」Tab 一致：过滤被忽略（本次版本）的更新
+        var visibleUpdates = visibleUpdateApps();
         elements.desktopIcons.innerHTML = assignedDesktopItems().map(function (item) {
             var left = 4 + Math.max(0, Number(item.x) || 0) * size.cellW;
             var top = 4 + Math.max(0, Number(item.y) || 0) * size.cellH;
             // 桌面「应用中心」图标右上角显示可更新应用数量（无更新时不渲染）
-            var updateBadge = item.id === 'webos-app-center' && state.updateApps.length
-                ? '<span class="desktop-update-badge">' + state.updateApps.length + '</span>'
+            var updateBadge = item.id === 'webos-app-center' && visibleUpdates.length
+                ? '<span class="desktop-update-badge">' + visibleUpdates.length + '</span>'
                 : '';
             return '<button class="desktop-icon' + (state.desktopSelection.has(item.id) ? ' is-selected' : '') + '" type="button" data-desktop-id="' + escapeHtml(item.id) + '"'
                 + ' style="left:' + left + 'px;top:' + top + 'px" title="' + escapeHtml(item.title) + '">'
@@ -2708,9 +2711,9 @@
     /** 通知中心窗口状态：当前 Tab 与通知分页 */
     var notificationCenterState = { tab: 'todos', page: 1, todoFilter: 'all', noticeFilter: 'all' };
 
-    /** 「应用更新」右上角的可用更新数量角标：未检查（null）或无更新时不渲染，超过 99 折叠为 99+ */
+    /** 「应用更新」右上角的可用更新数量角标：未检查（null）或无更新时不渲染，超过 99 折叠为 99+（被忽略的更新不计入） */
     function updateBadgeMarkup() {
-        var count = Number(state.updateCount) || 0;
+        var count = visibleUpdateApps().length;
         if (count <= 0) {
             return '';
         }
@@ -2764,6 +2767,55 @@
         }
     }
 
+    /** 被忽略的可用更新键集合：preferences.ignored_updates（app_id@版本号） */
+    function ignoredUpdateKeys() {
+        var list = state.workspace.preferences.ignored_updates;
+        return new Set(Array.isArray(list) ? list : []);
+    }
+
+    /** 忽略键：app_id@latest_version——只忽略本次版本，应用再发布更新版本后会重新提示 */
+    function updateIgnoreKey(app) {
+        return (app.app_id || '') + '@' + (app.latest_version || app.version || '');
+    }
+
+    /** 可见更新列表：过滤被忽略（当前版本）的应用——角标/列表/状态栏统一口径 */
+    function visibleUpdateApps() {
+        var ignored = ignoredUpdateKeys();
+        return (state.updateApps || []).filter(function (app) {
+            return !ignored.has(updateIgnoreKey(app));
+        });
+    }
+
+    /** 忽略指定应用的本次版本更新：写偏好并持久化，同步角标，更新 Tab 打开中时重渲染列表 */
+    function ignoreUpdateApp(appId) {
+        var app = (state.updateApps || []).find(function (item) { return item.app_id === appId; });
+        if (!app) {
+            return;
+        }
+        var key = updateIgnoreKey(app);
+        var list = Array.isArray(state.workspace.preferences.ignored_updates)
+            ? state.workspace.preferences.ignored_updates.slice()
+            : [];
+        if (list.indexOf(key) === -1) {
+            list.push(key);
+        }
+        state.workspace.preferences.ignored_updates = sanitizeIgnoredUpdates(list);
+        saveWorkspace();
+        toast('已忽略 ' + (app.name || appId) + ' 本次版本更新');
+        syncUpdateBadge();
+        var center = document.querySelector('[data-app-center]');
+        if (center && state.appCenterTab === 'updates') {
+            var status = center.querySelector('[data-app-status]');
+            var content = center.querySelector('[data-app-content]');
+            if (status) {
+                renderUpdatesStatus(status);
+            }
+            if (content) {
+                content.innerHTML = renderApplicationCards(visibleUpdateApps(), 'updates');
+            }
+        }
+    }
+
     /** 重绘应用中心侧栏，使「应用更新」角标与 state.updateCount 保持一致；窗口未打开时无需处理 */
     function syncUpdateBadge() {
         rerenderWindowNav(state.windows.get(windowKey(applicationCenterEntry())));
@@ -2800,7 +2852,7 @@
             ? Promise.resolve()
             : loadUpdateCount();
         ensure.then(function () {
-            var self = state.updateApps.find(function (app) { return app.app_id === 'cmspro.webos'; });
+            var self = visibleUpdateApps().find(function (app) { return app.app_id === 'cmspro.webos'; });
             if (!self) {
                 return;
             }
@@ -4191,7 +4243,7 @@
             // （升级成功后 dropUpdatedApp 已移除对应项，刷新列表即不再显示）
             if (state.updateChecked) {
                 renderUpdatesStatus(status);
-                content.innerHTML = renderApplicationCards(state.updateApps, 'updates');
+                content.innerHTML = renderApplicationCards(visibleUpdateApps(), 'updates');
                 return;
             }
             api('/api/admin/apps/check-updates?lazy=1', { method: 'POST' }).then(function (payload) {
@@ -4200,7 +4252,7 @@
                 state.updateChecked = true;
                 syncUpdateBadge();
                 renderUpdatesStatus(status);
-                content.innerHTML = renderApplicationCards(state.updateApps, 'updates');
+                content.innerHTML = renderApplicationCards(visibleUpdateApps(), 'updates');
             }).catch(function (error) {
                 status.classList.add('is-error');
                 status.innerHTML = '<i class="fa fa-exclamation-circle"></i>' + escapeHtml(error.message);
@@ -4215,11 +4267,12 @@
         }
     }
 
-    /** 应用更新状态栏：刷新按钮（点击重新检查更新）+ 数量文案 */
+    /** 应用更新状态栏：刷新按钮（点击重新检查更新）+ 数量文案（被忽略的更新不计入） */
     function renderUpdatesStatus(status) {
+        var count = visibleUpdateApps().length;
         status.innerHTML = '<button type="button" class="updates-refresh-button" data-updates-refresh title="重新检查更新" aria-label="重新检查更新"><i class="fa fa-refresh"></i></button>'
-            + (state.updateApps.length
-                ? '发现 ' + state.updateApps.length + ' 个可用更新'
+            + (count
+                ? '发现 ' + count + ' 个可用更新'
                 : '暂无可用更新，应用已是最新');
     }
 
@@ -4238,7 +4291,7 @@
             state.updateChecked = true;
             syncUpdateBadge();
             renderUpdatesStatus(status);
-            content.innerHTML = renderApplicationCards(state.updateApps, 'updates');
+            content.innerHTML = renderApplicationCards(visibleUpdateApps(), 'updates');
             toast('检查更新完成');
         }).catch(function (error) {
             status.classList.add('is-error');
@@ -4784,7 +4837,10 @@
                     version += ' · 本地 ' + market.current_version;
                 }
             } else if (mode === 'updates') {
-                actions = '<button class="small-action primary" type="button" data-upgrade-id="' + escapeHtml(id) + '">更新</button>';
+                // 更新主操作 + 忽略：忽略写入偏好（app_id@本次版本），应用发布更新版本后重新提示
+                actions = '<button class="small-action primary" type="button" data-upgrade-id="' + escapeHtml(id) + '">更新</button>'
+                    + '<button class="small-action" type="button" data-ignore-update-id="' + escapeHtml(id)
+                    + '" title="忽略本次版本更新，应用发布更新版本后会重新提示">忽略</button>';
             } else {
                 // 与已安装行菜单对等：未安装应用同样提供导出；右上角 × 物理删除应用文件
                 actions = '<button class="small-action primary" type="button" data-install-id="' + escapeHtml(id)
@@ -5714,6 +5770,10 @@
             (items || []).forEach(function (item) {
                 var children = Array.isArray(item.children) ? item.children : [];
                 var appId = item.app_id || inheritedAppId || '';
+                if (appId === 'cmspro.webos') {
+                    // WebOS 自身菜单不进入口树：入口管理与「新建桌面入口」均不再出现管理桌面入口
+                    return;
+                }
                 if (appId) {
                     // 应用节点首次创建时其根菜单子项直接铺开，避免多出一层与应用同名的分组
                     var fresh = !appIndex.has(appId);
@@ -5837,11 +5897,18 @@
             + '<i class="fa ' + safeIcon(icon) + '"></i><span>' + escapeHtml(message) + '</span></div>';
     }
 
+    /** WebOS 自身菜单（「WebOS 管理桌面」）不参与挂载与入口选择：作为挂载父级无意义，WebOS 内再开自身桌面是循环 */
+    function isWebosSelfMenu(menu) {
+        return !!menu && (menu.app_id === 'cmspro.webos' || menu.path === '/admin/cmspro/webos');
+    }
+
     /** 安装菜单挂载选择区 HTML：常规安装弹窗与上传安装弹层共用，提示文案按场景传入 */
     function installMenuFieldsMarkup(terminals, menuTrees, hintText) {
         return terminals.map(function (terminal) {
             var label = INSTALL_TERMINAL_LABELS[terminal] || terminal;
-            var options = '<option value="">安装为独立顶级菜单</option>' + (menuTrees[terminal] || []).map(function (menu) {
+            var options = '<option value="">安装为独立顶级菜单</option>' + (menuTrees[terminal] || []).filter(function (menu) {
+                return !isWebosSelfMenu(menu);
+            }).map(function (menu) {
                 return '<option value="' + Number(menu.id || 0) + '">' + escapeHtml(menu.name || '未命名菜单') + '</option>';
             }).join('');
             return '<label class="menu-parent-field"><span><i class="fa '
@@ -8293,6 +8360,13 @@
             return;
         }
 
+        // 应用更新卡片「忽略」按钮：忽略该应用本次版本更新（偏好持久化，新版本发布后重新提示）
+        var ignoreUpdate = event.target.closest('[data-ignore-update-id]');
+        if (ignoreUpdate) {
+            ignoreUpdateApp(ignoreUpdate.dataset.ignoreUpdateId);
+            return;
+        }
+
         var passwordSubmit = event.target.closest('[data-password-submit]');
         if (passwordSubmit) { submitPasswordChange(); return; }
 
@@ -10552,6 +10626,21 @@
         });
     }
 
+    /** 净化忽略更新偏好：仅保留 app_id@版本号 形态（与后端服务层白名单一致），去重限 200 条 */
+    function sanitizeIgnoredUpdates(list) {
+        if (!Array.isArray(list)) {
+            return [];
+        }
+        var seen = new Set();
+        list.forEach(function (item) {
+            if (typeof item !== 'string' || !/^[A-Za-z0-9_.-]{1,100}@[A-Za-z0-9_.-]{1,64}$/.test(item)) {
+                return;
+            }
+            seen.add(item);
+        });
+        return Array.from(seen).slice(0, 200);
+    }
+
     /** 归一化工作区偏好设置：补齐默认值 */
     function normalizePreferences(preferences) {
         return Object.assign({
@@ -10571,7 +10660,8 @@
             taskbar_autohide: false,
             taskbar_locked: false,
             taskbar_button_style: 'icon',
-            usage_stats: {}
+            usage_stats: {},
+            ignored_updates: []
         }, preferences || {});
     }
 

@@ -29,6 +29,7 @@ class WorkspaceService
         'taskbar_button_style' => 'icon',
         'override_admin_home' => false,
         'usage_stats' => [],
+        'ignored_updates' => [],
     ];
 
     public function getForAdmin(int $adminUserId): WebosWorkspace
@@ -196,6 +197,8 @@ class WorkspaceService
             ? $preferences['taskbar_button_style']
             : self::DEFAULT_PREFERENCES['taskbar_button_style'];
         $preferences['usage_stats'] = $this->sanitizeUsageStats($preferences['usage_stats']);
+        // 被忽略的可用更新（应用中心「忽略」按钮）：app_id@版本号，仅忽略当前版本，应用发布更新版本后重新提示
+        $preferences['ignored_updates'] = $this->sanitizeIgnoredUpdates($preferences['ignored_updates'] ?? []);
 
         return $preferences;
     }
@@ -286,5 +289,28 @@ class WorkspaceService
         }
 
         return $sanitized;
+    }
+
+    /**
+     * 净化被忽略的可用更新列表（应用中心「忽略本次版本更新」）：
+     * 仅保留 app_id@版本号 形态（与前端 sanitizeIgnoredUpdates 一致），去重后最多 200 条。
+     *
+     * @return list<string>
+     */
+    protected function sanitizeIgnoredUpdates(mixed $ignored): array
+    {
+        if (! is_array($ignored)) {
+            return [];
+        }
+
+        $sanitized = [];
+        foreach ($ignored as $item) {
+            if (! is_string($item) || ! preg_match('/^[A-Za-z0-9_.-]{1,100}@[A-Za-z0-9_.-]{1,64}$/', $item)) {
+                continue;
+            }
+            $sanitized[$item] = true;
+        }
+
+        return array_slice(array_keys($sanitized), 0, 200);
     }
 }

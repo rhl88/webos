@@ -1865,8 +1865,8 @@ class WebosWorkspaceApiTest extends WebosTestCase
         $this->assertStringContainsString('id="session-recovery-cancel"', $view);
 
         // 桌面「应用中心」图标右上角的可更新数量角标：renderDesktop 按检查结果渲染，syncUpdateBadge 同步
-        $this->assertStringContainsString("item.id === 'webos-app-center' && state.updateApps.length", $script);
-        $this->assertStringContainsString("'<span class=\"desktop-update-badge\">' + state.updateApps.length + '</span>'", $script);
+        $this->assertStringContainsString("item.id === 'webos-app-center' && visibleUpdates.length", $script);
+        $this->assertStringContainsString("'<span class=\"desktop-update-badge\">' + visibleUpdates.length + '</span>'", $script);
         $this->assertStringContainsString('rerenderWindowNav(state.windows.get(windowKey(applicationCenterEntry())));' . "\n" . '        // 桌面「应用中心」图标右上角的可更新数量角标随检查结果同步' . "\n" . '        renderDesktop();', $script);
 
         // 升级交互复刻传统后台：layui 弹窗选版本 + 启用拦截 + 逐级自动升级，
@@ -2752,5 +2752,72 @@ class WebosWorkspaceApiTest extends WebosTestCase
         $this->assertStringContainsString('.webos-entry-pick-list {', $stylesheet);
         $this->assertMatchesRegularExpression('/\.desktop-icon\.is-folder-target \.desktop-icon-badge\s*\{/', $stylesheet);
         $this->assertMatchesRegularExpression('/\.desktop-icon\.is-dragging\s*\{[^}]*pointer-events:\s*none;/', $stylesheet);
+    }
+
+    /** WebOS 自身菜单隐藏：安装挂载位置与入口树（入口管理/新建桌面入口）均不再出现「WebOS 管理桌面」 */
+    public function test_webos_self_menu_hidden_from_mount_and_entry_trees(): void
+    {
+        $script = file_get_contents(dirname(__DIR__, 2) . '/Assets/js/webos.js');
+
+        $this->assertIsString($script);
+        // 自身菜单判定：app_id 或内置路径任一命中即隐藏
+        $this->assertStringContainsString("function isWebosSelfMenu(menu)", $script);
+        $this->assertStringContainsString("menu.app_id === 'cmspro.webos' || menu.path === '/admin/cmspro/webos'", $script);
+        // 安装挂载位置（常规安装与上传安装共用 installMenuFieldsMarkup）：渲染 option 前过滤自身菜单
+        $this->assertStringContainsString("(menuTrees[terminal] || []).filter(function (menu) {", $script);
+        $this->assertStringContainsString('return !isWebosSelfMenu(menu);', $script);
+        // 入口树（入口管理可用菜单 + 新建桌面入口候选）：walk 聚合时跳过 WebOS 自身菜单
+        $this->assertStringContainsString("if (appId === 'cmspro.webos') {", $script);
+    }
+
+    /** 应用更新「忽略」按钮：忽略偏好（app_id@版本号）持久化往返 + 前端过滤口径与净化链路 */
+    public function test_workspace_api_persists_ignored_updates(): void
+    {
+        $this->actingAdmin();
+
+        // 非法形态（bad key!）被服务层过滤，重复项去重，合法项保留
+        $this->putJson('/admin/cmspro/webos/api/workspace', [
+            'preferences' => [
+                'ignored_updates' => ['cmspro.webos@2.1.29', 'demo-app@1.2.3', 'demo-app@1.2.3', 'bad key!', 'ok.app-x@10.0.0-rc1'],
+            ],
+        ])->assertOk()
+            ->assertJsonPath('code', 0)
+            ->assertJsonPath('data.preferences.ignored_updates', ['cmspro.webos@2.1.29', 'demo-app@1.2.3', 'ok.app-x@10.0.0-rc1']);
+
+        // 再次读取验证持久化
+        $this->getJson('/admin/cmspro/webos/api/workspace')
+            ->assertOk()
+            ->assertJsonPath('data.preferences.ignored_updates', ['cmspro.webos@2.1.29', 'demo-app@1.2.3', 'ok.app-x@10.0.0-rc1']);
+
+        $script = file_get_contents(dirname(__DIR__, 2) . '/Assets/js/webos.js');
+        $service = file_get_contents(dirname(__DIR__, 2) . '/Services/WorkspaceService.php');
+        $controller = file_get_contents(dirname(__DIR__, 2) . '/Controllers/Admin/WebosController.php');
+
+        $this->assertIsString($script);
+        $this->assertIsString($service);
+        $this->assertIsString($controller);
+        // 前端：忽略键 app_id@latest_version（只忽略本次版本，发布更新版本后重新提示）
+        $this->assertStringContainsString('function sanitizeIgnoredUpdates(list)', $script);
+        $this->assertStringContainsString("/^[A-Za-z0-9_.-]{1,100}@[A-Za-z0-9_.-]{1,64}$/", $script);
+        $this->assertStringContainsString('function updateIgnoreKey(app)', $script);
+        $this->assertStringContainsString("(app.app_id || '') + '@' + (app.latest_version || app.version || '')", $script);
+        $this->assertStringContainsString('function visibleUpdateApps()', $script);
+        $this->assertStringContainsString('function ignoreUpdateApp(appId)', $script);
+        // 更新卡片：更新按钮下方忽略按钮（容器纵向排列天然满足「下面」），点击委托分发
+        $this->assertStringContainsString('data-ignore-update-id="', $script);
+        $this->assertStringContainsString('title="忽略本次版本更新，应用发布更新版本后会重新提示"', $script);
+        $this->assertStringContainsString(">忽略</button>", $script);
+        $this->assertStringContainsString("event.target.closest('[data-ignore-update-id]')", $script);
+        $this->assertStringContainsString('ignoreUpdateApp(ignoreUpdate.dataset.ignoreUpdateId);', $script);
+        // 角标/状态栏/更新列表/WebOS 自身更新提示统一走可见口径（忽略后不计不显示）；9 处含函数定义本身
+        $this->assertSame(9, substr_count($script, 'visibleUpdateApps()'));
+        $this->assertStringNotContainsString("renderApplicationCards(state.updateApps, 'updates')", $script);
+        $this->assertStringNotContainsString("state.updateApps.find(function (app) { return app.app_id === 'cmspro.webos'; })", $script);
+        // 三层同步：state 默认偏好 / normalizePreferences / 服务层 DEFAULT + 净化 + 验证规则
+        $this->assertStringContainsString('ignored_updates: []', $script);
+        $this->assertStringContainsString("'ignored_updates' => [],", $service);
+        $this->assertStringContainsString('$this->sanitizeIgnoredUpdates($preferences[\'ignored_updates\'] ?? [])', $service);
+        $this->assertStringContainsString("'preferences.ignored_updates' => ['sometimes', 'array', 'max:200'],", $controller);
+        $this->assertStringContainsString("'preferences.ignored_updates.*' => ['string', 'max:180'],", $controller);
     }
 }
