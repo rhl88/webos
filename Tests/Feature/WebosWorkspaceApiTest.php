@@ -2724,7 +2724,8 @@ class WebosWorkspaceApiTest extends WebosTestCase
         $this->assertStringContainsString('function refreshFolderOverlay(folderId)', $script);
         $this->assertStringContainsString('function folderChildren(folderId)', $script);
         $this->assertStringContainsString("['从文件夹移除', 'fa-external-link-square', 'folder-remove']", $script);
-        $this->assertStringContainsString("root.querySelector('.webos-folder-overlay') && !event.target.closest('.webos-folder-overlay')", $script);
+        // 点击浮层外关闭判定带 isConnected（2.1.49）：detached target（标题重命名 replaceWith 旧节点）不参与判定
+        $this->assertStringContainsString("root.querySelector('.webos-folder-overlay') && event.target.isConnected && !event.target.closest('.webos-folder-overlay')", $script);
         $this->assertStringContainsString("event.target.closest('.webos-folder-item')", $script);
         $this->assertStringContainsString('state.folderOverlayId = folder.id;', $script);
         // 拖入文件夹：悬停判定（拖动穿透）+ 高亮 + 整批移入；拖动项含文件夹时禁止嵌套收纳
@@ -2865,6 +2866,9 @@ class WebosWorkspaceApiTest extends WebosTestCase
         $this->assertStringContainsString('data-folder-rename title="点击重命名"', $script);
         $this->assertStringContainsString("input.className = 'webos-folder-overlay-rename';", $script);
         $this->assertStringContainsString('function finishRename(cancel) {', $script);
+        // 编辑态误关修复（2.1.49）：replaceWith 后 detached target 沿旧路径冒泡到 document，
+        // closest 恒空被误判「浮层外」导致浮层被关、对已移走节点 remove 抛 NotFoundError；须判 isConnected
+        $this->assertStringContainsString("root.querySelector('.webos-folder-overlay') && event.target.isConnected && !event.target.closest('.webos-folder-overlay')", $script);
         $this->assertMatchesRegularExpression('/\.webos-folder-overlay-title\s*\{[^}]*cursor: pointer;/', $stylesheet);
         $this->assertStringContainsString('.webos-folder-overlay-rename {', $stylesheet);
         $this->assertStringContainsString('.webos-entry-pick-list {', $stylesheet);

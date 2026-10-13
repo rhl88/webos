@@ -10892,8 +10892,11 @@
             var appMore = event.target.closest('[data-app-more]');
             if (appMore) { toggleAppRowMenu(appMore); return; }
 
-            // 文件夹浮层（macOS 式）：点击浮层外部关闭；单击浮层内子项直接打开
-            if (root.querySelector('.webos-folder-overlay') && !event.target.closest('.webos-folder-overlay')) {
+            // 文件夹浮层（macOS 式）：点击浮层外部关闭；单击浮层内子项直接打开。
+            // isConnected 防御：浮层标题原地重命名时 target（旧 strong）已被 replaceWith 移出文档，
+            // 同一次 click 仍沿旧路径冒泡到这里，detached target 的 closest 恒为空会被误判「浮层外」，
+            // 导致编辑态刚建立浮层即被关闭并对已移走节点 remove 抛 NotFoundError
+            if (root.querySelector('.webos-folder-overlay') && event.target.isConnected && !event.target.closest('.webos-folder-overlay')) {
                 closeFolderOverlay();
             }
             var folderItem = event.target.closest('.webos-folder-item');
