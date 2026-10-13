@@ -2764,6 +2764,15 @@ class WebosWorkspaceApiTest extends WebosTestCase
         $this->assertStringContainsString('.webos-folder-overlay {', $stylesheet);
         $this->assertStringContainsString('.webos-folder-overlay-grid {', $stylesheet);
         $this->assertStringContainsString('.webos-folder-item {', $stylesheet);
+        // 2.1.32：浮层右上角关闭按钮 + 子项图标复用桌面 badge/label 结构（修复图片图标爆框）
+        $this->assertStringContainsString('data-folder-close aria-label="关闭"', $script);
+        $this->assertStringContainsString("event.target.closest('[data-folder-close]')", $script);
+        $this->assertStringContainsString("entryIconMarkup(findEntry(item.id) || item, 'desktop-icon-badge')\n                        + '<span class=\"desktop-icon-label\">'", $script);
+        $this->assertStringNotContainsString('webos-folder-item-icon', $script);
+        $this->assertStringNotContainsString('webos-folder-item span', $stylesheet);
+        $this->assertStringContainsString('.webos-folder-overlay-close {', $stylesheet);
+        $this->assertStringContainsString('.webos-folder-item .desktop-icon-label {', $stylesheet);
+        $this->assertStringContainsString('.webos-folder-overlay .desktop-icon-badge.is-app-icon img,', $stylesheet);
         $this->assertStringContainsString('.webos-folder-overlay-empty {', $stylesheet);
         $this->assertStringContainsString('.webos-url-form {', $stylesheet);
         $this->assertStringContainsString('.webos-entry-pick-list {', $stylesheet);

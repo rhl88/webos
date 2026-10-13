@@ -2338,15 +2338,23 @@
         overlay.className = 'webos-folder-overlay';
         overlay.dataset.folderId = folder.id;
         overlay.innerHTML = '<div class="webos-folder-overlay-head"><strong>' + escapeHtml(folder.title) + '</strong>'
-            + '<span>' + children.length + ' 项</span></div>'
+            + '<span>' + children.length + ' 项</span>'
+            + '<button class="webos-folder-overlay-close" type="button" data-folder-close aria-label="关闭" title="关闭"><i class="fa fa-times"></i></button></div>'
             + (children.length
                 ? '<div class="webos-folder-overlay-grid">' + children.map(function (item) {
+                    // 图标与标题复用桌面同款结构（desktop-icon-badge / desktop-icon-label），显示与桌面完全一致
                     return '<button class="webos-folder-item" type="button" data-desktop-id="' + escapeHtml(item.id) + '"'
                         + ' title="' + escapeHtml(item.title) + '">'
-                        + entryIconMarkup(findEntry(item.id) || item, 'webos-folder-item-icon')
-                        + '<span>' + escapeHtml(item.title) + '</span></button>';
+                        + entryIconMarkup(findEntry(item.id) || item, 'desktop-icon-badge')
+                        + '<span class="desktop-icon-label">' + escapeHtml(item.title) + '</span></button>';
                 }).join('') + '</div>'
                 : '<div class="webos-folder-overlay-empty">将桌面图标拖到这里收纳</div>');
+        // 右上角关闭按钮
+        overlay.addEventListener('click', function (event) {
+            if (event.target.closest('[data-folder-close]')) {
+                closeFolderOverlay();
+            }
+        });
         // 子项右键：打开 / 从文件夹移除（复用桌面右键菜单容器与 data-desktop-action 委托链路）
         overlay.addEventListener('contextmenu', function (event) {
             var item = event.target.closest('[data-desktop-id]');
