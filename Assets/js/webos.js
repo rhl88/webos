@@ -2460,21 +2460,26 @@
             }
             var startX = downEvent.clientX;
             var startY = downEvent.clientY;
+            var startRect = button.getBoundingClientRect();
+            var grabDx = 0;
+            var grabDy = 0;
             var moved = false;
             var hoverTarget = null;
             button.setPointerCapture(downEvent.pointerId);
             downEvent.preventDefault();
             // 悬停目标：其它文件夹的桌面图标或打开中的浮层（原文件夹自身忽略）
             function targetUnderPointer(clientX, clientY) {
+                // 其它文件夹的打开浮层：唯一浮层 + 矩形几何判定（浮层玻璃拟态层上 elementFromPoint 不可靠）
+                var overlay = root.querySelector('.webos-folder-overlay[data-folder-id]');
+                if (overlay && overlay.dataset.folderId !== folder.id) {
+                    var overlayRect = overlay.getBoundingClientRect();
+                    if (clientX >= overlayRect.left && clientX <= overlayRect.right
+                        && clientY >= overlayRect.top && clientY <= overlayRect.bottom) {
+                        return overlay.dataset.folderId;
+                    }
+                }
                 var over = document.elementFromPoint(clientX, clientY);
-                if (!over) {
-                    return null;
-                }
-                var overlay = over.closest('.webos-folder-overlay');
-                if (overlay && overlay.dataset.folderId && overlay.dataset.folderId !== folder.id) {
-                    return overlay.dataset.folderId;
-                }
-                var deskButton = over.closest('[data-desktop-id]');
+                var deskButton = over ? over.closest('[data-desktop-id]') : null;
                 if (deskButton) {
                     var target = findDesktopItem(deskButton.dataset.desktopId);
                     if (target && target.kind === 'folder' && target.id !== folder.id) {
@@ -2507,8 +2512,16 @@
                     }
                     moved = true;
                     button.classList.add('is-dragging');
+                    // 脱出浮层网格容器的 overflow 裁剪：改为 fixed 定位跟手（按住点偏移，宽高固定防塌缩）
+                    grabDx = startX - startRect.left;
+                    grabDy = startY - startRect.top;
+                    button.style.width = startRect.width + 'px';
+                    button.style.position = 'fixed';
+                    button.style.zIndex = 4000;
+                    button.style.margin = '0';
                 }
-                button.style.transform = 'translate(' + dx + 'px,' + dy + 'px)';
+                button.style.left = (moveEvent.clientX - grabDx) + 'px';
+                button.style.top = (moveEvent.clientY - grabDy) + 'px';
                 setHoverTarget(targetUnderPointer(moveEvent.clientX, moveEvent.clientY));
             }
             function cleanup() {
@@ -2516,16 +2529,21 @@
                 document.removeEventListener('pointerup', end);
                 document.removeEventListener('pointercancel', cleanup);
                 button.classList.remove('is-dragging');
-                button.style.transform = '';
+                button.style.cssText = '';
                 setHoverTarget(null);
             }
             function end(upEvent) {
                 // 落点判定在 cleanup 前（is-dragging 穿透依赖拖动进行中状态）
                 var dropTargetId = moved ? targetUnderPointer(upEvent.clientX, upEvent.clientY) : null;
-                var overUp = document.elementFromPoint(upEvent.clientX, upEvent.clientY);
-                var overOwn = overUp ? overUp.closest('.webos-folder-overlay') : null;
-                // 拖出判定：松手在原文件夹浮层之外才算拖出（落回原浮层仅回弹）
-                var droppedOut = !overOwn || overOwn.dataset.folderId !== folder.id;
+                // 拖出判定按原浮层矩形几何计算（不依赖 elementFromPoint）：
+                // 松手在原浮层矩形之外才算拖出，落回原浮层仅回弹
+                var overlayNow = root.querySelector('.webos-folder-overlay[data-folder-id="' + folder.id + '"]');
+                var droppedOut = true;
+                if (overlayNow) {
+                    var ownRect = overlayNow.getBoundingClientRect();
+                    droppedOut = upEvent.clientX < ownRect.left || upEvent.clientX > ownRect.right
+                        || upEvent.clientY < ownRect.top || upEvent.clientY > ownRect.bottom;
+                }
                 cleanup();
                 if (!moved) {
                     return;
@@ -2592,7 +2610,7 @@
         index = layer.open({
             type: 1,
             title: '图标设置 - ' + folder.title,
-            area: ['560px', '460px'],
+            area: ['616px', '460px'],
             btn: ['取消'],
             content: '<div class="webos-icon-grid">' + catalog.options.map(function (option) {
                 var slug = option.slug || option.value;
@@ -9624,10 +9642,19 @@
             return dragItems.some(function (entry) { return entry.kind === 'folder'; }) ? null : button;
         }
         function folderOverlayUnderPointer(clientX, clientY) {
-            // 文件夹浮层打开时，松手落在浮层内同样收纳（浮层容器 data-folder-id 定位目标文件夹）
+            // 文件夹浮层打开时，松手落在浮层内同样收纳（浮层容器 data-folder-id 定位目标文件夹）。
+            // elementFromPoint 之外叠加浮层矩形几何兜底：浮层 backdrop-filter/层叠在部分内核下
+            // hit-testing 不可靠，按矩形包含判定保证拖入必然命中
             var over = document.elementFromPoint(clientX, clientY);
             var overlay = over ? over.closest('.webos-folder-overlay') : null;
             if (!overlay) {
+                overlay = root.querySelector('.webos-folder-overlay[data-folder-id]');
+            }
+            if (!overlay) {
+                return null;
+            }
+            var rect = overlay.getBoundingClientRect();
+            if (clientX < rect.left || clientX > rect.right || clientY < rect.top || clientY > rect.bottom) {
                 return null;
             }
             // 拖动项中含文件夹时禁止嵌套收纳（与拖入文件夹图标口径一致）

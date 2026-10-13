@@ -5292,6 +5292,14 @@ textarea:focus-visible,
     text-align: left;
 }
 
+/* 叶子行菜单图标固定 22px（与分支行应用图标对齐） */
+.webos-entry-pick-item > i {
+    width: 22px;
+    height: 22px;
+    line-height: 22px;
+    text-align: center;
+}
+
 .webos-entry-pick-item:hover {
     color: #087f75;
     background: #eaf8f6;

@@ -2744,7 +2744,19 @@ class WebosWorkspaceApiTest extends WebosTestCase
         $this->assertStringContainsString('function dragFolderItem(folder, item, button)', $script);
         $this->assertStringContainsString("overlay.querySelectorAll('.webos-folder-item').forEach", $script);
         $this->assertStringContainsString('dragFolderItem(folder, child, itemButton);', $script);
-        $this->assertStringContainsString('var droppedOut = !overOwn || overOwn.dataset.folderId !== folder.id;', $script);
+        // 拖出修复（2.1.34）：fixed 定位脱出浮层网格 overflow 裁剪 + 拖出判定改浮层矩形几何计算
+        $this->assertStringContainsString("button.style.position = 'fixed';", $script);
+        $this->assertStringContainsString('var startRect = button.getBoundingClientRect();', $script);
+        $this->assertStringContainsString("var overlayNow = root.querySelector('.webos-folder-overlay[data-folder-id=", $script);
+        $this->assertStringContainsString('overlayNow.getBoundingClientRect()', $script);
+        $this->assertStringNotContainsString('var droppedOut = !overOwn', $script);
+        // 拖入修复（2.1.34）：folderOverlayUnderPointer 叠加浮层矩形几何兜底（elementFromPoint 在玻璃拟态层不可靠）
+        $this->assertStringContainsString('var rect = overlay.getBoundingClientRect();', $script);
+        $this->assertStringContainsString("root.querySelector('.webos-folder-overlay[data-folder-id]');", $script);
+        // 图标设置弹窗 616px 宽（2.1.34）+ 桌面入口叶子图标 22px（2.1.34）
+        $this->assertStringContainsString("area: ['616px', '460px'],", $script);
+        $this->assertStringContainsString('.webos-entry-pick-item > i {', $stylesheet);
+        $this->assertStringContainsString('width: 22px;', $stylesheet);
         $this->assertStringContainsString('toast(\'已移出到桌面\');', $script);
         $this->assertStringContainsString('.webos-folder-item.is-dragging {', $stylesheet);
         // 文件夹图标设置（2.1.33）：右键菜单最下面 + 内置图标目录弹窗点选替换
