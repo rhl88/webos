@@ -5106,6 +5106,36 @@ textarea:focus-visible,
     font-size: 13px;
 }
 
+/* 浮层标题可点击重命名：hover 下划线暗示可编辑 */
+.webos-folder-overlay-title {
+    cursor: pointer;
+}
+
+.webos-folder-overlay-title:hover {
+    text-decoration: underline;
+}
+
+/* 原地重命名输入框：替换标题 strong 后在 flex 头部内可收缩，玻璃拟态底上白字可辨 */
+.webos-folder-overlay-rename {
+    flex: 0 1 auto;
+    min-width: 0;
+    width: 150px;
+    padding: 3px 8px;
+    border: 1px solid rgba(255, 255, 255, 0.45);
+    border-radius: 6px;
+    background: rgba(255, 255, 255, 0.14);
+    color: #fff;
+    font-family: inherit;
+    font-size: 13px;
+    font-weight: 600;
+}
+
+.webos-folder-overlay-rename:focus {
+    outline: none;
+    border-color: #fff;
+    background: rgba(255, 255, 255, 0.22);
+}
+
 .webos-folder-overlay-head span {
     color: rgba(255, 255, 255, 0.6);
     font-size: 12px;

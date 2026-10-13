@@ -2411,7 +2411,7 @@
         var overlay = document.createElement('div');
         overlay.className = 'webos-folder-overlay';
         overlay.dataset.folderId = folder.id;
-        overlay.innerHTML = '<div class="webos-folder-overlay-head"><strong>' + escapeHtml(folder.title) + '</strong>'
+        overlay.innerHTML = '<div class="webos-folder-overlay-head"><strong class="webos-folder-overlay-title" data-folder-rename title="点击重命名">' + escapeHtml(folder.title) + '</strong>'
             + '<span>' + children.length + ' 项</span>'
             + '<button class="webos-folder-overlay-close" type="button" data-folder-close aria-label="关闭" title="关闭"><i class="fa fa-times"></i></button></div>'
             + (children.length
@@ -2428,6 +2428,49 @@
             if (event.target.closest('[data-folder-close]')) {
                 closeFolderOverlay();
             }
+        });
+        // 点击标题原地重命名：仅修改桌面显示名称（与 renameDesktopIcon 同口径，应用/菜单不受影响）；
+        // Enter/失焦确认，Esc 取消；确认后重建浮层回到标题态，finished 标志拦住 Enter 后 blur 的二次触发
+        overlay.addEventListener('click', function (event) {
+            var titleNode = event.target.closest('[data-folder-rename]');
+            if (!titleNode || overlay.querySelector('.webos-folder-overlay-rename')) {
+                return;
+            }
+            var input = document.createElement('input');
+            input.className = 'webos-folder-overlay-rename';
+            input.type = 'text';
+            input.maxLength = 60;
+            input.value = folder.title;
+            titleNode.replaceWith(input);
+            input.focus();
+            input.select();
+            var finished = false;
+            function finishRename(cancel) {
+                if (finished) {
+                    return;
+                }
+                finished = true;
+                var name = String(input.value || '').trim();
+                if (!cancel && name && name !== folder.title) {
+                    folder.title = name;
+                    renderDesktop();
+                    saveWorkspace(false);
+                    layuiLayer().msg('已重命名', { icon: 1, time: 1200 });
+                }
+                refreshFolderOverlay(folder.id);
+            }
+            input.addEventListener('keydown', function (keyEvent) {
+                if (keyEvent.key === 'Enter') {
+                    keyEvent.preventDefault();
+                    finishRename(false);
+                } else if (keyEvent.key === 'Escape') {
+                    keyEvent.stopPropagation();
+                    finishRename(true);
+                }
+            });
+            input.addEventListener('blur', function () {
+                finishRename(false);
+            });
         });
         // 子项拖拽：拖出到桌面空格或其它文件夹（refreshFolderOverlay 重渲染后重新绑定）
         overlay.querySelectorAll('.webos-folder-item').forEach(function (itemButton) {

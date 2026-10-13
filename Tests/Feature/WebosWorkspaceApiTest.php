@@ -2860,6 +2860,13 @@ class WebosWorkspaceApiTest extends WebosTestCase
         $this->assertStringContainsString('.webos-folder-overlay .desktop-icon-badge.is-app-icon img,', $stylesheet);
         $this->assertStringContainsString('.webos-folder-overlay-empty {', $stylesheet);
         $this->assertStringContainsString('.webos-url-form {', $stylesheet);
+        // 浮层标题点击原地重命名（2.1.48）：标题节点 data-folder-rename，Enter/失焦确认、Esc 取消；
+        // 仅改 desktop_items[].title 与 renameDesktopIcon 同口径，确认后 renderDesktop + 静默保存 + 重建浮层
+        $this->assertStringContainsString('data-folder-rename title="点击重命名"', $script);
+        $this->assertStringContainsString("input.className = 'webos-folder-overlay-rename';", $script);
+        $this->assertStringContainsString('function finishRename(cancel) {', $script);
+        $this->assertMatchesRegularExpression('/\.webos-folder-overlay-title\s*\{[^}]*cursor: pointer;/', $stylesheet);
+        $this->assertStringContainsString('.webos-folder-overlay-rename {', $stylesheet);
         $this->assertStringContainsString('.webos-entry-pick-list {', $stylesheet);
         $this->assertStringContainsString('.webos-entry-pick-branch {', $stylesheet);
         // 「选择桌面入口」弹窗菜单徽章独立 22px 版本（2.1.47）：基础 .start-app-item-icon 是开始菜单
