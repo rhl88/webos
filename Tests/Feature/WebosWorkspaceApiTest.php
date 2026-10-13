@@ -2783,6 +2783,9 @@ class WebosWorkspaceApiTest extends WebosTestCase
         $this->assertStringContainsString("area: ['616px', '460px'],", $script);
         $this->assertStringContainsString('.webos-entry-pick-item > i {', $stylesheet);
         $this->assertStringContainsString('width: 22px;', $stylesheet);
+        // 「新建 → 桌面入口」弹窗分支行应用图片图标 22px（2.1.39）：入口管理树的 img 约束挂在
+        // .entry-tree-toggle 祖先下弹窗内失配，应用 icon 接口图片按原始尺寸渲染爆框
+        $this->assertStringContainsString('.webos-entry-pick-branch .entry-tree-app-icon.is-app-icon img {', $stylesheet);
         $this->assertStringContainsString('toast(\'已移出到桌面\');', $script);
         $this->assertStringContainsString('.webos-folder-item.is-dragging {', $stylesheet);
         // 文件夹图标设置（2.1.33）：右键菜单最下面 + 内置图标目录弹窗点选替换

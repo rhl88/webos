@@ -5309,6 +5309,14 @@ textarea:focus-visible,
     text-align: center;
 }
 
+/* 分支行应用图片图标：入口管理树的 img 约束挂在 .entry-tree-toggle 祖先下，弹窗内失配，
+   应用 icon 接口图片按原始尺寸渲染爆框，这里收窄到 22px 等比缩放（与叶子行图标对齐） */
+.webos-entry-pick-branch .entry-tree-app-icon.is-app-icon img {
+    width: 22px;
+    height: 22px;
+    object-fit: contain;
+}
+
 .webos-entry-pick-item:hover {
     color: #087f75;
     background: #eaf8f6;
