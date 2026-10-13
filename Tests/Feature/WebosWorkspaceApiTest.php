@@ -2864,6 +2864,9 @@ class WebosWorkspaceApiTest extends WebosTestCase
         $this->assertStringContainsString('.webos-entry-pick-branch {', $stylesheet);
         $this->assertMatchesRegularExpression('/\.desktop-icon\.is-folder-target \.desktop-icon-badge\s*\{/', $stylesheet);
         $this->assertMatchesRegularExpression('/\.desktop-icon\.is-dragging\s*\{[^}]*pointer-events:\s*none;/', $stylesheet);
+        // 拖入打开中的浮层被遮挡修复（2.1.46）：.desktop-icons 容器自身 z-index 会创建层叠上下文，
+        // 把 is-dragging 按钮的 z-index:4000 关在容器内（整体按容器值比较），容器必须保持 auto
+        $this->assertMatchesRegularExpression('/\.desktop-icons \{(?:(?!z-index)[^}])*\}/', $stylesheet);
         // 浮层定位宽度按实际渲染值测量（2.1.43）：2.1.42 CSS 加宽到 428px 后 JS 硬编码 328 未同步，
         // 右侧越界翻转判定偏窄，浮层实际铺展区域超出计算值，拖出落点被压在浮层下（视觉无响应）
         $this->assertStringContainsString('var overlayWidth = overlay.offsetWidth || 438;', $script);

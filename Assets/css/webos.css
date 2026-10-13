@@ -102,7 +102,9 @@ textarea:focus-visible,
 .desktop-icons {
     position: absolute;
     inset: 20px 20px calc(var(--taskbar-height) + 20px) 20px;
-    z-index: 5;
+    /* 不设 z-index（auto 不创建层叠上下文）：拖动中的图标按钮 z-index:4000 需直接参与
+       root 层叠比较盖过文件夹浮层（z-index:3500）；容器若有 z-index 会把按钮关在自身
+       上下文内（整体按容器值比较，曾被 z-index:5 压在浮层下）。壁纸在前按 DOM 顺序垫底 */
 }
 
 .desktop-icon {
