@@ -2762,6 +2762,15 @@ class WebosWorkspaceApiTest extends WebosTestCase
         $this->assertStringContainsString('ghost.remove();', $script);
         $this->assertStringContainsString('.webos-folder-drag-ghost {', $stylesheet);
         $this->assertStringNotContainsString("button.style.position = 'fixed';", $script);
+        // 拖动图标盖过文件夹浮层（2.1.38）：is-dragging 提升 z-index 到 4000（浮层 3500），
+        // 否则桌面图标拖动改原按钮 left/top，会被打开中的文件夹浮层盖住
+        $this->assertMatchesRegularExpression('/\.desktop-icon\.is-dragging \{[^}]*z-index: 4000;/', $stylesheet);
+        // 拖出图标尺寸修复（2.1.38）：ghost 挂 body 脱离 data-icon-size/浮层作用域，badge 尺寸/字号回退默认档、
+        // 应用图片图标透明底与 img 约束失配（非 SVG 图标拖出变大），从浮层内原按钮读计算样式固化为内联样式
+        $this->assertStringContainsString('getComputedStyle(sourceBadge)', $script);
+        $this->assertStringContainsString('ghostBadge.style.fontSize = badgeStyle.fontSize;', $script);
+        $this->assertStringContainsString("ghostBadge.classList.contains('is-app-icon')", $script);
+        $this->assertStringContainsString("ghostImg.style.width = '100%';", $script);
         // 拖出判定改浮层矩形几何计算（2.1.34）
         $this->assertStringContainsString('var startRect = button.getBoundingClientRect();', $script);
         $this->assertStringContainsString("var overlayNow = root.querySelector('.webos-folder-overlay[data-folder-id=", $script);

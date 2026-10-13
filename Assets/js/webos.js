@@ -2515,6 +2515,30 @@
                     // 克隆后脱离浮层，用 transform 位移跟随（transform 相对自身布局位置，不受包含块影响）
                     ghost = button.cloneNode(true);
                     ghost.classList.add('webos-folder-drag-ghost');
+                    // 拖影挂 body 后脱离 .webos-desktop[data-icon-size] 与 .webos-folder-overlay 作用域：
+                    // badge 尺寸/字号会回退默认档、应用图片图标的透明底与 img 尺寸约束失配（非 SVG 图标拖出变大）。
+                    // 计算样式须从浮层内的原按钮读取（游离节点与挂 body 后读到的是回退值），固化为内联样式
+                    var ghostBadge = ghost.querySelector('.desktop-icon-badge');
+                    var sourceBadge = button.querySelector('.desktop-icon-badge');
+                    if (ghostBadge && sourceBadge) {
+                        var badgeStyle = getComputedStyle(sourceBadge);
+                        ghostBadge.style.width = badgeStyle.width;
+                        ghostBadge.style.height = badgeStyle.height;
+                        ghostBadge.style.fontSize = badgeStyle.fontSize;
+                        ghostBadge.style.borderRadius = badgeStyle.borderRadius;
+                        ghostBadge.style.marginBottom = badgeStyle.marginBottom;
+                        if (ghostBadge.classList.contains('is-app-icon')) {
+                            ghostBadge.style.background = 'transparent';
+                            ghostBadge.style.boxShadow = 'none';
+                            ghostBadge.style.overflow = 'hidden';
+                            var ghostImg = ghostBadge.querySelector('img');
+                            if (ghostImg) {
+                                ghostImg.style.width = '100%';
+                                ghostImg.style.height = '100%';
+                                ghostImg.style.objectFit = 'contain';
+                            }
+                        }
+                    }
                     ghost.style.cssText = 'position:fixed;left:' + startRect.left + 'px;top:' + startRect.top + 'px;'
                         + 'width:' + startRect.width + 'px;margin:0;z-index:4000;pointer-events:none;';
                     document.body.appendChild(ghost);

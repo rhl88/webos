@@ -180,6 +180,8 @@ textarea:focus-visible,
     cursor: grabbing;
     /* 拖动穿透：elementFromPoint 检测悬停文件夹图标用（指针事件仍由 pointer capture 派发） */
     pointer-events: none;
+    /* 拖入打开中的文件夹浮层时盖过浮层（z-index:3500），保证拖动图标显示在文件夹容器之上 */
+    z-index: 4000;
 }
 
 /* 拖动悬停文件夹图标：高亮提示可移入收纳（macOS 拖拽反馈） */
