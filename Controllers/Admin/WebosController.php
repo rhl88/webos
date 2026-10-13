@@ -170,7 +170,7 @@ class WebosController extends Controller
     {
         $version = 1;
 
-        foreach (['css/webos.css', 'js/webos.js'] as $asset) {
+        foreach (['css/webos.css', 'js/webos.js', 'js/webos-icon-catalog.js'] as $asset) {
             $path = public_path('apps/cmspro.webos/' . $asset);
             if (is_file($path)) {
                 $version = max($version, (int) filemtime($path));

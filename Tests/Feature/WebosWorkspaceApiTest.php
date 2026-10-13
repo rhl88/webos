@@ -2740,6 +2740,27 @@ class WebosWorkspaceApiTest extends WebosTestCase
         $this->assertStringContainsString('function setOverlayTarget(node)', $script);
         $this->assertStringContainsString('setOverlayTarget(folderOverlayUnderPointer(moveEvent.clientX, moveEvent.clientY));', $script);
         $this->assertMatchesRegularExpression("/entry\.parent_folder = dropOverlayId;/", $script);
+        // 拖出文件夹（2.1.33）：浮层子项拖拽三去向——其它文件夹 / 桌面空格 / 落回原浮层回弹
+        $this->assertStringContainsString('function dragFolderItem(folder, item, button)', $script);
+        $this->assertStringContainsString("overlay.querySelectorAll('.webos-folder-item').forEach", $script);
+        $this->assertStringContainsString('dragFolderItem(folder, child, itemButton);', $script);
+        $this->assertStringContainsString('var droppedOut = !overOwn || overOwn.dataset.folderId !== folder.id;', $script);
+        $this->assertStringContainsString('toast(\'已移出到桌面\');', $script);
+        $this->assertStringContainsString('.webos-folder-item.is-dragging {', $stylesheet);
+        // 文件夹图标设置（2.1.33）：右键菜单最下面 + 内置图标目录弹窗点选替换
+        $this->assertStringContainsString('items.push([\'图标设置\', \'fa-picture-o\', \'folder-icon\']);', $script);
+        $this->assertStringContainsString("if (action === 'folder-icon') {", $script);
+        $this->assertStringContainsString('function openFolderIconDialog(folderId)', $script);
+        $this->assertStringContainsString('folder.icon = this.dataset.iconSlug;', $script);
+        $this->assertStringContainsString('.webos-icon-grid {', $stylesheet);
+        $this->assertStringContainsString('.desktop-icon-badge.is-svg-icon svg {', $stylesheet);
+        // 图标目录内置资产：静态 JS（来自博客 IconCatalog 全量导出）+ 视图引入 + 资产版本纳入
+        $catalogPath = dirname(__DIR__, 2) . '/Assets/js/webos-icon-catalog.js';
+        $this->assertFileExists($catalogPath);
+        $this->assertStringContainsString('window.WEBOS_ICON_CATALOG = ', file_get_contents($catalogPath));
+        $catalogView = file_get_contents(dirname(__DIR__, 2) . '/Views/Admin/desktop/index.blade.php');
+        $this->assertStringContainsString('webos-icon-catalog.js', $catalogView);
+        $this->assertStringContainsString('js/webos-icon-catalog.js', file_get_contents(dirname(__DIR__, 2) . '/Controllers/Admin/WebosController.php'));
         $this->assertMatchesRegularExpression("/dragItems\.some\(function \(entry\) \{ return entry\.kind === 'folder'; \}\)/", $script);
         $this->assertMatchesRegularExpression("/entry\.parent_folder = targetFolder\.id;/", $script);
         $this->assertStringContainsString('refreshFolderOverlay(targetFolder.id);', $script);

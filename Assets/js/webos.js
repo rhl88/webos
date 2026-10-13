@@ -1706,6 +1706,10 @@
         if (context.application && Number(context.application.is_system) !== 1) {
             items.push(['卸载应用', 'fa-times-circle', 'uninstall', 'danger']);
         }
+        // 文件夹特有：图标设置（内置图标目录点选，2.1.33），置于菜单最下面
+        if (context.entry && context.entry.kind === 'folder') {
+            items.push(['图标设置', 'fa-picture-o', 'folder-icon']);
+        }
         return items;
     }
 
@@ -1917,6 +1921,11 @@
         // 文件夹浮层内子项右键「从文件夹移除」：清 parent_folder 回到桌面
         if (action === 'folder-remove') {
             removeItemFromFolder(iconId);
+            return;
+        }
+        // 文件夹右键「图标设置」：内置图标目录弹窗点选替换文件夹图标
+        if (action === 'folder-icon') {
+            openFolderIconDialog(iconId);
             return;
         }
         if (action === 'refresh') {
@@ -2355,6 +2364,13 @@
                 closeFolderOverlay();
             }
         });
+        // 子项拖拽：拖出到桌面空格或其它文件夹（refreshFolderOverlay 重渲染后重新绑定）
+        overlay.querySelectorAll('.webos-folder-item').forEach(function (itemButton) {
+            var child = findDesktopItem(itemButton.dataset.desktopId);
+            if (child) {
+                dragFolderItem(folder, child, itemButton);
+            }
+        });
         // 子项右键：打开 / 从文件夹移除（复用桌面右键菜单容器与 data-desktop-action 委托链路）
         overlay.addEventListener('contextmenu', function (event) {
             var item = event.target.closest('[data-desktop-id]');
@@ -2431,6 +2447,172 @@
         saveWorkspace(false);
         refreshFolderOverlay(folderId);
         toast('已移回桌面');
+    }
+
+    /** 浮层子项拖拽（2.1.33）：拖出文件夹落桌面空格，或拖入其它文件夹图标 / 打开中的浮层 */
+    function dragFolderItem(folder, item, button) {
+        if (typeof button === 'undefined' || !button) {
+            return;
+        }
+        button.addEventListener('pointerdown', function (downEvent) {
+            if (downEvent.button !== 0) {
+                return;
+            }
+            var startX = downEvent.clientX;
+            var startY = downEvent.clientY;
+            var moved = false;
+            var hoverTarget = null;
+            button.setPointerCapture(downEvent.pointerId);
+            downEvent.preventDefault();
+            // 悬停目标：其它文件夹的桌面图标或打开中的浮层（原文件夹自身忽略）
+            function targetUnderPointer(clientX, clientY) {
+                var over = document.elementFromPoint(clientX, clientY);
+                if (!over) {
+                    return null;
+                }
+                var overlay = over.closest('.webos-folder-overlay');
+                if (overlay && overlay.dataset.folderId && overlay.dataset.folderId !== folder.id) {
+                    return overlay.dataset.folderId;
+                }
+                var deskButton = over.closest('[data-desktop-id]');
+                if (deskButton) {
+                    var target = findDesktopItem(deskButton.dataset.desktopId);
+                    if (target && target.kind === 'folder' && target.id !== folder.id) {
+                        return target.id;
+                    }
+                }
+                return null;
+            }
+            function setHoverTarget(nextId) {
+                var nextNode = null;
+                if (nextId) {
+                    var targetButton = root.querySelector('[data-desktop-id="' + nextId + '"]');
+                    var overlay = root.querySelector('.webos-folder-overlay[data-folder-id="' + nextId + '"]');
+                    nextNode = overlay || targetButton;
+                }
+                if (hoverTarget && hoverTarget.node) {
+                    hoverTarget.node.classList.remove('is-folder-target');
+                }
+                hoverTarget = nextId ? { id: nextId, node: nextNode } : null;
+                if (hoverTarget && hoverTarget.node) {
+                    hoverTarget.node.classList.add('is-folder-target');
+                }
+            }
+            function move(moveEvent) {
+                var dx = moveEvent.clientX - startX;
+                var dy = moveEvent.clientY - startY;
+                if (!moved) {
+                    if (Math.abs(dx) < 4 && Math.abs(dy) < 4) {
+                        return;
+                    }
+                    moved = true;
+                    button.classList.add('is-dragging');
+                }
+                button.style.transform = 'translate(' + dx + 'px,' + dy + 'px)';
+                setHoverTarget(targetUnderPointer(moveEvent.clientX, moveEvent.clientY));
+            }
+            function cleanup() {
+                document.removeEventListener('pointermove', move);
+                document.removeEventListener('pointerup', end);
+                document.removeEventListener('pointercancel', cleanup);
+                button.classList.remove('is-dragging');
+                button.style.transform = '';
+                setHoverTarget(null);
+            }
+            function end(upEvent) {
+                // 落点判定在 cleanup 前（is-dragging 穿透依赖拖动进行中状态）
+                var dropTargetId = moved ? targetUnderPointer(upEvent.clientX, upEvent.clientY) : null;
+                var overUp = document.elementFromPoint(upEvent.clientX, upEvent.clientY);
+                var overOwn = overUp ? overUp.closest('.webos-folder-overlay') : null;
+                // 拖出判定：松手在原文件夹浮层之外才算拖出（落回原浮层仅回弹）
+                var droppedOut = !overOwn || overOwn.dataset.folderId !== folder.id;
+                cleanup();
+                if (!moved) {
+                    return;
+                }
+                if (dropTargetId) {
+                    // 移入其它文件夹
+                    item.parent_folder = dropTargetId;
+                } else if (droppedOut) {
+                    // 拖出到桌面：列优先取空格，桌面已满则回弹留在文件夹
+                    var slot = findFreeDesktopSlot();
+                    if (!slot) {
+                        toast('桌面没有空位，已留在文件夹', 'error');
+                        refreshFolderOverlay(folder.id);
+                        return;
+                    }
+                    delete item.parent_folder;
+                    item.x = slot.x;
+                    item.y = slot.y;
+                } else {
+                    // 落回原文件夹：位置复原即可
+                    refreshFolderOverlay(folder.id);
+                    return;
+                }
+                var dropFolder = dropTargetId ? findDesktopItem(dropTargetId) : null;
+                saveWorkspace(false);
+                renderDesktop();
+                refreshFolderOverlay(folder.id);
+                if (dropFolder) {
+                    toast('已移入「' + dropFolder.title + '」');
+                } else {
+                    toast('已移出到桌面');
+                }
+            }
+            document.addEventListener('pointermove', move);
+            document.addEventListener('pointerup', end);
+            document.addEventListener('pointercancel', cleanup);
+        });
+    }
+
+    /** 文件夹右键「图标设置」（2.1.33）：内置图标目录网格点选，替换文件夹图标并持久化 */
+    function openFolderIconDialog(folderId) {
+        var folder = findDesktopItem(folderId);
+        var catalog = window.WEBOS_ICON_CATALOG;
+        if (!folder || folder.kind !== 'folder' || !catalog || !catalog.options) {
+            return;
+        }
+        var layer = layuiLayer();
+        if (!layer) {
+            toast('弹层组件未就绪，请刷新页面后重试', 'error');
+            return;
+        }
+        var index = null;
+        /** 单个目录图标 SVG：f=1 品牌实心（fill），f=0 lucide 线性（stroke） */
+        function catalogSvg(slug) {
+            var def = catalog.icons && catalog.icons[slug];
+            if (!def) {
+                return '';
+            }
+            return '<svg viewBox="' + def.v + '" ' + (Number(def.f) === 1
+                ? 'fill="currentColor" stroke="none"'
+                : 'fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"')
+                + ' aria-hidden="true">' + def.b + '</svg>';
+        }
+        index = layer.open({
+            type: 1,
+            title: '图标设置 - ' + folder.title,
+            area: ['560px', '460px'],
+            btn: ['取消'],
+            content: '<div class="webos-icon-grid">' + catalog.options.map(function (option) {
+                var slug = option.slug || option.value;
+                return '<button class="webos-icon-option' + (folder.icon === slug ? ' is-active' : '') + '" type="button"'
+                    + ' data-icon-slug="' + escapeHtml(slug) + '" title="' + escapeHtml(option.label) + '">'
+                    + '<span class="webos-icon-option-svg">' + catalogSvg(slug) + '</span>'
+                    + '<small>' + escapeHtml(option.label) + '</small></button>';
+            }).join('') + '</div>',
+            success: function (layero) {
+                // 点选即应用：写回 folder.icon → 持久化 → 重绘桌面与浮层
+                layero.on('click', '[data-icon-slug]', function () {
+                    folder.icon = this.dataset.iconSlug;
+                    saveWorkspace(false);
+                    renderDesktop();
+                    refreshFolderOverlay(folder.id);
+                    layer.close(index);
+                    toast('图标已更新');
+                });
+            }
+        });
     }
 
     function desktopEntryFromStart(startItem) {
@@ -4830,6 +5012,18 @@
         var application = findApplication(entry.app_id);
         if (application) {
             return applicationIconMarkup(application, className);
+        }
+
+        // 图标命中内置图标目录（沿用墨迹博客导航图标集）时渲染内联 SVG（文件夹「图标设置」入口），
+        // 未命中保持 FontAwesome 类渲染；目录数据来自静态内置资产 webos-icon-catalog.js
+        var catalog = window.WEBOS_ICON_CATALOG;
+        var slug = String(entry.icon || '');
+        if (catalog && catalog.icons && Object.prototype.hasOwnProperty.call(catalog.icons, slug)) {
+            var def = catalog.icons[slug];
+            return '<span class="' + className + ' is-svg-icon"><svg viewBox="' + def.v + '" ' + (Number(def.f) === 1
+                ? 'fill="currentColor" stroke="none"'
+                : 'fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"')
+                + ' aria-hidden="true">' + def.b + '</svg></span>';
         }
 
         return '<span class="' + className + '"><i class="' + safeIcon(entry.icon) + '"></i></span>';

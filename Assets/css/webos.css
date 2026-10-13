@@ -5140,6 +5140,75 @@ textarea:focus-visible,
     max-width: 100%;
 }
 
+/* 浮层子项拖拽中：穿透指针检测（elementFromPoint 判定落点）并压暗 */
+.webos-folder-item.is-dragging {
+    pointer-events: none;
+    opacity: 0.55;
+}
+
+/* 内置目录图标渲染（文件夹图标设置）：badge 内 SVG 按比例缩放 */
+.desktop-icon-badge.is-svg-icon svg {
+    width: 52%;
+    height: 52%;
+}
+
+/* 图标设置弹窗：目录网格点选 */
+.webos-icon-grid {
+    display: grid;
+    grid-template-columns: repeat(8, 1fr);
+    gap: 6px;
+    max-height: 340px;
+    padding: 12px 16px;
+    overflow-y: auto;
+}
+
+.webos-icon-option {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 8px 4px;
+    border: 1px solid transparent;
+    border-radius: 8px;
+    background: transparent;
+    color: #3f5169;
+    cursor: pointer;
+    font-family: inherit;
+    gap: 5px;
+    text-align: center;
+}
+
+.webos-icon-option:hover {
+    background: #eaf8f6;
+}
+
+.webos-icon-option.is-active {
+    border-color: #35d0ba;
+    background: #eaf8f6;
+    color: #087f75;
+}
+
+.webos-icon-option-svg {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 26px;
+    height: 26px;
+    font-size: 20px;
+}
+
+.webos-icon-option-svg svg {
+    width: 100%;
+    height: 100%;
+}
+
+.webos-icon-option small {
+    max-width: 100%;
+    overflow: hidden;
+    font-size: 12px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
 /* 浮层右上角关闭按钮 */
 .webos-folder-overlay-close {
     display: inline-flex;

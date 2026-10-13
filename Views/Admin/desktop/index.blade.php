@@ -288,6 +288,7 @@ layui.use(['element', 'form', 'jquery', 'layer', 'toast', 'button', 'popup'], fu
 <script src="{{ asset('CmsProUi/component/highlight.js/languages/php.min.js') }}"></script>
 <script src="{{ asset('CmsProUi/component/highlight.js/languages/sql.min.js') }}"></script>
 <script src="{{ asset('CmsProUi/component/highlight.js/languages/xml.min.js') }}"></script>
+<script src="{{ asset('apps/cmspro.webos/js/webos-icon-catalog.js') }}?v={{ $webosAssetVersion }}"></script>
 <script src="{{ asset('apps/cmspro.webos/js/webos.js') }}?v={{ $webosAssetVersion }}"></script>
 </body>
 </html>
