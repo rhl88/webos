@@ -5146,6 +5146,13 @@ textarea:focus-visible,
     opacity: 0.55;
 }
 
+/* 浮层子项拖拽拖影：克隆节点挂 body 跟随指针，脱离浮层后 color:inherit 会继承 body 颜色，
+   这里显式补白色文字并加投影，保证在浅色壁纸上仍可辨识 */
+.webos-folder-drag-ghost {
+    color: #fff;
+    filter: drop-shadow(0 10px 20px rgba(5, 15, 30, 0.4));
+}
+
 /* 内置目录图标渲染（文件夹图标设置）：badge 内 SVG 按比例缩放 */
 .desktop-icon-badge.is-svg-icon svg {
     width: 52%;

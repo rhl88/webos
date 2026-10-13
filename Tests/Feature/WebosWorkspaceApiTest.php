@@ -2745,8 +2745,16 @@ class WebosWorkspaceApiTest extends WebosTestCase
         $this->assertStringContainsString('function dragFolderItem(folder, item, button)', $script);
         $this->assertStringContainsString("overlay.querySelectorAll('.webos-folder-item').forEach", $script);
         $this->assertStringContainsString('dragFolderItem(folder, child, itemButton);', $script);
-        // 拖出修复（2.1.34）：fixed 定位脱出浮层网格 overflow 裁剪 + 拖出判定改浮层矩形几何计算
-        $this->assertStringContainsString("button.style.position = 'fixed';", $script);
+        // 拖出跟手修复（2.1.36）：拖影克隆节点挂 body 用 transform 跟随——浮层 backdrop-filter 会成为 fixed 后代的
+        // 包含块（left/top 相对浮层而非视口计算，图标偏移不跟手），网格 overflow-y:auto 又会裁剪出界子项
+        $this->assertStringContainsString('ghost = button.cloneNode(true);', $script);
+        $this->assertStringContainsString("ghost.classList.add('webos-folder-drag-ghost');", $script);
+        $this->assertStringContainsString('document.body.appendChild(ghost);', $script);
+        $this->assertStringContainsString("ghost.style.transform = 'translate(' + dx + 'px, ' + dy + 'px)';", $script);
+        $this->assertStringContainsString('ghost.remove();', $script);
+        $this->assertStringContainsString('.webos-folder-drag-ghost {', $stylesheet);
+        $this->assertStringNotContainsString("button.style.position = 'fixed';", $script);
+        // 拖出判定改浮层矩形几何计算（2.1.34）
         $this->assertStringContainsString('var startRect = button.getBoundingClientRect();', $script);
         $this->assertStringContainsString("var overlayNow = root.querySelector('.webos-folder-overlay[data-folder-id=", $script);
         $this->assertStringContainsString('overlayNow.getBoundingClientRect()', $script);

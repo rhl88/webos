@@ -2461,10 +2461,9 @@
             var startX = downEvent.clientX;
             var startY = downEvent.clientY;
             var startRect = button.getBoundingClientRect();
-            var grabDx = 0;
-            var grabDy = 0;
             var moved = false;
             var hoverTarget = null;
+            var ghost = null;
             button.setPointerCapture(downEvent.pointerId);
             downEvent.preventDefault();
             // 悬停目标：其它文件夹的桌面图标或打开中的浮层（原文件夹自身忽略）
@@ -2511,25 +2510,28 @@
                         return;
                     }
                     moved = true;
+                    // 拖影克隆节点挂到 body 跟随指针：浮层的 backdrop-filter 会成为 fixed 后代的包含块
+                    // （left/top 相对浮层而非视口计算，图标偏移不跟手），网格 overflow-y:auto 又会裁剪出界子项；
+                    // 克隆后脱离浮层，用 transform 位移跟随（transform 相对自身布局位置，不受包含块影响）
+                    ghost = button.cloneNode(true);
+                    ghost.classList.add('webos-folder-drag-ghost');
+                    ghost.style.cssText = 'position:fixed;left:' + startRect.left + 'px;top:' + startRect.top + 'px;'
+                        + 'width:' + startRect.width + 'px;margin:0;z-index:4000;pointer-events:none;';
+                    document.body.appendChild(ghost);
                     button.classList.add('is-dragging');
-                    // 脱出浮层网格容器的 overflow 裁剪：改为 fixed 定位跟手（按住点偏移，宽高固定防塌缩）
-                    grabDx = startX - startRect.left;
-                    grabDy = startY - startRect.top;
-                    button.style.width = startRect.width + 'px';
-                    button.style.position = 'fixed';
-                    button.style.zIndex = 4000;
-                    button.style.margin = '0';
                 }
-                button.style.left = (moveEvent.clientX - grabDx) + 'px';
-                button.style.top = (moveEvent.clientY - grabDy) + 'px';
+                ghost.style.transform = 'translate(' + dx + 'px, ' + dy + 'px)';
                 setHoverTarget(targetUnderPointer(moveEvent.clientX, moveEvent.clientY));
             }
             function cleanup() {
                 document.removeEventListener('pointermove', move);
                 document.removeEventListener('pointerup', end);
                 document.removeEventListener('pointercancel', cleanup);
+                if (ghost) {
+                    ghost.remove();
+                    ghost = null;
+                }
                 button.classList.remove('is-dragging');
-                button.style.cssText = '';
                 setHoverTarget(null);
             }
             function end(upEvent) {
