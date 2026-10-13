@@ -2949,6 +2949,9 @@ class WebosWorkspaceApiTest extends WebosTestCase
         $this->assertStringContainsString('function ignoreUpdateApp(appId)', $script);
         // 更新卡片：更新按钮下方忽略按钮（容器纵向排列天然满足「下面」），点击委托分发
         $this->assertStringContainsString('data-ignore-update-id="', $script);
+        // 更新列表版本号升级指向（2.1.52）：版本 xx => xxx（当前版本 → 最新版本）；更新来源详情补「最新版本」行
+        $this->assertStringContainsString("version = (app.version || '-') + ' => ' + (app.latest_version || '-');", $script);
+        $this->assertStringContainsString("items.push(['最新版本', 'v' + escapeHtml(app.latest_version || '-')]);", $script);
         $this->assertStringContainsString('title="忽略本次版本更新，应用发布更新版本后会重新提示"', $script);
         $this->assertStringContainsString(">忽略</button>", $script);
         $this->assertStringContainsString("event.target.closest('[data-ignore-update-id]')", $script);
