@@ -2738,7 +2738,15 @@ class WebosWorkspaceApiTest extends WebosTestCase
         $this->assertStringContainsString('function folderOverlayUnderPointer(clientX, clientY)', $script);
         $this->assertStringContainsString("over.closest('.webos-folder-overlay')", $script);
         $this->assertStringContainsString('overlay.dataset.folderId || null', $script);
-        $this->assertStringContainsString('function setOverlayTarget(node)', $script);
+        // 悬停高亮修复（2.1.37）：folderOverlayUnderPointer 返回的是文件夹 id 而非 DOM 节点，
+        // setOverlayTarget 须按 id 查节点并判空后再切类，否则对字符串取 classList 抛 TypeError
+        $this->assertStringContainsString('function setOverlayTarget(folderId)', $script);
+        $this->assertStringContainsString('var overlayTargetId = null;', $script);
+        $this->assertStringContainsString('function overlayNodeById(folderId)', $script);
+        $this->assertStringContainsString("overlayTargetId === folderId", $script);
+        $this->assertStringContainsString('prevNode.classList.remove(\'is-folder-target\');', $script);
+        $this->assertStringContainsString('nextNode.classList.add(\'is-folder-target\');', $script);
+        $this->assertStringNotContainsString('overlayTarget.classList.', $script);
         $this->assertStringContainsString('setOverlayTarget(folderOverlayUnderPointer(moveEvent.clientX, moveEvent.clientY));', $script);
         $this->assertMatchesRegularExpression("/entry\.parent_folder = dropOverlayId;/", $script);
         // 拖出文件夹（2.1.33）：浮层子项拖拽三去向——其它文件夹 / 桌面空格 / 落回原浮层回弹

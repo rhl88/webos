@@ -9664,17 +9664,27 @@
         }
 
         // 悬停浮层高亮提示可移入（与文件夹图标高亮互斥：指针下方只会命中其一）
-        var overlayTarget = null;
-        function setOverlayTarget(node) {
-            if (overlayTarget === node) {
+        // 入参是 folderOverlayUnderPointer 返回的文件夹 id（非 DOM 节点），按 id 查浮层节点再切换高亮类
+        var overlayTargetId = null;
+        function overlayNodeById(folderId) {
+            return root.querySelector('.webos-folder-overlay[data-folder-id="' + folderId + '"]');
+        }
+        function setOverlayTarget(folderId) {
+            if (overlayTargetId === folderId) {
                 return;
             }
-            if (overlayTarget) {
-                overlayTarget.classList.remove('is-folder-target');
+            if (overlayTargetId) {
+                var prevNode = overlayNodeById(overlayTargetId);
+                if (prevNode) {
+                    prevNode.classList.remove('is-folder-target');
+                }
             }
-            overlayTarget = node || null;
-            if (overlayTarget) {
-                overlayTarget.classList.add('is-folder-target');
+            overlayTargetId = folderId || null;
+            if (overlayTargetId) {
+                var nextNode = overlayNodeById(overlayTargetId);
+                if (nextNode) {
+                    nextNode.classList.add('is-folder-target');
+                }
             }
         }
 
