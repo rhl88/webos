@@ -2421,7 +2421,10 @@
         var rootRect = root.getBoundingClientRect();
         var anchor = desktopButtonById(folder.id);
         var anchorRect = anchor ? anchor.getBoundingClientRect() : null;
-        var overlayWidth = 328;
+        root.appendChild(overlay);
+        // 宽度按实际渲染值测量：CSS 宽度可随版本调整（2.1.42 加宽到 428px），
+        // 硬编码失准会让右侧越界翻转判定偏窄，浮层实际铺展区域超出计算值
+        var overlayWidth = overlay.offsetWidth || 428;
         var left = anchorRect ? anchorRect.right - rootRect.left + 10 : (rootRect.width - overlayWidth) / 2;
         if (anchorRect && left + overlayWidth > rootRect.width - 10) {
             left = anchorRect.left - rootRect.left - overlayWidth - 10;
@@ -2430,7 +2433,6 @@
         var top = anchorRect ? Math.max(10, anchorRect.top - rootRect.top) : Math.max(10, rootRect.height / 2);
         overlay.style.left = Math.round(left) + 'px';
         overlay.style.top = Math.round(top) + 'px';
-        root.appendChild(overlay);
         // 渲染后按实际高度收底，避免浮层超出桌面下缘
         var overlayHeight = overlay.offsetHeight;
         if (top + overlayHeight > rootRect.height - 10) {
@@ -2664,8 +2666,9 @@
                     item.x = slot.x;
                     item.y = slot.y;
                 } else {
-                    // 落回原文件夹：位置复原即可
+                    // 落回原文件夹：位置复原即可（拖出判定按浮层矩形，松手在浮层内视为放回）
                     refreshFolderOverlay(folder.id);
+                    toast('图标保留在文件夹内');
                     return;
                 }
                 var dropFolder = dropTargetId ? findDesktopItem(dropTargetId) : null;

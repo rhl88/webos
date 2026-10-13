@@ -2858,6 +2858,11 @@ class WebosWorkspaceApiTest extends WebosTestCase
         $this->assertStringContainsString('.webos-entry-pick-branch {', $stylesheet);
         $this->assertMatchesRegularExpression('/\.desktop-icon\.is-folder-target \.desktop-icon-badge\s*\{/', $stylesheet);
         $this->assertMatchesRegularExpression('/\.desktop-icon\.is-dragging\s*\{[^}]*pointer-events:\s*none;/', $stylesheet);
+        // 浮层定位宽度按实际渲染值测量（2.1.43）：2.1.42 CSS 加宽到 428px 后 JS 硬编码 328 未同步，
+        // 右侧越界翻转判定偏窄，浮层实际铺展区域超出计算值，拖出落点被压在浮层下（视觉无响应）
+        $this->assertStringContainsString('var overlayWidth = overlay.offsetWidth || 428;', $script);
+        // 拖出松手在浮层内（回弹）时有提示（2.1.43）：此前该分支完全无声，用户无法分辨拖出结果
+        $this->assertStringContainsString("toast('图标保留在文件夹内');", $script);
     }
 
     /** WebOS 自身菜单隐藏：安装挂载位置与入口树（入口管理/新建桌面入口）均不再出现「WebOS 管理桌面」 */
