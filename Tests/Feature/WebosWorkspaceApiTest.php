@@ -2839,8 +2839,8 @@ class WebosWorkspaceApiTest extends WebosTestCase
         $this->assertIsString($stylesheet);
         // 浮层玻璃拟态面板 + 子项网格 + 拖动穿透与悬停高亮
         $this->assertStringContainsString('.webos-folder-overlay {', $stylesheet);
-        // 2.1.42：浮层宽度 328px → 428px（用户需求加宽 100px）
-        $this->assertMatchesRegularExpression('/\.webos-folder-overlay \{[^}]*width: 428px;/', $stylesheet);
+        // 2.1.42/2.1.44：浮层宽度 328px → 428px → 438px（用户需求两轮加宽）
+        $this->assertMatchesRegularExpression('/\.webos-folder-overlay \{[^}]*width: 438px;/', $stylesheet);
         $this->assertStringContainsString('.webos-folder-overlay-grid {', $stylesheet);
         $this->assertStringContainsString('.webos-folder-item {', $stylesheet);
         // 2.1.32：浮层右上角关闭按钮 + 子项图标复用桌面 badge/label 结构（修复图片图标爆框）
@@ -2860,7 +2860,7 @@ class WebosWorkspaceApiTest extends WebosTestCase
         $this->assertMatchesRegularExpression('/\.desktop-icon\.is-dragging\s*\{[^}]*pointer-events:\s*none;/', $stylesheet);
         // 浮层定位宽度按实际渲染值测量（2.1.43）：2.1.42 CSS 加宽到 428px 后 JS 硬编码 328 未同步，
         // 右侧越界翻转判定偏窄，浮层实际铺展区域超出计算值，拖出落点被压在浮层下（视觉无响应）
-        $this->assertStringContainsString('var overlayWidth = overlay.offsetWidth || 428;', $script);
+        $this->assertStringContainsString('var overlayWidth = overlay.offsetWidth || 438;', $script);
         // 拖出松手在浮层内（回弹）时有提示（2.1.43）：此前该分支完全无声，用户无法分辨拖出结果
         $this->assertStringContainsString("toast('图标保留在文件夹内');", $script);
     }

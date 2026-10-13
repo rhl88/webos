@@ -2424,7 +2424,7 @@
         root.appendChild(overlay);
         // 宽度按实际渲染值测量：CSS 宽度可随版本调整（2.1.42 加宽到 428px），
         // 硬编码失准会让右侧越界翻转判定偏窄，浮层实际铺展区域超出计算值
-        var overlayWidth = overlay.offsetWidth || 428;
+        var overlayWidth = overlay.offsetWidth || 438;
         var left = anchorRect ? anchorRect.right - rootRect.left + 10 : (rootRect.width - overlayWidth) / 2;
         if (anchorRect && left + overlayWidth > rootRect.width - 10) {
             left = anchorRect.left - rootRect.left - overlayWidth - 10;
