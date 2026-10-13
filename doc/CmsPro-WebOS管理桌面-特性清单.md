@@ -1,7 +1,7 @@
 # CmsPro WebOS 管理桌面 · 特性清单
 
-> 文档版本：2.1.34 | 更新日期：2026-10-13
-> 应用版本：2.1.34 | 应用 ID：`cmspro.webos`
+> 文档版本：2.1.35 | 更新日期：2026-10-13
+> 应用版本：2.1.35 | 应用 ID：`cmspro.webos`
 
 ## 一、应用定位
 
@@ -82,6 +82,7 @@ WebOS 管理桌面是 CmsPro 后台的可选交互层，不替换系统后台框
 44. 浮层子项拖出（2.1.33，用户需求「打开文件夹后图标可拖出到桌面或其它文件夹」）：浮层子项绑定 `dragFolderItem(folder, item, button)` 指针拖拽（4px 位移阈值、`is-dragging` 压暗穿透 `pointer-events:none`、`transform` 跟随指针（2.1.34 改 `position:fixed` 定位）、悬停目标 `is-folder-target` 高亮），松手三去向——命中其它文件夹图标或打开中的浮层（`targetUnderPointer`，`data-folder-id` / 桌面按钮双通道）→ 改写 `parent_folder` 移入并提示；落点在原浮层之外（2.1.34 起按原浮层矩形几何判定）→ 删除 `parent_folder` 并 `findFreeDesktopSlot` 落桌面空格（桌面已满则回弹提示）；落回原浮层 → 仅回弹无操作；拖出/移入后 `saveWorkspace` + `renderDesktop` + `refreshFolderOverlay` 三联刷新，原子项 DOM 被浮层重绘移除天然规避 click 误触。
 45. 文件夹「图标设置」（2.1.33，用户需求）：桌面图标右键菜单最下面追加「图标设置」（`folder-icon` 动作，仅 `kind=folder` 项显示），打开内置图标目录弹窗（`openFolderIconDialog`，`webos-icon-grid` 八列网格 71 个选项、当前图标 `is-active` 高亮）点选即替换 `folder.icon` 并持久化重绘；图标目录沿用墨迹博客导航图标集（`IconCatalog::pickerPayload()` 全量导出为静态资产 `Assets/js/webos-icon-catalog.js` 定义 `window.WEBOS_ICON_CATALOG`，避免跨应用类依赖，视图在 `webos.js` 之前引入、`assetVersion()` 纳入缓存版本）；`entryIconMarkup` 新增 SVG 分流——icon 命中目录 `icons[slug]` 时输出内联 SVG（`f=1` 品牌实心 fill / `f=0` lucide 线性 stroke 1.8，`.desktop-icon-badge.is-svg-icon svg` 52% 缩放），未命中保持 FontAwesome 类渲染，服务层 icon 净化正则（字母数字空格下划线连字符）天然放行 slug 值。
 46. 浮层拖拽体验修复与弹窗细节（2.1.34，用户反馈四项）：①浮层子项拖出修复——拖动跟随从 `transform` 改为 `position:fixed` 定位（浮层网格 `overflow-y:auto` 会裁剪 transform 出界子项，fixed 使拖动项脱离浮层容器正常显示；记录 `startRect` 按抓取偏移对齐指针，`cleanup` 以 `cssText=''` 整体还原内联样式），拖出判定几何化——`end(upEvent)` 以原浮层 `getBoundingClientRect` 包含性判定松手点，杜绝玻璃拟态层 elementFromPoint hit-testing 失效导致的误判回弹；②拖桌面图标入打开中的浮层修复——`folderOverlayUnderPointer` 增加矩形几何兜底（elementFromPoint 未命中时按浮层矩形包含性回退定位，拖动项含文件夹仍禁止嵌套），修复「应用图标黏在指针上无法拖入」；③文件夹「图标设置」弹窗宽度调整为 616px（`area: ['616px', '460px']`）；④「新建 → 桌面入口」树弹窗叶子行图标统一 22px（`.webos-entry-pick-item > i`）。
+47. 首次载入桌面原生项丢失修复（2.1.35，用户反馈「首次进载入时文件夹没有显示在桌面」）：根因是首次载入 `bootstrapDesktopItems → normalizeDesktopItems` 的合法性过滤只放行「内置浏览器空 path 特判 + 站内路径 `safePath`」——而桌面原生项中文件夹的 `path` 被服务层强制置空、URL 链接的 `path` 为 http(s) 外链，二者每次载入都被 `safePath` 过滤丢弃，文件夹/URL 链接图标在桌面消失；且桌面被过滤后为空时走「初始数据」预置分支并静默保存，可能把数据库中的原生项一并抹掉。修复为过滤条件按 `kind` 放行桌面原生项（`item.kind === 'folder' || item.kind === 'url'`），普通应用/菜单入口仍须站内路径校验不变；`entryAssigned` 已有 kind 特判（2.1.28）不受影响。
 
 ## 四、数据结构
 
@@ -131,6 +132,7 @@ CmsproWebos/
 
 | 版本 | 日期 | 说明 |
 |---|---|---|
+| 2.1.35 | 2026-10-13 | 首次载入桌面原生项丢失修复（用户反馈「首次进载入时文件夹没有显示在桌面」）：根因是 bootstrapDesktopItems → normalizeDesktopItems 的合法性过滤只放行「内置浏览器空 path 特判 + 站内路径 safePath」，而文件夹 path 被服务层强制置空、URL 链接 path 为 http(s) 外链，二者每次载入都被过滤丢弃（文件夹/URL 链接图标桌面消失），且桌面被过滤为空时走初始数据预置分支并静默保存、可能把数据库中的原生项一并抹掉；修复为过滤条件按 kind 放行桌面原生项（item.kind === 'folder' \|\| item.kind === 'url'），普通入口仍须站内路径校验不变。137 测试 1538 断言通过。 |
 | 2.1.34 | 2026-10-13 | 浮层拖拽修复 + 弹窗细节（用户反馈四项）：①浮层子项拖出——拖动跟随从 transform 改 position:fixed 定位（浮层网格 overflow-y:auto 裁剪 transform 出界子项，fixed 脱离容器正常显示；记录 startRect 按抓取偏移对齐指针，cleanup 用 cssText='' 整体还原），拖出判定几何化——end(upEvent) 以原浮层 getBoundingClientRect 包含性判定松手点，杜绝玻璃拟态 backdrop-filter 层 elementFromPoint hit-testing 失效误判回弹；②拖桌面图标入打开中的浮层——folderOverlayUnderPointer 增加矩形几何兜底（elementFromPoint 未命中时按浮层矩形包含性回退定位，拖动项含文件夹仍禁止嵌套），修复「应用图标黏在指针上无法拖入」；③文件夹「图标设置」弹窗宽度 616px（area: ['616px', '460px']）；④「新建 → 桌面入口」树弹窗叶子行图标 22px（.webos-entry-pick-item > i）。137 测试 1538 断言通过。 |
 | 2.1.33 | 2026-10-13 | 浮层拖出 + 文件夹图标设置（用户需求）：①浮层子项绑定 dragFolderItem 指针拖拽（4px 阈值、is-dragging 压暗穿透、transform 跟随、悬停 is-folder-target 高亮），松手三去向——其它文件夹图标或打开中的浮层（targetUnderPointer 双通道）即移入、原浮层之外即删除 parent_folder 并 findFreeDesktopSlot 落桌面空格（桌面已满回弹）、落回原浮层仅回弹；拖出后 saveWorkspace+renderDesktop+refreshFolderOverlay 三联刷新。②桌面图标右键菜单最下面新增「图标设置」（folder-icon 动作，仅文件夹显示），openFolderIconDialog 弹窗八列网格点选 71 个内置图标即替换 folder.icon 并持久化重绘；图标目录沿用墨迹博客导航图标集（IconCatalog::pickerPayload 全量导出为静态资产 Assets/js/webos-icon-catalog.js 定义 window.WEBOS_ICON_CATALOG，避免跨应用依赖），视图提前引入且 assetVersion 纳入；entryIconMarkup 新增 SVG 分流（icons[slug] 命中 → is-svg-icon 内联 SVG，f=1 fill / f=0 stroke 1.8，badge 内 52% 缩放），未命中保持 FontAwesome。137 测试 1529 断言通过。 |
 | 2.1.32 | 2026-10-13 | 浮层关闭按钮 + 子项图标与桌面一致（用户需求）：①文件夹浮层头部右上角新增关闭按钮（webos-folder-overlay-close，data-folder-close 委托 closeFolderOverlay），与点击外部/失焦/Esc 并列第四路关闭；②浮层子项图标渲染复用桌面同款 desktop-icon-badge / desktop-icon-label 结构（原独立 webos-folder-item-icon 类无 is-app-icon 图片约束，应用图片图标原图尺寸爆框显示异常），应用图标统一规则组补 .webos-folder-overlay .desktop-icon-badge.is-app-icon 选择器（透明底 + img 等比缩放），废弃类与 span 规则移除。137 测试 1513 断言通过。 |

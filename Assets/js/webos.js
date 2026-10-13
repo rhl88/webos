@@ -683,8 +683,8 @@
 
     function normalizeDesktopItems(items) {
         return (items || []).filter(function (item) {
-            // 内置浏览器入口 path 为空（内容按 id 特判渲染），仅要求合法 id；其余项仍须站内路径
-            return item && item.id && (item.id === 'webos-browser' || safePath(item.path));
+            // 内置浏览器入口 path 为空（内容按 id 特判渲染），仅要求合法 id；桌面原生项（文件夹 path 置空、URL 链接为外链）按 kind 放行；其余项仍须站内路径
+            return item && item.id && (item.id === 'webos-browser' || item.kind === 'folder' || item.kind === 'url' || safePath(item.path));
         }).map(function (item, index) {
             return Object.assign({}, item, {
                 icon: safeIcon(item.icon),
