@@ -2862,6 +2862,11 @@ class WebosWorkspaceApiTest extends WebosTestCase
         $this->assertStringContainsString('.webos-url-form {', $stylesheet);
         $this->assertStringContainsString('.webos-entry-pick-list {', $stylesheet);
         $this->assertStringContainsString('.webos-entry-pick-branch {', $stylesheet);
+        // 「选择桌面入口」弹窗菜单徽章独立 22px 版本（2.1.47）：基础 .start-app-item-icon 是开始菜单
+        // 42px 口径不能动，弹窗内按 .webos-entry-pick-list 作用域独立声明，内部 <i> 字号 12px
+        $this->assertMatchesRegularExpression('/\.webos-entry-pick-list \.start-app-item-icon \{[^}]*width: 22px;[^}]*border-radius: 4px;/', $stylesheet);
+        $this->assertStringContainsString('.webos-entry-pick-list .start-app-item-icon i {', $stylesheet);
+        $this->assertMatchesRegularExpression('/\.webos-entry-pick-list \.start-app-item-icon i \{[^}]*font-size: 12px;/', $stylesheet);
         $this->assertMatchesRegularExpression('/\.desktop-icon\.is-folder-target \.desktop-icon-badge\s*\{/', $stylesheet);
         $this->assertMatchesRegularExpression('/\.desktop-icon\.is-dragging\s*\{[^}]*pointer-events:\s*none;/', $stylesheet);
         // 拖入打开中的浮层被遮挡修复（2.1.46）：.desktop-icons 容器自身 z-index 会创建层叠上下文，

@@ -5311,6 +5311,26 @@ textarea:focus-visible,
     text-align: center;
 }
 
+/* 「选择桌面入口」弹窗内的菜单徽章：基础 .start-app-item-icon 是开始菜单 42px/圆角 9px 口径，
+   直接调整会影响系统菜单，这里按弹窗作用域独立声明 22px 版本（与叶子行图标、应用图片对齐）；
+   徽章自身 font-size: 2px 压掉 FontAwesome 继承字号，内部 <i> 明确 12px */
+.webos-entry-pick-list .start-app-item-icon {
+    display: inline-flex;
+    flex: 0 0 22px;
+    align-items: center;
+    justify-content: center;
+    width: 22px;
+    height: 22px;
+    border-radius: 4px;
+    color: #fff;
+    background: #198ee8;
+    font-size: 2px;
+}
+
+.webos-entry-pick-list .start-app-item-icon i {
+    font-size: 12px;
+}
+
 /* 分支行应用图片图标：入口管理树的 img 约束挂在 .entry-tree-toggle 祖先下，弹窗内失配，
    应用 icon 接口图片按原始尺寸渲染爆框，这里收窄到 22px 等比缩放（与叶子行图标对齐） */
 .webos-entry-pick-branch .entry-tree-app-icon.is-app-icon img {
