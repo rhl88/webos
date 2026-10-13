@@ -1770,6 +1770,10 @@
             }
             items.push(['图标设置', 'fa-picture-o', 'folder-icon']);
         }
+        // URL 快捷方式：菜单最下面同样提供「图标设置」，复用文件夹的内置图标目录弹窗（2.1.50）
+        if (context.entry && context.entry.kind === 'url') {
+            items.push(['图标设置', 'fa-picture-o', 'folder-icon']);
+        }
         return items;
     }
 
@@ -2762,11 +2766,11 @@
         });
     }
 
-    /** 文件夹右键「图标设置」（2.1.33）：内置图标目录网格点选，替换文件夹图标并持久化 */
+    /** 右键「图标设置」（2.1.33，2.1.50 起文件夹与 URL 快捷方式共用）：内置图标目录网格点选，替换图标并持久化 */
     function openFolderIconDialog(folderId) {
         var folder = findDesktopItem(folderId);
         var catalog = window.WEBOS_ICON_CATALOG;
-        if (!folder || folder.kind !== 'folder' || !catalog || !catalog.options) {
+        if (!folder || (folder.kind !== 'folder' && folder.kind !== 'url') || !catalog || !catalog.options) {
             return;
         }
         var layer = layuiLayer();

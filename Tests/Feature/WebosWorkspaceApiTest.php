@@ -2796,6 +2796,9 @@ class WebosWorkspaceApiTest extends WebosTestCase
         // 文件夹右键「释放文件夹」（2.1.40）：仅有子项时显示，全部子项清 parent_folder 逐项取空格回桌面，
         // 桌面满时部分释放并提示余量；无子项点击提示，浮层开着时重绘
         $this->assertStringContainsString("items.push(['释放文件夹', 'fa-th-large', 'folder-release']);", $script);
+        // URL 快捷方式右键「图标设置」（2.1.50）：菜单最下面提供，复用文件夹的内置图标目录弹窗（kind 放宽 folder|url）
+        $this->assertStringContainsString("context.entry.kind === 'url') {\n            items.push(['图标设置', 'fa-picture-o', 'folder-icon']);", $script);
+        $this->assertStringContainsString("(folder.kind !== 'folder' && folder.kind !== 'url')", $script);
         $this->assertStringContainsString("if (action === 'folder-release') {", $script);
         $this->assertStringContainsString('function releaseFolderItems(folderId) {', $script);
         $this->assertStringContainsString('delete child.parent_folder;', $script);

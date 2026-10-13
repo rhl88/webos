@@ -1,7 +1,7 @@
 # CmsPro WebOS 管理桌面 · 特性清单
 
-> 文档版本：2.1.49 | 更新日期：2026-10-13
-> 应用版本：2.1.49 | 应用 ID：`cmspro.webos`
+> 文档版本：2.1.50 | 更新日期：2026-10-13
+> 应用版本：2.1.50 | 应用 ID：`cmspro.webos`
 
 ## 一、应用定位
 
@@ -97,6 +97,7 @@ WebOS 管理桌面是 CmsPro 后台的可选交互层，不替换系统后台框
 59. 「选择桌面入口」弹窗菜单徽章独立样式（2.1.47，用户需求）：弹窗分支行的 `.start-app-item-icon`（非应用分支的菜单徽章）此前直接继承开始菜单基础样式（42px/圆角 9px/字号 18px），行高紧凑下徽章撑爆行。按用户给定的口径在 `.webos-entry-pick-list` 作用域内**独立声明 22px 版本**（`flex: 0 0 22px`、22×22、圆角 4px、白字、#198ee8 底、徽章自身 `font-size: 2px` 压掉 FontAwesome 继承字号），内部 `<i>` 明确 `font-size: 12px`——与叶子行 22px 裸图标（2.1.34）、分支行应用图片 22px（2.1.39）三者对齐；开始菜单基础样式不受影响。补 3 条断言（22px+圆角正则、内部 `<i>` 12px 正则）。
 60. 浮层标题点击原地重命名（2.1.48，用户需求「打开桌面文件夹，可以点击文件夹名字编辑文件夹的名字」）：文件夹浮层标题（`<strong>`）加 `data-folder-rename` + hover 下划线提示「点击重命名」；点击后原地替换为 `.webos-folder-overlay-rename` 输入框（自动聚焦全选，maxlength 60），Enter/失焦确认、Esc 取消（`stopPropagation` 防冒泡全局快捷键），`finished` 标志拦住 Enter 确认后 blur 的二次触发；确认逻辑与右键「重命名」（`renameDesktopIcon`）同口径——trim、非空、超长由 maxlength 限制、仅修改 `desktop_items[].title` 桌面显示名称（应用/菜单不受影响），改名后 `renderDesktop()` 更新桌面图标标题 + 静默保存 + `refreshFolderOverlay` 重建浮层回到标题态；空名/取消静默还原不弹错。输入框样式适配玻璃拟态浮层（半透明白底、白字、聚焦加亮），flex 头部内可收缩。
 61. 编辑态误关修复（2.1.49，用户反馈点击文件夹名字报 `Uncaught NotFoundError: Failed to execute 'remove' on 'Element'… at closeFolderOverlay at HTMLDocument`）：2.1.48 的原地重命名点击标题后 `titleNode.replaceWith(input)` 把 `<strong>` 移出文档，而**同一次 click 事件仍沿派发时快照的旧路径冒泡到 document**——全局「点击浮层外关闭」判定里 `event.target` 是已 detach 的 strong，`closest('.webos-folder-overlay')` 恒为 null，被误判为「浮层外点击」→ 编辑态刚建立浮层即被 `closeFolderOverlay` 关闭，并对已被移走/移除的节点执行 remove 抛 NotFoundError。修复为判定追加 `event.target.isConnected`——detached target 不参与「浮层外点击」判定；正常场景（点击浮层外关闭、点击浮层内不关、失焦确认保存）全部不受影响。连带更新 2.1.46 时代的旧精确子串断言。
+62. URL 快捷方式右键「图标设置」（2.1.50，用户需求）：URL 快捷方式右键菜单最下面新增「图标设置」（置于「删除图标」之后），直接复用文件夹的内置图标目录弹窗——`openFolderIconDialog` 的 kind 校验放宽为 `folder|url` 共用，点选即写回 `item.icon` 并持久化、重绘桌面；URL 项无文件夹浮层，`refreshFolderOverlay` 按当前浮层 id 早退零影响。图标渲染链路 kind 无关（`entryIconMarkup` 通用：应用图标 → 目录 SVG → FontAwesome），选中目录 slug 后桌面与弹窗内自动渲染内联 SVG。补 2 条断言（url 菜单项、kind 放宽）。
 
 ## 四、数据结构
 
@@ -146,6 +147,7 @@ CmsproWebos/
 
 | 版本 | 日期 | 说明 |
 |---|---|---|
+| 2.1.50 | 2026-10-13 | URL 快捷方式右键「图标设置」（用户需求）：右键菜单最下面提供「图标设置」，复用文件夹的内置图标目录弹窗（kind 校验放宽为 folder|url），点选即替换图标并持久化。137 测试 1584 断言通过。 |
 | 2.1.49 | 2026-10-13 | 编辑态误关修复（用户反馈点击文件夹名字报 NotFoundError）：原地重命名 replaceWith 旧标题节点后，同一次 click 仍沿旧路径冒泡到 document，detached target 被「点击浮层外关闭」判定误判导致浮层被关并对已移走节点 remove 抛错；判定追加 event.target.isConnected，detached 目标不参与浮层外判定；连带更新旧子串断言。137 测试 1582 断言通过。 |
 | 2.1.48 | 2026-10-13 | 浮层标题点击原地重命名（用户需求）：打开文件夹浮层后点击标题名字原地变输入框（自动聚焦全选），Enter/失焦确认、Esc 取消；仅改桌面显示名称，桌面图标与浮层标题同步更新并静默保存；与右键「重命名」同口径。137 测试 1581 断言通过。 |
 | 2.1.47 | 2026-10-13 | 「选择桌面入口」弹窗菜单徽章独立样式（用户需求）：.start-app-item-icon 与开始菜单共用 42px 基础口径，弹窗内按 .webos-entry-pick-list 作用域独立声明 22px/圆角 4px 版本，内部 <i> 字号 12px，与叶子行、应用图片对齐；开始菜单不受影响。137 测试 1576 断言通过。 |
