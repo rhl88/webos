@@ -2792,6 +2792,13 @@ class WebosWorkspaceApiTest extends WebosTestCase
         $this->assertStringContainsString('items.push([\'图标设置\', \'fa-picture-o\', \'folder-icon\']);', $script);
         $this->assertStringContainsString("if (action === 'folder-icon') {", $script);
         $this->assertStringContainsString('function openFolderIconDialog(folderId)', $script);
+        // 文件夹右键「释放文件夹」（2.1.40）：仅有子项时显示，全部子项清 parent_folder 逐项取空格回桌面，
+        // 桌面满时部分释放并提示余量；无子项点击提示，浮层开着时重绘
+        $this->assertStringContainsString("items.push(['释放文件夹', 'fa-th-large', 'folder-release']);", $script);
+        $this->assertStringContainsString("if (action === 'folder-release') {", $script);
+        $this->assertStringContainsString('function releaseFolderItems(folderId) {', $script);
+        $this->assertStringContainsString('delete child.parent_folder;', $script);
+        $this->assertStringContainsString("toast('桌面没有空位，已释放 ' + released + ' 项，剩余 ' + (children.length - released) + ' 项留在文件夹', 'error');", $script);
         $this->assertStringContainsString('folder.icon = this.dataset.iconSlug;', $script);
         $this->assertStringContainsString('.webos-icon-grid {', $stylesheet);
         $this->assertStringContainsString('.desktop-icon-badge.is-svg-icon svg {', $stylesheet);

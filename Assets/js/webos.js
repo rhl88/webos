@@ -1706,8 +1706,11 @@
         if (context.application && Number(context.application.is_system) !== 1) {
             items.push(['卸载应用', 'fa-times-circle', 'uninstall', 'danger']);
         }
-        // 文件夹特有：图标设置（内置图标目录点选，2.1.33），置于菜单最下面
+        // 文件夹特有：有子项时提供「释放文件夹」（全部子项移回桌面，2.1.40），图标设置置于菜单最下面
         if (context.entry && context.entry.kind === 'folder') {
+            if (folderChildren(context.entry.id).length) {
+                items.push(['释放文件夹', 'fa-th-large', 'folder-release']);
+            }
             items.push(['图标设置', 'fa-picture-o', 'folder-icon']);
         }
         return items;
@@ -1926,6 +1929,11 @@
         // 文件夹右键「图标设置」：内置图标目录弹窗点选替换文件夹图标
         if (action === 'folder-icon') {
             openFolderIconDialog(iconId);
+            return;
+        }
+        // 文件夹右键「释放文件夹」：全部子项移回桌面
+        if (action === 'folder-release') {
+            releaseFolderItems(iconId);
             return;
         }
         if (action === 'refresh') {
@@ -2447,6 +2455,48 @@
         saveWorkspace(false);
         refreshFolderOverlay(folderId);
         toast('已移回桌面');
+    }
+
+    /**
+     * 右键「释放文件夹」（2.1.40）：全部子项清 parent_folder 移回桌面，逐项列优先取空格。
+     * 每释放一项后 findFreeDesktopSlot 重新计算占用（已释放项占位），后释放的自动让出格子；
+     * 桌面可视区域满时释放能放下的部分并提示余量，未释放项保留在文件夹内。
+     */
+    function releaseFolderItems(folderId) {
+        var folder = findDesktopItem(folderId);
+        if (!folder || folder.kind !== 'folder') {
+            return;
+        }
+        var children = folderChildren(folderId);
+        if (!children.length) {
+            toast('文件夹内没有可释放的图标', 'error');
+            return;
+        }
+        var released = 0;
+        for (var index = 0; index < children.length; index += 1) {
+            var slot = findFreeDesktopSlot();
+            if (!slot) {
+                break;
+            }
+            var child = children[index];
+            delete child.parent_folder;
+            child.x = slot.x;
+            child.y = slot.y;
+            released += 1;
+        }
+        if (!released) {
+            toast('桌面没有空位，未能释放', 'error');
+            return;
+        }
+        saveWorkspace(false);
+        renderDesktop();
+        // 浮层开着时重绘为释放后的内容（全部释放则显示空态提示）；未打开则无操作
+        refreshFolderOverlay(folderId);
+        if (released < children.length) {
+            toast('桌面没有空位，已释放 ' + released + ' 项，剩余 ' + (children.length - released) + ' 项留在文件夹', 'error');
+        } else {
+            toast('已释放 ' + released + ' 项到桌面');
+        }
     }
 
     /** 浮层子项拖拽（2.1.33）：拖出文件夹落桌面空格，或拖入其它文件夹图标 / 打开中的浮层 */
