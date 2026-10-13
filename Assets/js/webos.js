@@ -3210,6 +3210,11 @@
         saveWorkspace();
         toast('已忽略 ' + (app.name || appId) + ' 本次版本更新');
         syncUpdateBadge();
+        // 工具栏「忽略的应用(x)」计数同步（2.1.53）
+        var toggle = document.querySelector('[data-ignored-updates-toggle]');
+        if (toggle) {
+            toggle.textContent = '忽略的应用(' + state.workspace.preferences.ignored_updates.length + ')';
+        }
         var center = document.querySelector('[data-app-center]');
         if (center && state.appCenterTab === 'updates') {
             var status = center.querySelector('[data-app-status]');
@@ -3220,6 +3225,91 @@
             if (content) {
                 content.innerHTML = renderApplicationCards(visibleUpdateApps(), 'updates');
             }
+        }
+    }
+
+    /** 忽略键解析为条目：应用名从更新列表/已安装目录回查，键非法（无 app_id@版本）的跳过（2.1.53） */
+    function ignoredUpdateEntries() {
+        var entries = [];
+        (Array.isArray(state.workspace.preferences.ignored_updates) ? state.workspace.preferences.ignored_updates : []).forEach(function (key) {
+            var sep = String(key).indexOf('@');
+            if (sep <= 0) {
+                return;
+            }
+            var appId = key.slice(0, sep);
+            var app = (state.updateApps || []).find(function (item) { return item.app_id === appId; }) || findCatalogApp(appId);
+            entries.push({
+                key: key,
+                name: app ? (app.name || appId) : appId,
+                version: key.slice(sep + 1)
+            });
+        });
+        return entries;
+    }
+
+    /** 「忽略的应用」弹窗内容：每条忽略键一行（应用名 + 忽略的版本 + 移除忽略），空集合显示空态（2.1.53） */
+    function ignoredUpdatesListMarkup() {
+        var entries = ignoredUpdateEntries();
+        if (!entries.length) {
+            return '<div class="webos-ignored-updates-empty"><i class="fa fa-check-circle"></i>没有忽略的版本更新</div>';
+        }
+        return '<div class="webos-ignored-updates-list">' + entries.map(function (entry) {
+            return '<div class="webos-ignored-updates-item"><span class="webos-ignored-updates-name">' + escapeHtml(entry.name)
+                + '</span><small>忽略版本 v' + escapeHtml(entry.version) + '</small>'
+                + '<button class="small-action" type="button" data-unignore-key="' + escapeHtml(entry.key) + '">移除忽略</button></div>';
+        }).join('') + '</div>';
+    }
+
+    /** 打开「忽略的应用」弹窗：查看被忽略的版本更新并可逐条移除忽略（2.1.53） */
+    function openIgnoredUpdatesDialog() {
+        var layer = layuiLayer();
+        if (!layer) {
+            toast('弹层组件未就绪，请刷新页面后重试', 'error');
+            return;
+        }
+        layer.open({
+            type: 1,
+            title: '忽略的应用',
+            area: ['480px', 'auto'],
+            btn: ['关闭'],
+            content: '<div class="webos-ignored-updates" data-ignored-updates-panel>' + ignoredUpdatesListMarkup() + '</div>',
+            success: function (layero) {
+                // 移除忽略后弹窗列表即时刷新（同一条 layero 内重绘内容）
+                layero.on('click', '[data-unignore-key]', function () {
+                    removeIgnoredUpdate(this.dataset.unignoreKey, layero);
+                });
+            }
+        });
+    }
+
+    /** 移除忽略：从偏好删除指定键并持久化，恢复该应用本版本的更新提示；同步角标、更新 Tab 与弹窗列表（2.1.53） */
+    function removeIgnoredUpdate(key, dialogLayero) {
+        var list = Array.isArray(state.workspace.preferences.ignored_updates)
+            ? state.workspace.preferences.ignored_updates.filter(function (item) { return item !== key; })
+            : [];
+        state.workspace.preferences.ignored_updates = sanitizeIgnoredUpdates(list);
+        saveWorkspace(false);
+        toast('已恢复该版本的更新提示');
+        syncUpdateBadge();
+        var center = document.querySelector('[data-app-center]');
+        if (center && state.appCenterTab === 'updates') {
+            var status = center.querySelector('[data-app-status]');
+            var content = center.querySelector('[data-app-content]');
+            if (status) {
+                renderUpdatesStatus(status);
+            }
+            if (content) {
+                content.innerHTML = renderApplicationCards(visibleUpdateApps(), 'updates');
+            }
+        }
+        var panel = dialogLayero ? dialogLayero[0].querySelector('[data-ignored-updates-panel]') : null;
+        if (panel) {
+            panel.innerHTML = ignoredUpdatesListMarkup();
+        }
+        // 工具栏「忽略的应用(x)」计数同步
+        var toggle = document.querySelector('[data-ignored-updates-toggle]');
+        if (toggle) {
+            toggle.textContent = '忽略的应用(' + state.workspace.preferences.ignored_updates.length + ')';
         }
     }
 
@@ -4570,6 +4660,13 @@
     }
 
     function appCenterExtrasMarkup(tab) {
+        // 应用更新：「检查可用版本并查看更新说明」同行最右——忽略的应用计数入口，弹窗内可移除忽略（2.1.53）
+        if (tab === 'updates') {
+            var ignoredCount = Array.isArray(state.workspace.preferences.ignored_updates)
+                ? state.workspace.preferences.ignored_updates.length : 0;
+            return '<button class="webos-button secondary compact" type="button" data-ignored-updates-toggle>'
+                + '忽略的应用(' + ignoredCount + ')</button>';
+        }
         // 安装记录：类型筛选与右上角搜索框并排
         if (tab === 'records') {
             return '<label class="app-center-filter"><i class="fa fa-filter"></i>'
@@ -8793,6 +8890,13 @@
         var ignoreUpdate = event.target.closest('[data-ignore-update-id]');
         if (ignoreUpdate) {
             ignoreUpdateApp(ignoreUpdate.dataset.ignoreUpdateId);
+            return;
+        }
+
+        // 应用更新工具栏「忽略的应用(x)」：弹窗查看被忽略的版本更新并支持移除忽略（2.1.53）
+        var ignoredToggle = event.target.closest('[data-ignored-updates-toggle]');
+        if (ignoredToggle) {
+            openIgnoredUpdatesDialog();
             return;
         }
 

@@ -2949,6 +2949,14 @@ class WebosWorkspaceApiTest extends WebosTestCase
         $this->assertStringContainsString('function ignoreUpdateApp(appId)', $script);
         // 更新卡片：更新按钮下方忽略按钮（容器纵向排列天然满足「下面」），点击委托分发
         $this->assertStringContainsString('data-ignore-update-id="', $script);
+        // 「忽略的应用(x)」入口与移除忽略（2.1.53）：工具栏同行最右计数入口，弹窗查看/逐条移除，
+        // 忽略与移除均同步计数、角标与更新 Tab 列表
+        $this->assertStringContainsString("data-ignored-updates-toggle>", $script);
+        $this->assertStringContainsString("'忽略的应用(' + ignoredCount + ')</button>'", $script);
+        $this->assertStringContainsString('function ignoredUpdateEntries()', $script);
+        $this->assertStringContainsString('function openIgnoredUpdatesDialog()', $script);
+        $this->assertStringContainsString('function removeIgnoredUpdate(key, dialogLayero)', $script);
+        $this->assertStringContainsString("data-unignore-key=\"", $script);
         // 更新列表版本号升级指向（2.1.52）：版本 xx => xxx（当前版本 → 最新版本）；更新来源详情补「最新版本」行
         $this->assertStringContainsString("version = (app.version || '-') + ' => ' + (app.latest_version || '-');", $script);
         $this->assertStringContainsString("items.push(['最新版本', 'v' + escapeHtml(app.latest_version || '-')]);", $script);
@@ -2957,7 +2965,7 @@ class WebosWorkspaceApiTest extends WebosTestCase
         $this->assertStringContainsString("event.target.closest('[data-ignore-update-id]')", $script);
         $this->assertStringContainsString('ignoreUpdateApp(ignoreUpdate.dataset.ignoreUpdateId);', $script);
         // 角标/状态栏/更新列表/WebOS 自身更新提示统一走可见口径（忽略后不计不显示）；9 处含函数定义本身
-        $this->assertSame(9, substr_count($script, 'visibleUpdateApps()'));
+        $this->assertSame(10, substr_count($script, 'visibleUpdateApps()'));
         $this->assertStringNotContainsString("renderApplicationCards(state.updateApps, 'updates')", $script);
         $this->assertStringNotContainsString("state.updateApps.find(function (app) { return app.app_id === 'cmspro.webos'; })", $script);
         // 三层同步：state 默认偏好 / normalizePreferences / 服务层 DEFAULT + 净化 + 验证规则

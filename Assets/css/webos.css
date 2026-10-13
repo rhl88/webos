@@ -5475,6 +5475,49 @@ textarea:focus-visible,
     line-height: 16px;
 }
 
+/* 「忽略的应用」弹窗（2.1.53）：每条忽略键一行（应用名 + 版本 + 移除按钮），空集合显示空态 */
+.webos-ignored-updates-list {
+    display: flex;
+    flex-direction: column;
+}
+
+.webos-ignored-updates-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 9px 4px;
+    border-bottom: 1px solid #eef1f5;
+}
+
+.webos-ignored-updates-item:last-child {
+    border-bottom: 0;
+}
+
+.webos-ignored-updates-name {
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-weight: 600;
+}
+
+.webos-ignored-updates-item small {
+    flex: 0 0 auto;
+    color: #7a8794;
+}
+
+.webos-ignored-updates-empty {
+    padding: 26px 0;
+    text-align: center;
+    color: #7a8794;
+}
+
+.webos-ignored-updates-empty i {
+    margin-right: 6px;
+    color: #16b88d;
+}
+
 /* 应用操作弹窗 */
 .action-dialog-card {
     display: flex;
