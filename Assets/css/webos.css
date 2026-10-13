@@ -227,6 +227,20 @@ textarea:focus-visible,
     background: #f0a51b;
 }
 
+/* 文件夹与 URL 快捷方式徽章固定背景色（2.1.51）：文件夹用全局文件夹橙 var(--webos-folder)（与开始菜单
+   目录卡片一致），URL 快捷方式固定与浏览器一致的绿色 #16b88d（桌面轮换 4n+2 档），二者均不参与
+   .desktop-icon:nth-child 的位置彩色轮换；置于全部轮换规则之后，与轮换同特异性（0,3,0）按源顺序胜出，
+   文件夹浮层子项（无 .desktop-icon 祖先）由独立前缀规则覆盖默认蓝 */
+.desktop-icon .desktop-icon-badge.is-folder-badge,
+.webos-folder-overlay-grid .desktop-icon-badge.is-folder-badge {
+    background: var(--webos-folder);
+}
+
+.desktop-icon .desktop-icon-badge.is-url-badge,
+.webos-folder-overlay-grid .desktop-icon-badge.is-url-badge {
+    background: #16b88d;
+}
+
 /* 图标名称文字：默认无效果（OS 设置「图标文字效果」可选文字阴影/深色底衬，挂 .desktop-icons[data-label-effect]） */
 .desktop-icon-label {
     display: inline-block;

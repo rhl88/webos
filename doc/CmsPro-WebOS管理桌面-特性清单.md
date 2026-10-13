@@ -1,7 +1,7 @@
 # CmsPro WebOS 管理桌面 · 特性清单
 
-> 文档版本：2.1.50 | 更新日期：2026-10-13
-> 应用版本：2.1.50 | 应用 ID：`cmspro.webos`
+> 文档版本：2.1.51 | 更新日期：2026-10-13
+> 应用版本：2.1.51 | 应用 ID：`cmspro.webos`
 
 ## 一、应用定位
 
@@ -98,6 +98,7 @@ WebOS 管理桌面是 CmsPro 后台的可选交互层，不替换系统后台框
 60. 浮层标题点击原地重命名（2.1.48，用户需求「打开桌面文件夹，可以点击文件夹名字编辑文件夹的名字」）：文件夹浮层标题（`<strong>`）加 `data-folder-rename` + hover 下划线提示「点击重命名」；点击后原地替换为 `.webos-folder-overlay-rename` 输入框（自动聚焦全选，maxlength 60），Enter/失焦确认、Esc 取消（`stopPropagation` 防冒泡全局快捷键），`finished` 标志拦住 Enter 确认后 blur 的二次触发；确认逻辑与右键「重命名」（`renameDesktopIcon`）同口径——trim、非空、超长由 maxlength 限制、仅修改 `desktop_items[].title` 桌面显示名称（应用/菜单不受影响），改名后 `renderDesktop()` 更新桌面图标标题 + 静默保存 + `refreshFolderOverlay` 重建浮层回到标题态；空名/取消静默还原不弹错。输入框样式适配玻璃拟态浮层（半透明白底、白字、聚焦加亮），flex 头部内可收缩。
 61. 编辑态误关修复（2.1.49，用户反馈点击文件夹名字报 `Uncaught NotFoundError: Failed to execute 'remove' on 'Element'… at closeFolderOverlay at HTMLDocument`）：2.1.48 的原地重命名点击标题后 `titleNode.replaceWith(input)` 把 `<strong>` 移出文档，而**同一次 click 事件仍沿派发时快照的旧路径冒泡到 document**——全局「点击浮层外关闭」判定里 `event.target` 是已 detach 的 strong，`closest('.webos-folder-overlay')` 恒为 null，被误判为「浮层外点击」→ 编辑态刚建立浮层即被 `closeFolderOverlay` 关闭，并对已被移走/移除的节点执行 remove 抛 NotFoundError。修复为判定追加 `event.target.isConnected`——detached target 不参与「浮层外点击」判定；正常场景（点击浮层外关闭、点击浮层内不关、失焦确认保存）全部不受影响。连带更新 2.1.46 时代的旧精确子串断言。
 62. URL 快捷方式右键「图标设置」（2.1.50，用户需求）：URL 快捷方式右键菜单最下面新增「图标设置」（置于「删除图标」之后），直接复用文件夹的内置图标目录弹窗——`openFolderIconDialog` 的 kind 校验放宽为 `folder|url` 共用，点选即写回 `item.icon` 并持久化、重绘桌面；URL 项无文件夹浮层，`refreshFolderOverlay` 按当前浮层 id 早退零影响。图标渲染链路 kind 无关（`entryIconMarkup` 通用：应用图标 → 目录 SVG → FontAwesome），选中目录 slug 后桌面与弹窗内自动渲染内联 SVG。补 2 条断言（url 菜单项、kind 放宽）。
+63. 文件夹与 URL 快捷方式徽章固定背景色（2.1.51，用户需求「文件夹的背景色固定为橙色，URL 的快捷方式图标背景色固定为和浏览器一样的绿色」）：桌面图标徽章背景此前参与 `.desktop-icon:nth-child` 位置彩色轮换（默认蓝/绿/紫/琥珀），文件夹与 URL 随位置变色。`entryIconMarkup`（无应用关联的徽章渲染）按 kind 追加修饰类 `is-folder-badge`/`is-url-badge`（目录 SVG 与 FontAwesome 两个分支都带）；CSS 固定色：文件夹用全局文件夹橙 `var(--webos-folder)`（#f0a11a，与开始菜单目录卡片一致）、URL 固定浏览器同款绿 `#16b88d`（桌面轮换 4n+2 档）；规则**置于全部轮换规则之后**且带 `.desktop-icon` 前缀保持与轮换同特异性（0,3,0）按源顺序胜出（首版误插 4n+2 之后会被 4n+3/4n+4 盖回，已修正归位），文件夹浮层子项（无 `.desktop-icon` 祖先）由 `.webos-folder-overlay-grid` 前缀规则同步固定，拖影克隆与「图标设置」目录 SVG 徽章均随类生效。补 3 条断言（kind 修饰类、CSS 固定色两档）。
 
 ## 四、数据结构
 
@@ -147,6 +148,7 @@ CmsproWebos/
 
 | 版本 | 日期 | 说明 |
 |---|---|---|
+| 2.1.51 | 2026-10-13 | 文件夹与 URL 快捷方式徽章固定背景色（用户需求）：entryIconMarkup 按 kind 追加 is-folder-badge/is-url-badge，文件夹橙 var(--webos-folder)（#f0a11a）、URL 浏览器同款绿 #16b88d，不再参与桌面位置彩色轮换；浮层子项同步固定。137 测试 1587 断言通过。 |
 | 2.1.50 | 2026-10-13 | URL 快捷方式右键「图标设置」（用户需求）：右键菜单最下面提供「图标设置」，复用文件夹的内置图标目录弹窗（kind 校验放宽为 folder|url），点选即替换图标并持久化。137 测试 1584 断言通过。 |
 | 2.1.49 | 2026-10-13 | 编辑态误关修复（用户反馈点击文件夹名字报 NotFoundError）：原地重命名 replaceWith 旧标题节点后，同一次 click 仍沿旧路径冒泡到 document，detached target 被「点击浮层外关闭」判定误判导致浮层被关并对已移走节点 remove 抛错；判定追加 event.target.isConnected，detached 目标不参与浮层外判定；连带更新旧子串断言。137 测试 1582 断言通过。 |
 | 2.1.48 | 2026-10-13 | 浮层标题点击原地重命名（用户需求）：打开文件夹浮层后点击标题名字原地变输入框（自动聚焦全选），Enter/失焦确认、Esc 取消；仅改桌面显示名称，桌面图标与浮层标题同步更新并静默保存；与右键「重命名」同口径。137 测试 1581 断言通过。 |

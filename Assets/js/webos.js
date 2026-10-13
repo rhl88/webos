@@ -5219,15 +5219,18 @@
         // 未命中保持 FontAwesome 类渲染；目录数据来自静态内置资产 webos-icon-catalog.js
         var catalog = window.WEBOS_ICON_CATALOG;
         var slug = String(entry.icon || '');
+        // 文件夹/URL 快捷方式徽章带 kind 修饰类：背景色固定（文件夹橙、URL 与浏览器一致绿），
+        // 不参与桌面图标位置彩色轮换（2.1.51）
+        var kindClass = entry.kind === 'folder' ? ' is-folder-badge' : (entry.kind === 'url' ? ' is-url-badge' : '');
         if (catalog && catalog.icons && Object.prototype.hasOwnProperty.call(catalog.icons, slug)) {
             var def = catalog.icons[slug];
-            return '<span class="' + className + ' is-svg-icon"><svg viewBox="' + def.v + '" ' + (Number(def.f) === 1
+            return '<span class="' + className + kindClass + ' is-svg-icon"><svg viewBox="' + def.v + '" ' + (Number(def.f) === 1
                 ? 'fill="currentColor" stroke="none"'
                 : 'fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"')
                 + ' aria-hidden="true">' + def.b + '</svg></span>';
         }
 
-        return '<span class="' + className + '"><i class="' + safeIcon(entry.icon) + '"></i></span>';
+        return '<span class="' + className + kindClass + '"><i class="' + safeIcon(entry.icon) + '"></i></span>';
     }
 
     function renderApplicationCards(apps, mode) {

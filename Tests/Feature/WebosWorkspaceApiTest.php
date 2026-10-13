@@ -2757,6 +2757,11 @@ class WebosWorkspaceApiTest extends WebosTestCase
         // 拖出跟手修复（2.1.36）：拖影克隆节点挂 body 用 transform 跟随——浮层 backdrop-filter 会成为 fixed 后代的
         // 包含块（left/top 相对浮层而非视口计算，图标偏移不跟手），网格 overflow-y:auto 又会裁剪出界子项
         $this->assertStringContainsString('ghost = button.cloneNode(true);', $script);
+        // 文件夹/URL 徽章固定背景色（2.1.51）：entryIconMarkup 按 kind 追加 is-folder-badge/is-url-badge 修饰类，
+        // 文件夹橙 var(--webos-folder)、URL 绿 #16b88d（浏览器同款），不参与 nth-child 位置彩色轮换
+        $this->assertStringContainsString("entry.kind === 'folder' ? ' is-folder-badge' : (entry.kind === 'url' ? ' is-url-badge' : '')", $script);
+        $this->assertStringContainsString('.desktop-icon .desktop-icon-badge.is-folder-badge', $stylesheet);
+        $this->assertMatchesRegularExpression('/\.desktop-icon \.desktop-icon-badge\.is-url-badge,\n\.webos-folder-overlay-grid \.desktop-icon-badge\.is-url-badge \{\n    background: #16b88d;/', $stylesheet);
         $this->assertStringContainsString("ghost.classList.add('webos-folder-drag-ghost');", $script);
         $this->assertStringContainsString('document.body.appendChild(ghost);', $script);
         $this->assertStringContainsString("ghost.style.transform = 'translate(' + dx + 'px, ' + dy + 'px)';", $script);
