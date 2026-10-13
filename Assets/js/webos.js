@@ -2263,39 +2263,55 @@
         });
     }
 
-    /** 入口树扁平化：递归收集叶子节点（depth 用于缩进展示层级） */
-    function flattenEntryTreeLeaves(nodes, depth, result) {
-        (nodes || []).forEach(function (node) {
-            if (node.type === 'leaf') {
-                result.push({ node: node, depth: depth });
-                return;
-            }
-            flattenEntryTreeLeaves(node.children, depth + 1, result);
-        });
-        return result;
-    }
-
-    /** 新建 > 桌面入口：复用入口管理「可用菜单」树（尚未固定到桌面的菜单叶子），点选即添加 */
+    /** 新建 > 桌面入口：树结构展示可用菜单（与入口管理「可用菜单」树同构，应用分支默认收起），点选叶子即添加 */
     function openNewEntryDialog() {
         var layer = layuiLayer();
         if (!layer) {
             toast('弹层组件未就绪，请刷新页面后重试', 'error');
             return;
         }
-        var leaves = flattenEntryTreeLeaves(buildEntryTree(), 0, []);
-        var rows = leaves.map(function (leaf) {
-            var node = leaf.node;
-            return '<button class="webos-entry-pick-item" type="button" data-pick-entry-id="' + escapeHtml(node.key) + '"'
-                + ' style="padding-left:' + (10 + leaf.depth * 18) + 'px" title="' + escapeHtml(node.path || '') + '">'
-                + '<i class="' + safeIcon(node.icon) + '"></i><span>' + escapeHtml(node.title) + '</span></button>';
-        }).join('');
-        var index = layer.open({
+        var index = null;
+        var emptyMarkup = '<div class="webos-entry-pick-empty">所有菜单都已固定到桌面</div>';
+        /** 弹窗内树节点：分支展开/收起（独立于入口管理面板的展开状态），叶子点选即添加 */
+        function pickNodeMarkup(node, depth) {
+            var indent = ' style="margin-left:' + (depth * 20) + 'px"';
+            if (node.type === 'leaf') {
+                return '<button class="webos-entry-pick-item" type="button" data-pick-entry-id="' + escapeHtml(node.key) + '"'
+                    + indent + ' title="' + escapeHtml(node.path || '') + '">'
+                    + '<i class="' + safeIcon(node.icon) + '"></i><span>' + escapeHtml(node.title) + '</span></button>';
+            }
+            var expanded = entryPickExpanded.has(node.key);
+            var nodeIcon = node.type === 'app' && node.application
+                ? applicationIconMarkup(node.application, 'entry-tree-app-icon')
+                : '<span class="start-app-item-icon"><i class="' + node.icon + '"></i></span>';
+            return '<button class="webos-entry-pick-branch" type="button" data-pick-branch-id="' + escapeHtml(node.key) + '"'
+                + indent + ' aria-expanded="' + (expanded ? 'true' : 'false') + '">'
+                + '<i class="fa ' + (expanded ? 'fa-chevron-down' : 'fa-chevron-right') + '"></i>'
+                + nodeIcon
+                + '<strong>' + escapeHtml(node.title) + '</strong>'
+                + '<small>' + node.children.length + ' 项</small></button>'
+                + (expanded ? node.children.map(function (child) { return pickNodeMarkup(child, depth + 1); }).join('') : '');
+        }
+        function pickListMarkup() {
+            return buildEntryTree().map(function (node) { return pickNodeMarkup(node, 0); }).join('');
+        }
+        index = layer.open({
             type: 1,
             title: '选择桌面入口',
             area: ['440px', '480px'],
             btn: ['取消'],
-            content: '<div class="webos-entry-pick-list">' + (rows || '<div class="webos-entry-pick-empty">所有菜单都已固定到桌面</div>') + '</div>',
+            content: '<div class="webos-entry-pick-list">' + (pickListMarkup() || emptyMarkup) + '</div>',
             success: function (layero) {
+                // 分支行：展开/收起后重渲染列表（弹窗内独立展开集合，默认全部收起）
+                layero.on('click', '[data-pick-branch-id]', function () {
+                    var key = this.dataset.pickBranchId;
+                    if (entryPickExpanded.has(key)) {
+                        entryPickExpanded.delete(key);
+                    } else {
+                        entryPickExpanded.add(key);
+                    }
+                    layero.find('.webos-entry-pick-list').html(pickListMarkup() || emptyMarkup);
+                });
                 layero.on('click', '[data-pick-entry-id]', function () {
                     addDesktopEntry(findEntry(this.dataset.pickEntryId));
                     layer.close(index);
@@ -5695,6 +5711,8 @@
 
     /** 入口管理树中已展开的节点 key；默认全部收起 */
     var entryTreeExpanded = new Set();
+    // 「新建 > 桌面入口」弹窗的分支展开状态：与入口管理面板独立，每次打开弹窗默认全部收起
+    var entryPickExpanded = new Set();
 
     /** 应用市场搜索防抖计时器 */
     var marketSearchTimer = 0;

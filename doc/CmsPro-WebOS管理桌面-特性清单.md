@@ -1,7 +1,7 @@
 # CmsPro WebOS 管理桌面 · 特性清单
 
-> 文档版本：2.1.29 | 更新日期：2026-10-13
-> 应用版本：2.1.29 | 应用 ID：`cmspro.webos`
+> 文档版本：2.1.30 | 更新日期：2026-10-13
+> 应用版本：2.1.30 | 应用 ID：`cmspro.webos`
 
 ## 一、应用定位
 
@@ -73,9 +73,10 @@ WebOS 管理桌面是 CmsPro 后台的可选交互层，不替换系统后台框
 35. 桌面空白处右键菜单「显示桌面」下方提供「全屏显示 / 退出全屏」项（2.1.4 起从状态栏按钮迁移至此）：文案与图标随当前全屏状态动态切换（每次打开菜单实时读取 `document.fullscreenElement`，无需监听 fullscreenchange），点击复用 `toggleFullscreen` 全屏/退出；菜单行高紧凑化（padding 与间距调小），多菜单项时整体高度更低。
 36. 桌面右键「查看」子菜单防闪烁：子菜单与父菜单重叠 2px（`left: calc(100% - 2px)`）消除间隙断点，并有常驻透明 hover 桥（`.desktop-context-group.has-children::after`，宽 6px）覆盖衔接区——指针缓慢斜移经过父项与子菜单之间不再因两个 hover 同时断开而消失。
 37. 内置浏览器（`webos-browser`）：与应用中心同待遇的内置入口，对所有角色桌面默认预置（存量用户首次进入自动补齐一次并归位坐标），右键无删除项、固定单实例、窗口默认 90% × 86%；多标签页浏览——标签条提供新建/关闭/切换（全关后自动保留一个新标签页），iframe 按标签 id 保活（切换仅显隐、地址栏导航只改 src 不重建已开页面）；地址栏回车导航，URL 规范化仅允许 http(s)（无协议自动补 `https://`，其它协议拒绝并提示）；跨域限制降级：标签标题取目标 hostname（跨域 iframe 读不到页面 title）、刷新重设 src、部分站点禁止 iframe 嵌入（X-Frame-Options/CSP）时用「新窗口打开」兜底；新标签页展示 srcdoc 引导页；浏览器状态仅存于窗口运行时，窗口关闭即释放，不写入工作区。
-38. 桌面空白处右键「新建」子菜单（2.1.28 替代原「设置背景」，背景设置统一走 OS 设置）：**文件夹**——随机 id（`webos-folder-` 前缀 + 8 位随机串）创建 `kind=folder` 项并自动落空格；桌面图标拖到文件夹图标上（悬停高亮描边，拖动项本身含文件夹时禁止嵌套收纳）松手即整批移入并持久化；双击打开 macOS 式浮层——锚定图标位置展开（右侧越界自动翻转到左侧），头部显示名称与收纳数、网格区展示子项（最多四列滚动），子项单击打开、右键「从文件夹移除」移回桌面空格，点击浮层外部 / 窗口失焦 / Esc 关闭；删除文件夹时子项自动释放 `parent_folder` 并逐个归位空格；文件夹子项不占桌面网格空位（渲染统一过滤 `parent_folder`）。**桌面入口**——弹窗复用入口管理同源的可用菜单树（按应用聚合、缩进层级平铺展示叶子），点击行即以该菜单创建桌面入口。**URL 链接**——弹窗填入名称与地址（前端正则 `/^https?:\/\/[^\s]+$/i` 校验，后端 path 闭包与服务层白名单双重兜底，拒绝 ftp 等伪协议），`kind=url` 项打开时放行 http(s) 外链以 iframe 窗口承载（复用 `openablePath` 外链分支）。
+38. 桌面空白处右键「新建」子菜单（2.1.28 替代原「设置背景」，背景设置统一走 OS 设置）：**文件夹**——随机 id（`webos-folder-` 前缀 + 8 位随机串）创建 `kind=folder` 项并自动落空格；桌面图标拖到文件夹图标上（悬停高亮描边，拖动项本身含文件夹时禁止嵌套收纳）松手即整批移入并持久化；双击打开 macOS 式浮层——锚定图标位置展开（右侧越界自动翻转到左侧），头部显示名称与收纳数、网格区展示子项（最多四列滚动），子项单击打开、右键「从文件夹移除」移回桌面空格，点击浮层外部 / 窗口失焦 / Esc 关闭；删除文件夹时子项自动释放 `parent_folder` 并逐个归位空格；文件夹子项不占桌面网格空位（渲染统一过滤 `parent_folder`）。**桌面入口**——弹窗以树结构展示入口管理同源的可用菜单（与「可用菜单」树同构：应用聚合分支 + 系统菜单层级，分支显示子项数与展开箭头，默认全部收起，展开状态 `entryPickExpanded` 独立于入口管理面板），点选叶子行即创建桌面入口。**URL 链接**——弹窗填入名称与地址（前端正则 `/^https?:\/\/[^\s]+$/i` 校验，后端 path 闭包与服务层白名单双重兜底，拒绝 ftp 等伪协议），`kind=url` 项打开时放行 http(s) 外链以 iframe 窗口承载（复用 `openablePath` 外链分支）。
 39. WebOS 自身菜单隐藏（2.1.29）：「WebOS 管理桌面」菜单（`app_id=cmspro.webos` 或内置路径 `/admin/cmspro/webos`，判定函数 `isWebosSelfMenu`）不参与任何菜单挂载与入口选择——安装应用各终端「菜单挂载位置」下拉（常规安装与上传安装共用 `installMenuFieldsMarkup`）、入口管理「可用菜单」树（`buildEntryTree` 聚合时跳过）与右键「新建 → 桌面入口」候选均不再出现；作为挂载父级无意义，WebOS 内再开自身桌面是循环。
 40. 应用更新忽略（2.1.29）：更新卡片「更新」按钮下方「忽略」按钮（`data-ignore-update-id` 委托）把该应用本次版本写入偏好 `ignored_updates`（`app_id@latest_version`，缺失 latest 时退回当前版本）并随工作区持久化；前端 `visibleUpdateApps()` 为唯一可见口径——「应用更新」Tab 列表与状态栏、应用中心侧栏角标、桌面「应用中心」图标角标、WebOS 自身升级提醒（`checkWebosSelfUpdate`）全部过滤已忽略项；应用发布更新版本后键不匹配自动重新提示；三层净化一致：前端 `sanitizeIgnoredUpdates`（`app_id@版本号` 白名单正则、去重限 200）→ 控制器验证规则（无声明 `$validated` 丢键）→ 服务层 `sanitizeIgnoredUpdates`。
+41. 「新建 → 桌面入口」树结构弹窗（2.1.30）：候选列表改为与入口管理「可用菜单」树同构的树结构展示（`pickNodeMarkup`：应用/菜单分支行 `webos-entry-pick-branch` 含展开箭头、应用图标、名称与子项数，叶子行 `webos-entry-pick-item` 点选即添加），分支默认全部收起（展开集合 `entryPickExpanded` 独立于入口管理面板，不影响面板展开状态），点击分支行展开/收起并重渲染列表；原平铺缩进方案（`flattenEntryTreeLeaves`）移除。
 
 ## 四、数据结构
 
@@ -125,6 +126,7 @@ CmsproWebos/
 
 | 版本 | 日期 | 说明 |
 |---|---|---|
+| 2.1.30 | 2026-10-13 | 「新建 → 桌面入口」弹窗树结构化（用户需求）：候选列表改为与入口管理「可用菜单」树同构的树结构（pickNodeMarkup：分支行 webos-entry-pick-branch 含展开箭头/应用图标/名称/子项数，叶子行 webos-entry-pick-item 点选即添加），分支默认全部收起，展开集合 entryPickExpanded 独立于入口管理面板（互不影响），点击分支展开/收起重渲染列表；移除原平铺缩进方案 flattenEntryTreeLeaves；新增 .webos-entry-pick-branch 分支行样式（加粗、箭头置灰、子项数右对齐）。137 测试 1496 断言通过。 |
 | 2.1.29 | 2026-10-13 | WebOS 自身菜单隐藏 + 应用更新忽略按钮（用户需求）：①「WebOS 管理桌面」菜单不再出现在安装应用各终端「菜单挂载位置」下拉（新增 isWebosSelfMenu 判定 app_id=cmspro.webos 或内置路径，installMenuFieldsMarkup 渲染 option 前过滤，常规安装与上传安装共用）与入口管理「可用菜单」树（buildEntryTree walk 聚合跳过，右键「新建 → 桌面入口」候选同步隐藏）；②应用更新卡片「更新」按钮下方新增「忽略」按钮（data-ignore-update-id 委托 → ignoreUpdateApp），写入偏好 ignored_updates（app_id@latest_version，只忽略本次版本，应用发布更新版本后重新提示）并随工作区持久化；前端 visibleUpdateApps() 统一可见口径（更新 Tab 列表/状态栏、应用中心侧栏角标、桌面应用中心图标角标、WebOS 自身升级提醒全部过滤已忽略项），三层净化一致：前端 sanitizeIgnoredUpdates（白名单正则去重限 200）→ 控制器验证规则 → 服务层 sanitizeIgnoredUpdates。137 测试 1490 断言通过。 |
 | 2.1.28 | 2026-10-13 | 桌面右键新建文件夹/桌面入口/URL 链接（用户需求）：空白处右键移除「设置背景」（背景设置统一走 OS 设置），「查看」下新增「新建」子菜单三动作——**文件夹**：randomEntryId（`webos-folder-` 前缀+8 位随机）创建 kind=folder 项 findFreeDesktopSlot 落空格；拖动图标悬停文件夹高亮描边（is-folder-target，拖动穿透检测靠 .desktop-icon.is-dragging pointer-events:none + elementFromPoint，拖动项含文件夹禁止嵌套）松手整批写入 parent_folder 持久化；双击 openFolderOverlay macOS 式浮层（328px 玻璃拟态锚定图标展开、右侧越界翻转、头部名称+收纳数、四列网格、子项单击打开/右键「从文件夹移除」，点击外部/窗口失焦/Esc 三路关闭，state.folderOverlayId 跟踪）；removeDesktopEntry 删文件夹时子项 delete parent_folder + 逐个归位空格；**桌面入口**：openNewEntryDialog 弹窗 flattenEntryTreeLeaves 平铺入口管理同源可用菜单树（应用聚合缩进层级），点击行即建桌面入口；**URL 链接**：openNewUrlDialog 弹窗名称+地址（前端 `/^https?:\/\/[^\s]+$/i` 校验），kind=url 经 openablePath 外链分支放行 iframe 窗口打开。后端：桌面项新增 kind（in:folder,url）与 parent_folder（max:64，非法字符服务层净化）字段——控制器验证补规则声明（无声明 $validated 丢键）、path 闭包按 kind 分流（folder 强制置空/url 仅 http(s)/普通项原逻辑）、WorkspaceService sanitizeDesktopItem 白名单净化（folder path 强置空，url 非法抛 40201）；文件夹子项不占桌面格位（assignedDesktopItems 统一过滤 parent_folder，renderDesktop/找空位同口径）。135 测试 1457 断言通过。 |
 | 2.1.27 | 2026-10-12 | 任务栏图标显示方式（Windows 式，用户需求）：OS 设置「任务栏位置」下新增「任务栏图标显示」选择卡——纯图标（默认）/ 图标+文字；新增偏好 taskbar_button_style，dataset（data-taskbar-button-style）驱动 CSS 即时切换，固定图标与运行窗口按钮均渲染标题 label（text 模式按钮拉宽 max-width 160px 显示标题并溢出省略，切换偏好无需重渲染）；左右竖排停靠同 Windows 保持纯图标。后端 WorkspaceService DEFAULT_PREFERENCES、sanitizePreferences（in:icon,text 回退）与控制器验证规则同步补键。133 测试 1386 断言通过。 |

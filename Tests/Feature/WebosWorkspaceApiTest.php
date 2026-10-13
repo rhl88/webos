@@ -2706,8 +2706,14 @@ class WebosWorkspaceApiTest extends WebosTestCase
         $this->assertMatchesRegularExpression("/kind: 'folder'/", $script);
         $this->assertMatchesRegularExpression("/kind: 'url'/", $script);
         $this->assertStringContainsString('/^https?:\/\/[^\s]+$/i.test(url)', $script);
-        $this->assertStringContainsString('function flattenEntryTreeLeaves', $script);
-        $this->assertStringContainsString('flattenEntryTreeLeaves(buildEntryTree(), 0, [])', $script);
+        // 桌面入口弹窗（2.1.30）：与入口管理树同构的树结构、分支默认收起、叶子点选即添加
+        $this->assertStringContainsString('function pickNodeMarkup(node, depth)', $script);
+        $this->assertStringContainsString("data-pick-branch-id=\"' + escapeHtml(node.key) + '\"", $script);
+        $this->assertStringContainsString("var expanded = entryPickExpanded.has(node.key);", $script);
+        $this->assertStringContainsString("layero.on('click', '[data-pick-branch-id]'", $script);
+        $this->assertStringContainsString("layero.on('click', '[data-pick-entry-id]'", $script);
+        $this->assertStringContainsString('var entryPickExpanded = new Set();', $script);
+        $this->assertStringNotContainsString('flattenEntryTreeLeaves', $script);
         // 打开链路：文件夹走浮层分发；URL 链接按 http(s) 外链放行 iframe 窗口
         $this->assertStringContainsString("if (entry.kind === 'folder') {", $script);
         $this->assertMatchesRegularExpression("/if \(entry\.kind === 'url' && externalPath\(entry\.path\)\) \{ return true; \}/", $script);
@@ -2750,6 +2756,7 @@ class WebosWorkspaceApiTest extends WebosTestCase
         $this->assertStringContainsString('.webos-folder-overlay-empty {', $stylesheet);
         $this->assertStringContainsString('.webos-url-form {', $stylesheet);
         $this->assertStringContainsString('.webos-entry-pick-list {', $stylesheet);
+        $this->assertStringContainsString('.webos-entry-pick-branch {', $stylesheet);
         $this->assertMatchesRegularExpression('/\.desktop-icon\.is-folder-target \.desktop-icon-badge\s*\{/', $stylesheet);
         $this->assertMatchesRegularExpression('/\.desktop-icon\.is-dragging\s*\{[^}]*pointer-events:\s*none;/', $stylesheet);
     }

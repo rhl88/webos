@@ -5223,6 +5223,42 @@ textarea:focus-visible,
     white-space: nowrap;
 }
 
+.webos-entry-pick-branch {
+    display: flex;
+    align-items: center;
+    padding: 8px 10px;
+    border: 0;
+    border-radius: 8px;
+    background: transparent;
+    color: #3f5169;
+    cursor: pointer;
+    font-family: inherit;
+    font-size: 13px;
+    font-weight: 600;
+    gap: 9px;
+    text-align: left;
+}
+
+.webos-entry-pick-branch:hover {
+    color: #087f75;
+    background: #eaf8f6;
+}
+
+.webos-entry-pick-branch > .fa-chevron-down,
+.webos-entry-pick-branch > .fa-chevron-right {
+    width: 16px;
+    text-align: center;
+    color: #8b9bb0;
+    font-size: 11px;
+}
+
+.webos-entry-pick-branch small {
+    margin-left: auto;
+    color: #a3b1c2;
+    font-size: 12px;
+    font-weight: 400;
+}
+
 .webos-entry-pick-empty {
     padding: 30px 10px;
     color: #a3b1c2;
