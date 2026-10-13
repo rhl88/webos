@@ -178,6 +178,15 @@ textarea:focus-visible,
 .desktop-icon.is-dragging {
     opacity: 0.86;
     cursor: grabbing;
+    /* 拖动穿透：elementFromPoint 检测悬停文件夹图标用（指针事件仍由 pointer capture 派发） */
+    pointer-events: none;
+}
+
+/* 拖动悬停文件夹图标：高亮提示可移入收纳（macOS 拖拽反馈） */
+.desktop-icon.is-folder-target .desktop-icon-badge {
+    outline: 2px solid #35d0ba;
+    outline-offset: 2px;
+    box-shadow: 0 0 0 6px rgba(53, 208, 186, 0.25);
 }
 
 .desktop-icon-badge,
@@ -5055,6 +5064,170 @@ textarea:focus-visible,
 .desktop-context-item.is-checked {
     color: #087f75;
     font-weight: 600;
+}
+
+/* 桌面文件夹浮层（macOS 式）：锚定文件夹图标展开的玻璃拟态面板，展示拖入的桌面子项 */
+.webos-folder-overlay {
+    position: absolute;
+    z-index: 3500;
+    width: 328px;
+    max-width: calc(100% - 20px);
+    padding: 12px;
+    border: 1px solid rgba(255, 255, 255, 0.16);
+    border-radius: 14px;
+    background: rgba(28, 34, 48, 0.92);
+    box-shadow: 0 24px 60px rgba(5, 15, 30, 0.45);
+    color: #fff;
+    backdrop-filter: blur(18px);
+}
+
+.webos-folder-overlay-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 0 4px;
+}
+
+.webos-folder-overlay-head strong {
+    font-size: 13px;
+}
+
+.webos-folder-overlay-head span {
+    color: rgba(255, 255, 255, 0.6);
+    font-size: 12px;
+}
+
+.webos-folder-overlay-grid {
+    display: grid;
+    max-height: 320px;
+    margin-top: 10px;
+    overflow-y: auto;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 4px;
+}
+
+.webos-folder-item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 8px 4px;
+    border: 0;
+    border-radius: 10px;
+    background: transparent;
+    color: inherit;
+    cursor: pointer;
+    font-family: inherit;
+    gap: 6px;
+    text-align: center;
+}
+
+.webos-folder-item:hover {
+    background: rgba(255, 255, 255, 0.12);
+}
+
+.webos-folder-item-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 38px;
+    height: 38px;
+    border-radius: 10px;
+    background: rgba(255, 255, 255, 0.14);
+    font-size: 17px;
+}
+
+.webos-folder-item span {
+    max-width: 100%;
+    overflow: hidden;
+    font-size: 12px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.webos-folder-overlay-empty {
+    padding: 26px 10px;
+    color: rgba(255, 255, 255, 0.65);
+    font-size: 12px;
+    text-align: center;
+}
+
+/* 新建 > URL 链接弹窗表单（layui layer 内容区） */
+.webos-url-form {
+    padding: 18px 20px 6px;
+    display: grid;
+    gap: 12px;
+}
+
+.webos-url-field {
+    display: grid;
+    gap: 6px;
+    font-size: 13px;
+    color: #3f5169;
+}
+
+.webos-url-field span {
+    font-weight: 600;
+}
+
+.webos-url-field input {
+    padding: 7px 10px;
+    border: 1px solid #d4dfe8;
+    border-radius: 6px;
+    font-size: 13px;
+}
+
+.webos-url-field input:focus {
+    border-color: #087f75;
+    outline: none;
+}
+
+/* 新建 > 桌面入口弹窗：可用菜单叶子列表（缩进展示层级） */
+.webos-entry-pick-list {
+    max-height: 380px;
+    padding: 10px;
+    overflow-y: auto;
+    display: grid;
+    gap: 2px;
+    align-content: start;
+}
+
+.webos-entry-pick-item {
+    display: flex;
+    align-items: center;
+    padding: 8px 10px;
+    border: 0;
+    border-radius: 8px;
+    background: transparent;
+    color: #3f5169;
+    cursor: pointer;
+    font-family: inherit;
+    font-size: 13px;
+    gap: 9px;
+    text-align: left;
+}
+
+.webos-entry-pick-item:hover {
+    color: #087f75;
+    background: #eaf8f6;
+}
+
+.webos-entry-pick-item i {
+    width: 16px;
+    text-align: center;
+}
+
+.webos-entry-pick-item span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.webos-entry-pick-empty {
+    padding: 30px 10px;
+    color: #a3b1c2;
+    font-size: 13px;
+    text-align: center;
 }
 
 /* 桌面图标三档尺寸（右键「查看」切换；data-icon-size 由 renderDesktop 同步，格子换算在 JS DESKTOP_ICON_SIZES） */

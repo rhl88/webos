@@ -221,11 +221,26 @@ class WebosController extends Controller
             'desktop_items.*.menu_id' => ['nullable', 'integer', 'min:0'],
             'desktop_items.*.app_id' => ['nullable', 'string', 'max:100', 'regex:/^[A-Za-z0-9_.-]*$/'],
             'desktop_items.*.title' => ['required', 'string', 'max:60'],
+            // 桌面项类型与所属文件夹：无规则声明时 $validated 会丢弃该键，服务层收不到 kind 会把
+            // 文件夹（空 path）当普通入口拒绝；parent_folder 非法字符由服务层净化（与 id 处理风格一致）
+            'desktop_items.*.kind' => ['nullable', 'in:folder,url'],
+            'desktop_items.*.parent_folder' => ['nullable', 'string', 'max:64'],
             // 内置浏览器入口（id=webos-browser）path 为空（内容由前端管理、按 id 特判打开）仅该 id 放行；
+            // 桌面文件夹（kind=folder）path 不参与打开逻辑（服务层强制置空）、URL 链接（kind=url）放行 http(s) 外链；
             // 注意不能用 nullable/string：空串经 ConvertEmptyStringsToNull 转 null 后规则被跳过或误报，
             // 普通/超长/外链路径与空路径的裁决全部收进闭包（服务层白名单再兜底一层）
             'desktop_items.*.path' => [
                 static function (string $attribute, mixed $value, \Closure $fail): void {
+                    $kind = (string) request()->input(preg_replace('/\.path$/', '.kind', $attribute), '');
+                    if ($kind === 'folder') {
+                        return;
+                    }
+                    if ($kind === 'url') {
+                        if (! is_string($value) || mb_strlen($value) > 500 || ! preg_match('/^https?:\/\/[^\s]+$/i', $value)) {
+                            $fail('URL 链接必须是 http(s) 地址');
+                        }
+                        return;
+                    }
                     if ($value === null || $value === '') {
                         if ((string) request()->input(preg_replace('/\.path$/', '.id', $attribute)) !== 'webos-browser') {
                             $fail('桌面入口路径必须是站内路径');

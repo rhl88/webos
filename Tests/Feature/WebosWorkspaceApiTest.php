@@ -352,7 +352,7 @@ class WebosWorkspaceApiTest extends WebosTestCase
         );
         // iframe 独立文档点击不冒泡到父文档 click 委托：借 window blur 关闭右键菜单（桌面/任务栏/应用行）
         $this->assertMatchesRegularExpression(
-            "/window\.addEventListener\('blur', function \(\)\s*\{\s*closeDesktopContextMenu\(\);\s*closeTaskbarContextMenu\(\);\s*closeAppRowMenus\(\);\s*\}\);/",
+            "/window\.addEventListener\('blur', function \(\)\s*\{\s*closeDesktopContextMenu\(\);\s*closeTaskbarContextMenu\(\);\s*closeAppRowMenus\(\);\s*closeFolderOverlay\(\);\s*\}\);/",
             $script
         );
         $this->assertMatchesRegularExpression(
@@ -705,7 +705,7 @@ class WebosWorkspaceApiTest extends WebosTestCase
         $this->assertStringContainsString("entryId.indexOf(appPrefix) === 0", $script);
         // 桌面与任务栏渲染前过滤未分配入口
         $this->assertStringContainsString('state.workspace.desktop_items.filter(function (item) {', $script);
-        $this->assertStringContainsString('return entryAssigned(item.id);', $script);
+        $this->assertStringContainsString('return entryAssigned(item.id) && !item.parent_folder;', $script);
         $this->assertStringContainsString('taskbarItems().filter(function (item) {', $script);
         // 菜单目录刷新后同步重绘桌面与任务栏
         $this->assertMatchesRegularExpression('/renderDesktop\(\);\s*[\r\n]+\s*renderPinnedApps\(\);/', $script);
@@ -720,7 +720,7 @@ class WebosWorkspaceApiTest extends WebosTestCase
         $this->assertIsString($script);
         // 可见桌面项统一出口：渲染/拖拽占用/找空行都基于已分配集合
         $this->assertStringContainsString('function assignedDesktopItems', $script);
-        $this->assertMatchesRegularExpression('/return state\.workspace\.desktop_items\.filter\(function \(item\) \{\s*[\r\n]+\s*return entryAssigned\(item\.id\);/', $script);
+        $this->assertMatchesRegularExpression('/return state\.workspace\.desktop_items\.filter\(function \(item\) \{\s*[\r\n]+\s*return entryAssigned\(item\.id\) && !item\.parent_folder;/', $script);
         // 拖拽落点占用集合仅统计可见图标（未分配入口的格子可移入）
         $this->assertStringContainsString('var occupied = new Set(assignedDesktopItems().filter(function (entry) {', $script);
         // 桌面网格可视容量：行列数按容器可视宽高与当前档位决定（窗口缩放/跨屏、任务栏移动、图标切档均会改变）
@@ -2588,5 +2588,169 @@ class WebosWorkspaceApiTest extends WebosTestCase
             '/\.launcher-grid\s*\{[^}]*align-content:\s*start;/',
             $stylesheet
         );
+    }
+
+    /** 桌面原生项持久化：folder 空 path 放行、url 放行 http(s) 外链、parent_folder 往返；非法值拒绝 */
+    public function test_workspace_api_persists_desktop_folders_and_url_entries(): void
+    {
+        $this->actingAdmin();
+
+        $this->putJson('/admin/cmspro/webos/api/workspace', [
+            'desktop_items' => [
+                [
+                    'id' => 'webos-folder-Ab12Cd34',
+                    'title' => '新建文件夹',
+                    'path' => '',
+                    'icon' => 'fa fa-folder',
+                    'group_title' => '文件夹',
+                    'kind' => 'folder',
+                    'x' => 0,
+                    'y' => 0,
+                ],
+                [
+                    'id' => 'webos-url-Ab12Cd34',
+                    'title' => '官网',
+                    'path' => 'https://www.example.com',
+                    'icon' => 'fa fa-globe',
+                    'group_title' => '链接',
+                    'kind' => 'url',
+                    'x' => 0,
+                    'y' => 1,
+                ],
+                [
+                    'id' => 'menu-1046',
+                    'title' => '儿康管理系统',
+                    'path' => '/admin/cmspro/childrehab/hospitals',
+                    'icon' => 'fa fa-home',
+                    'kind' => '',
+                    'parent_folder' => 'webos-folder-Ab12Cd34',
+                    'x' => 0,
+                    'y' => 2,
+                ],
+            ],
+            'preferences' => [],
+        ])->assertOk()
+            ->assertJsonPath('code', 0)
+            ->assertJsonPath('data.desktop_items.0.kind', 'folder')
+            ->assertJsonPath('data.desktop_items.0.path', '')
+            ->assertJsonPath('data.desktop_items.1.kind', 'url')
+            ->assertJsonPath('data.desktop_items.1.path', 'https://www.example.com')
+            ->assertJsonPath('data.desktop_items.2.parent_folder', 'webos-folder-Ab12Cd34');
+
+        // 再次读取验证持久化
+        $this->getJson('/admin/cmspro/webos/api/workspace')
+            ->assertOk()
+            ->assertJsonPath('data.desktop_items.0.kind', 'folder')
+            ->assertJsonPath('data.desktop_items.2.parent_folder', 'webos-folder-Ab12Cd34');
+
+        // folder 传入的 path 强制置空（内容由前端浮层管理）；parent_folder 非法字符清理
+        $this->putJson('/admin/cmspro/webos/api/workspace', [
+            'desktop_items' => [
+                [
+                    'id' => 'webos-folder-Ab12Cd34',
+                    'title' => '新建文件夹',
+                    'path' => '/admin/cmspro/childrehab/hospitals',
+                    'icon' => 'fa fa-folder',
+                    'kind' => 'folder',
+                    'parent_folder' => 'bad<id>!',
+                    'x' => 0,
+                    'y' => 0,
+                ],
+            ],
+            'preferences' => [],
+        ])->assertOk()
+            ->assertJsonPath('data.desktop_items.0.path', '')
+            ->assertJsonPath('data.desktop_items.0.parent_folder', '');
+
+        // URL 链接仅放行 http(s)：非 http 地址拒绝
+        $this->putJson('/admin/cmspro/webos/api/workspace', [
+            'desktop_items' => [[
+                'id' => 'webos-url-Ab12Cd34',
+                'title' => '官网',
+                'path' => 'ftp://www.example.com',
+                'icon' => 'fa fa-globe',
+                'kind' => 'url',
+                'x' => 0,
+                'y' => 0,
+            ]],
+            'preferences' => [],
+        ])->assertUnprocessable()
+            ->assertJsonPath('code', 40201);
+    }
+
+    /** 桌面右键「新建」（文件夹/桌面入口/URL 链接）+ 文件夹浮层 + 拖入收纳链路 */
+    public function test_desktop_new_context_menu_folder_overlay_and_drag_into(): void
+    {
+        $script = file_get_contents(dirname(__DIR__, 2) . '/Assets/js/webos.js');
+        $stylesheet = file_get_contents(dirname(__DIR__, 2) . '/Assets/css/webos.css');
+        $service = file_get_contents(dirname(__DIR__, 2) . '/Services/WorkspaceService.php');
+
+        $this->assertIsString($script);
+        // 右键菜单：移除「设置背景」，新增「新建」子菜单三动作
+        $this->assertStringNotContainsString('设置背景', $script);
+        $this->assertStringContainsString("['查看', 'fa-th-large', '', '', sizeChildren],", $script);
+        $this->assertStringContainsString("['新建', 'fa-plus', '', '', newChildren],", $script);
+        $this->assertStringContainsString("{ label: '文件夹', action: 'new-folder' },", $script);
+        $this->assertStringContainsString("{ label: '桌面入口', action: 'new-entry' },", $script);
+        $this->assertStringContainsString("{ label: 'URL 链接', action: 'new-url' }", $script);
+        $this->assertStringContainsString("if (action === 'new-folder') {", $script);
+        $this->assertStringContainsString('createDesktopFolder();', $script);
+        $this->assertStringContainsString('openNewEntryDialog();', $script);
+        $this->assertStringContainsString('openNewUrlDialog();', $script);
+        $this->assertStringContainsString("if (action === 'folder-remove') {", $script);
+        $this->assertStringContainsString('removeItemFromFolder(iconId);', $script);
+        // 新建三实现：文件夹（随机 id + kind）、URL 弹窗（http(s) 校验 + kind）、桌面入口弹窗（复用可用菜单树）
+        $this->assertStringContainsString('function randomEntryId(prefix)', $script);
+        $this->assertMatchesRegularExpression("/id: randomEntryId\('webos-folder-'\)/", $script);
+        $this->assertMatchesRegularExpression("/id: randomEntryId\('webos-url-'\)/", $script);
+        $this->assertMatchesRegularExpression("/kind: 'folder'/", $script);
+        $this->assertMatchesRegularExpression("/kind: 'url'/", $script);
+        $this->assertStringContainsString('/^https?:\/\/[^\s]+$/i.test(url)', $script);
+        $this->assertStringContainsString('function flattenEntryTreeLeaves', $script);
+        $this->assertStringContainsString('flattenEntryTreeLeaves(buildEntryTree(), 0, [])', $script);
+        // 打开链路：文件夹走浮层分发；URL 链接按 http(s) 外链放行 iframe 窗口
+        $this->assertStringContainsString("if (entry.kind === 'folder') {", $script);
+        $this->assertMatchesRegularExpression("/if \(entry\.kind === 'url' && externalPath\(entry\.path\)\) \{ return true; \}/", $script);
+        // 文件夹浮层：macOS 式锚定展开、子项网格、右键移回桌面、全局关闭链
+        $this->assertStringContainsString('function openFolderOverlay(folder)', $script);
+        $this->assertStringContainsString('function closeFolderOverlay(folderId)', $script);
+        $this->assertStringContainsString('function refreshFolderOverlay(folderId)', $script);
+        $this->assertStringContainsString('function folderChildren(folderId)', $script);
+        $this->assertStringContainsString("['从文件夹移除', 'fa-external-link-square', 'folder-remove']", $script);
+        $this->assertStringContainsString("root.querySelector('.webos-folder-overlay') && !event.target.closest('.webos-folder-overlay')", $script);
+        $this->assertStringContainsString("event.target.closest('.webos-folder-item')", $script);
+        $this->assertStringContainsString('state.folderOverlayId = folder.id;', $script);
+        // 拖入文件夹：悬停判定（拖动穿透）+ 高亮 + 整批移入；拖动项含文件夹时禁止嵌套收纳
+        $this->assertStringContainsString('function folderUnderPointer(clientX, clientY)', $script);
+        $this->assertStringContainsString('function setFolderTarget(button)', $script);
+        $this->assertMatchesRegularExpression("/dragItems\.some\(function \(entry\) \{ return entry\.kind === 'folder'; \}\)/", $script);
+        $this->assertMatchesRegularExpression("/entry\.parent_folder = targetFolder\.id;/", $script);
+        $this->assertStringContainsString('refreshFolderOverlay(targetFolder.id);', $script);
+        $this->assertMatchesRegularExpression("/toast\('已移入「' \+ targetFolder\.title \+ '」'\);/", $script);
+        // 持久化：工作区保存透传 kind/parent_folder；后端白名单净化
+        $this->assertStringContainsString("kind: item.kind || '',", $script);
+        $this->assertStringContainsString('parent_folder: item.parent_folder || \'\',', $script);
+        $this->assertStringContainsString("in_array(\$item['kind'] ?? '', ['folder', 'url'], true)", $service);
+        $this->assertStringContainsString("'URL 链接必须是 http(s) 地址'", $service);
+        // 可见口径：桌面原生项（folder/url）始终可见；文件夹子项不占桌面网格
+        $this->assertMatchesRegularExpression("/desktopItem\.kind === 'folder' \|\| desktopItem\.kind === 'url'/", $script);
+        $this->assertStringContainsString('return entryAssigned(item.id) && !item.parent_folder;', $script);
+        // 删除文件夹：子项移回桌面列优先找空格（findFreeDesktopSlot 抽取共用）
+        $this->assertStringContainsString('function findFreeDesktopSlot()', $script);
+        $this->assertMatchesRegularExpression('/if \(removing && removing\.kind === \'folder\'\)\s*\{\s*state\.workspace\.desktop_items\.forEach/', $script);
+        // 关闭链：Esc 与窗口失焦均收起文件夹浮层
+        $this->assertMatchesRegularExpression("/closeDesktopContextMenu\(\);\s*[\r\n]+\s*closeFolderOverlay\(\);\s*[\r\n]+\s*closeActionDialog\(\);/", $script);
+        $this->assertMatchesRegularExpression("/closeAppRowMenus\(\);\s*[\r\n]+\s*closeFolderOverlay\(\);\s*[\r\n]+\s*\}\);/", $script);
+
+        $this->assertIsString($stylesheet);
+        // 浮层玻璃拟态面板 + 子项网格 + 拖动穿透与悬停高亮
+        $this->assertStringContainsString('.webos-folder-overlay {', $stylesheet);
+        $this->assertStringContainsString('.webos-folder-overlay-grid {', $stylesheet);
+        $this->assertStringContainsString('.webos-folder-item {', $stylesheet);
+        $this->assertStringContainsString('.webos-folder-overlay-empty {', $stylesheet);
+        $this->assertStringContainsString('.webos-url-form {', $stylesheet);
+        $this->assertStringContainsString('.webos-entry-pick-list {', $stylesheet);
+        $this->assertMatchesRegularExpression('/\.desktop-icon\.is-folder-target \.desktop-icon-badge\s*\{/', $stylesheet);
+        $this->assertMatchesRegularExpression('/\.desktop-icon\.is-dragging\s*\{[^}]*pointer-events:\s*none;/', $stylesheet);
     }
 }
