@@ -2839,6 +2839,8 @@ class WebosWorkspaceApiTest extends WebosTestCase
         $this->assertIsString($stylesheet);
         // 浮层玻璃拟态面板 + 子项网格 + 拖动穿透与悬停高亮
         $this->assertStringContainsString('.webos-folder-overlay {', $stylesheet);
+        // 2.1.42：浮层宽度 328px → 428px（用户需求加宽 100px）
+        $this->assertMatchesRegularExpression('/\.webos-folder-overlay \{[^}]*width: 428px;/', $stylesheet);
         $this->assertStringContainsString('.webos-folder-overlay-grid {', $stylesheet);
         $this->assertStringContainsString('.webos-folder-item {', $stylesheet);
         // 2.1.32：浮层右上角关闭按钮 + 子项图标复用桌面 badge/label 结构（修复图片图标爆框）
