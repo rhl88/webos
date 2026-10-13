@@ -2831,6 +2831,12 @@ class WebosWorkspaceApiTest extends WebosTestCase
         // 连续保存竞态加固（2.1.41）：仅最新一次保存的响应可覆盖 state，晚到的旧响应丢弃防回滚
         $this->assertStringContainsString('var saveSeq = ++workspaceSaveSeq;', $script);
         $this->assertStringContainsString('if (saveSeq !== workspaceSaveSeq) {', $script);
+        // 保存响应引用稳定回填（2.1.45）：整体替换数组元素会让浮层拖拽闭包持有脱离 state 的旧对象，
+        // 表现为「拖出第一个成功、第二个起不成功、右键刷新 state 重建后才又能拖出」的循环；
+        // 按 id 匹配现有元素逐字段更新（响应缺失字段删除），元素引用保持稳定
+        $this->assertStringContainsString('function applyWorkspaceData(workspace) {', $script);
+        $this->assertStringContainsString('applyWorkspaceData(workspace);', $script);
+        $this->assertStringContainsString('delete existing[key];', $script);
         $this->assertMatchesRegularExpression('/if \(removing && removing\.kind === \'folder\'\)\s*\{\s*state\.workspace\.desktop_items\.forEach/', $script);
         // 关闭链：Esc 与窗口失焦均收起文件夹浮层
         $this->assertMatchesRegularExpression("/closeDesktopContextMenu\(\);\s*[\r\n]+\s*closeFolderOverlay\(\);\s*[\r\n]+\s*closeActionDialog\(\);/", $script);

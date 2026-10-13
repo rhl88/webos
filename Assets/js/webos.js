@@ -757,6 +757,37 @@
 
     // 保存序号：连续保存时仅最新一次请求的响应可覆盖 state（旧响应晚到会回滚本地已更新的数据）
     var workspaceSaveSeq = 0;
+    /**
+     * 保存响应回填：desktop_items 按 id 匹配现有元素逐字段更新（引用保持稳定），其余键整体采用响应值。
+     * 打开中的文件夹浮层子项按钮、进行中的桌面拖拽，闭包持有的都是 state 里的元素对象引用；
+     * 若响应直接整体替换数组元素，保存后的拖拽/修改全部落在已脱离 state 的旧对象上（表现为
+     * 「拖出第一个成功、第二个起不成功，右键刷新 state 重建后才又能拖出一个」的循环）。
+     * 响应中没有而旧对象存在的字段（如已拖出的 parent_folder）需删除，保证与纯替换语义一致。
+     */
+    function applyWorkspaceData(workspace) {
+        var prevById = new Map();
+        (state.workspace.desktop_items || []).forEach(function (item) {
+            if (item && item.id) {
+                prevById.set(item.id, item);
+            }
+        });
+        workspace.desktop_items = (workspace.desktop_items || []).map(function (item) {
+            var existing = item && item.id ? prevById.get(item.id) : null;
+            if (!existing) {
+                return item;
+            }
+            Object.keys(item).forEach(function (key) {
+                existing[key] = item[key];
+            });
+            Object.keys(existing).forEach(function (key) {
+                if (!Object.prototype.hasOwnProperty.call(item, key)) {
+                    delete existing[key];
+                }
+            });
+            return existing;
+        });
+        state.workspace = workspace;
+    }
     function saveWorkspace(showMessage) {
         var saveSeq = ++workspaceSaveSeq;
         return api(root.dataset.workspaceUrl, {
@@ -797,7 +828,8 @@
             if (saveSeq !== workspaceSaveSeq) {
                 return state.workspace;
             }
-            state.workspace = workspace;
+            // 回填替换：desktop_items 元素引用保持稳定，浮层拖拽闭包不失效（见 applyWorkspaceData 注释）
+            applyWorkspaceData(workspace);
             if (!Array.isArray(state.workspace.taskbar_items)) {
                 state.workspace.taskbar_items = [];
             }
