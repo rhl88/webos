@@ -755,7 +755,10 @@
         });
     }
 
+    // 保存序号：连续保存时仅最新一次请求的响应可覆盖 state（旧响应晚到会回滚本地已更新的数据）
+    var workspaceSaveSeq = 0;
     function saveWorkspace(showMessage) {
+        var saveSeq = ++workspaceSaveSeq;
         return api(root.dataset.workspaceUrl, {
             method: 'PUT',
             body: {
@@ -789,6 +792,11 @@
                 preferences: state.workspace.preferences
             }
         }).then(function (workspace) {
+            // 丢弃晚到的旧响应：body 每次都从当前 state 全量构造，最新响应必然包含全部改动，
+            // 旧响应落地只会把 state 回滚到旧快照（如连续拖出图标时第二次的释放被第一次响应覆盖）
+            if (saveSeq !== workspaceSaveSeq) {
+                return state.workspace;
+            }
             state.workspace = workspace;
             if (!Array.isArray(state.workspace.taskbar_items)) {
                 state.workspace.taskbar_items = [];
@@ -1532,6 +1540,23 @@
         var occupied = new Set(assignedDesktopItems().map(function (item) {
             return (Math.max(0, Number(item.x) || 0)) + ':' + (Math.max(0, Number(item.y) || 0));
         }));
+        // 打开中的文件夹浮层覆盖的格子同样视为占用：浮层 z-index 高于桌面图标，
+        // 新图标若落到浮层矩形后面会被完全遮住（拖出时视觉上「桌面没任何响应」），放置时避开
+        var overlay = root.querySelector('.webos-folder-overlay');
+        if (overlay) {
+            var overlayRect = overlay.getBoundingClientRect();
+            var gridSize = desktopIconSize();
+            var hostRect = elements.desktopIcons.getBoundingClientRect();
+            var ovFirstColumn = Math.max(0, Math.floor((overlayRect.left - hostRect.left) / gridSize.cellW));
+            var ovLastColumn = Math.floor((overlayRect.right - hostRect.left) / gridSize.cellW);
+            var ovFirstRow = Math.max(0, Math.floor((overlayRect.top - hostRect.top) / gridSize.cellH));
+            var ovLastRow = Math.floor((overlayRect.bottom - hostRect.top) / gridSize.cellH);
+            for (var ovColumn = ovFirstColumn; ovColumn <= ovLastColumn; ovColumn += 1) {
+                for (var ovRow = ovFirstRow; ovRow <= ovLastRow; ovRow += 1) {
+                    occupied.add(ovColumn + ':' + ovRow);
+                }
+            }
+        }
         for (var column = 0; column < (capacity.cols > 0 ? capacity.cols : 100); column += 1) {
             for (var row = 0; row < rows; row += 1) {
                 if (!occupied.has(column + ':' + row)) {

@@ -2823,6 +2823,14 @@ class WebosWorkspaceApiTest extends WebosTestCase
         $this->assertStringContainsString('return entryAssigned(item.id) && !item.parent_folder;', $script);
         // 删除文件夹：子项移回桌面列优先找空格（findFreeDesktopSlot 抽取共用）
         $this->assertStringContainsString('function findFreeDesktopSlot()', $script);
+        // 放置空格避开打开中的文件夹浮层（2.1.41）：浮层 z-index 高于桌面图标，
+        // 第二次拖出若落到浮层矩形后面会被完全遮住（视觉上「桌面没任何响应」，接口已请求）
+        $this->assertStringContainsString("var overlay = root.querySelector('.webos-folder-overlay');", $script);
+        $this->assertStringContainsString('var overlayRect = overlay.getBoundingClientRect();', $script);
+        $this->assertStringContainsString('occupied.add(ovColumn + \':\' + ovRow);', $script);
+        // 连续保存竞态加固（2.1.41）：仅最新一次保存的响应可覆盖 state，晚到的旧响应丢弃防回滚
+        $this->assertStringContainsString('var saveSeq = ++workspaceSaveSeq;', $script);
+        $this->assertStringContainsString('if (saveSeq !== workspaceSaveSeq) {', $script);
         $this->assertMatchesRegularExpression('/if \(removing && removing\.kind === \'folder\'\)\s*\{\s*state\.workspace\.desktop_items\.forEach/', $script);
         // 关闭链：Esc 与窗口失焦均收起文件夹浮层
         $this->assertMatchesRegularExpression("/closeDesktopContextMenu\(\);\s*[\r\n]+\s*closeFolderOverlay\(\);\s*[\r\n]+\s*closeActionDialog\(\);/", $script);

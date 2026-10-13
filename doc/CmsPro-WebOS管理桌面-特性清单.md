@@ -1,7 +1,7 @@
 # CmsPro WebOS 管理桌面 · 特性清单
 
-> 文档版本：2.1.40 | 更新日期：2026-10-13
-> 应用版本：2.1.40 | 应用 ID：`cmspro.webos`
+> 文档版本：2.1.41 | 更新日期：2026-10-13
+> 应用版本：2.1.41 | 应用 ID：`cmspro.webos`
 
 ## 一、应用定位
 
@@ -88,6 +88,7 @@ WebOS 管理桌面是 CmsPro 后台的可选交互层，不替换系统后台框
 50. 拖动层级与拖出图标尺寸修复（2.1.38，用户反馈「拖入图标到文件夹时图标在文件夹容器下面」「文件夹内非 SVG 图标拖出后变得很大」）：①拖入层级——桌面图标拖动是直接改原按钮 `style.left/top`（无克隆），按钮 `.desktop-icon` 无 z-index，被打开中的文件夹浮层（`z-index: 3500`）盖住；修复为 `.desktop-icon.is-dragging` 提升 `z-index: 4000`（`.webos-desktop` 为 `position:relative; z-index:auto` 不创建层叠上下文，按钮 z-index 参与全局比较盖过浮层/任务栏，松手移除类即还原；`is-dragging` 的 `pointer-events:none` 穿透不受影响，落点判定口径不变）；②拖出尺寸——2.1.36 的拖影克隆节点挂 body 后脱离 `.webos-desktop[data-icon-size]` 作用域：badge 尺寸/字号从当前档位（small 40px/18px、large 68px/32px）回退默认 54px/25px，且应用图片图标的透明底（`.webos-folder-overlay .desktop-icon-badge.is-app-icon`）与 img 尺寸约束（`.webos-folder-overlay .desktop-icon-badge.is-app-icon img` 的 100%/contain）均为祖先限定选择器、挂 body 后全部失配——图片图标显示原始尺寸并带回默认蓝底，非 SVG 图标视觉「变大」；修复为克隆后从**浮层内的原按钮**读取 badge 计算样式（游离节点与挂 body 后读到的是回退值，必须取源）固化为 ghost 内联样式（width/height/font-size/border-radius/margin-bottom），badge 含 `is-app-icon` 时再固化透明底/无阴影/`overflow:hidden` 与 img 的 100%/contain；catalog SVG 为 badge 内 52% 比例、FontAwesome `<i>` 字号继承 badge，badge 锁定后二者随之稳定。
 51. 「新建 → 桌面入口」弹窗分支行图片图标尺寸修复（2.1.39，用户反馈选择列表中 `img[data-app-icon-primary]`（应用 icon 接口图片）需控制到 22px）：分支行应用图标由 `applicationIconMarkup(application, 'entry-tree-app-icon')` 渲染，而入口管理面板的 img 等比约束（`.entry-tree-toggle .entry-tree-app-icon.is-app-icon` 的 38px 容器与 img 100%/contain）全部挂在 `.entry-tree-toggle` 祖先下，弹窗内不存在该祖先 → img 无任何尺寸约束、按应用 icon 接口返回的原始尺寸渲染爆框。修复为补弹窗专属规则 `.webos-entry-pick-branch .entry-tree-app-icon.is-app-icon img { width: 22px; height: 22px; object-fit: contain; }`，与叶子行菜单图标（2.1.34 的 22px）对齐；入口管理面板自身的 38px 口径不受影响。
 52. 文件夹右键「释放文件夹」（2.1.40，用户需求）：`desktopContextMenuItems` 在文件夹图标右键时、`folderChildren` 有子项时提供「释放文件夹」菜单项（fa-th-large，置于「图标设置」之前；空文件夹不显示），点击经 `folder-release` 动作分发到 `releaseFolderItems(folderId)`——逐项 `delete child.parent_folder` 后 `findFreeDesktopSlot()` 列优先取空格（每释放一项重新计算占用，已释放项参与占位，后续项自动让出格子），全部完成或桌面可视区域满时终止；桌面满且一项未释放提示「桌面没有空位，未能释放」并保持原状，部分释放提示「已释放 N 项，剩余 M 项留在文件夹」，全部成功提示「已释放 N 项到桌面」；`saveWorkspace(false)` 持久化 + `renderDesktop()` 重排 + 浮层开着时 `refreshFolderOverlay` 重绘（全部释放显示空态）。
+53. 连续拖出「第二次桌面没响应」修复（2.1.41，用户反馈「从文件夹拖出图标，第一个成功，第二个桌面没任何响应，接口有请求，间隔一小会再次拖出会成功」）：①主因——`findFreeDesktopSlot` 只统计已分配图标占用，不知道打开中的文件夹浮层的存在；浮层（`z-index: 3500`）锚定文件夹图标向右展开约 328px，连续拖出时第二个释放项取到的空格恰好落在浮层矩形下方，图标实际渲染到了桌面（接口也已保存），但被浮层完全遮住 → 视觉上「没任何响应」，第三次取到浮层外的空格才「成功」；第一个拖出总落最左上空格、通常不在浮层下方故总成功。修复为找空位时把浮层矩形覆盖的格子一并视为占用（`overlay.getBoundingClientRect()` 相对 `elements.desktopIcons` 换算列行区间加入 `occupied`），所有放置链路（拖出/移回/释放/新增入口）自动避让浮层。②附带加固——`saveWorkspace` 响应处理原先无条件 `state.workspace = workspace`，连续保存时前一次请求的旧响应晚到会把本地 state 回滚到旧快照（第二次的释放被第一次响应覆盖）；修复为引入 `workspaceSaveSeq` 保存序号，仅最新一次请求的响应可覆盖 state，晚到旧响应直接丢弃（body 每次从当前 state 全量构造，最新响应必然包含全部改动，丢弃零损失）。
 
 ## 四、数据结构
 
@@ -137,6 +138,7 @@ CmsproWebos/
 
 | 版本 | 日期 | 说明 |
 |---|---|---|
+| 2.1.41 | 2026-10-13 | 连续拖出「第二次桌面没响应」修复（用户反馈「第一个成功，第二个桌面没任何响应，接口有请求，间隔一小会再次拖出会成功」）：①主因——findFreeDesktopSlot 不知道打开中的文件夹浮层的存在，第二次释放的空格恰好落在浮层矩形下方、图标被浮层（z-index:3500）完全遮住（实际已渲染并保存），第三次取到浮层外空格才可见；修复为找空位时把浮层矩形覆盖的格子一并视为占用，拖出/移回/释放/新增入口全链路自动避让。②附带加固——saveWorkspace 响应原无条件覆盖 state.workspace，连续保存时旧响应晚到会回滚本地数据；引入 workspaceSaveSeq 保存序号，仅最新一次请求的响应可覆盖，晚到旧响应丢弃（body 全量构造，零损失）。137 测试 1566 断言通过。 |
 | 2.1.40 | 2026-10-13 | 新增文件夹右键「释放文件夹」（用户需求）：文件夹图标右键且内有子项时显示「释放文件夹」（fa-th-large，置于图标设置之前，空文件夹不显示）；点击后全部子项清 parent_folder 逐项列优先取空格移回桌面，桌面可视区域满时释放能放下的部分并提示余量（未释放项保留文件夹内），全部成功提示「已释放 N 项到桌面」；持久化 + 桌面重排 + 浮层开着时重绘（空态提示）。137 测试 1561 断言通过。 |
 | 2.1.39 | 2026-10-13 | 「新建 → 桌面入口」弹窗分支行图片图标尺寸修复（用户反馈选择列表中 img[data-app-icon-primary]（应用 icon 接口图片）需控制到 22px）：分支行应用图标由 applicationIconMarkup(application, 'entry-tree-app-icon') 渲染，而入口管理面板的 img 等比约束全部挂在 .entry-tree-toggle 祖先下、弹窗内不存在该祖先，img 无尺寸约束按原始尺寸渲染爆框；补弹窗专属规则 .webos-entry-pick-branch .entry-tree-app-icon.is-app-icon img 宽高 22px + object-fit:contain，与叶子行菜单图标（2.1.34 的 22px）对齐，入口管理面板 38px 口径不受影响。137 测试 1556 断言通过。 |
 | 2.1.38 | 2026-10-13 | 拖动层级与拖出图标尺寸修复（用户反馈「拖入图标到文件夹时图标在文件夹容器下面」「文件夹内非 SVG 图标拖出后变得很大」）：①拖入层级——桌面图标拖动直接改原按钮 left/top 且无 z-index，被打开中的文件夹浮层（z-index:3500）盖住；.desktop-icon.is-dragging 提升 z-index:4000（.webos-desktop 不创建层叠上下文，按钮 z-index 参与全局比较，松手移除类还原，pointer-events:none 穿透不受影响）；②拖出尺寸——2.1.36 拖影克隆节点挂 body 后脱离 .webos-desktop[data-icon-size] 作用域，badge 尺寸/字号回退默认 54px/25px，应用图片图标透明底与 img 尺寸约束均为祖先限定选择器全部失配（图片显示原始尺寸并带回蓝底）；修复为克隆后从浮层内原按钮读取 badge 计算样式固化为 ghost 内联样式（width/height/font-size/border-radius/margin-bottom），is-app-icon 再固化透明底/无阴影/overflow 与 img 100%/contain；catalog SVG（badge 内 52%）与 FontAwesome（字号继承 badge）随 badge 锁定稳定。137 测试 1555 断言通过。 |
