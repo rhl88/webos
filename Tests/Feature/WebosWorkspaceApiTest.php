@@ -2729,6 +2729,17 @@ class WebosWorkspaceApiTest extends WebosTestCase
         // 拖入文件夹：悬停判定（拖动穿透）+ 高亮 + 整批移入；拖动项含文件夹时禁止嵌套收纳
         $this->assertStringContainsString('function folderUnderPointer(clientX, clientY)', $script);
         $this->assertStringContainsString('function setFolderTarget(button)', $script);
+        // 拖入修复（2.1.31）：松手判定用 pointerup 坐标（此前误用 pointerdown 闭包坐标）+ cleanup 前判定保持穿透
+        $this->assertStringContainsString('function end(upEvent)', $script);
+        $this->assertMatchesRegularExpression('/var dropFolderButton = moved \? folderUnderPointer\(upEvent\.clientX, upEvent\.clientY\) : null;/', $script);
+        $this->assertStringNotContainsString('folderUnderPointer(event.clientX', $script);
+        // 拖入打开中的浮层：folderOverlayUnderPointer 判定 + 悬停高亮 + 整批移入
+        $this->assertStringContainsString('function folderOverlayUnderPointer(clientX, clientY)', $script);
+        $this->assertStringContainsString("over.closest('.webos-folder-overlay')", $script);
+        $this->assertStringContainsString('overlay.dataset.folderId || null', $script);
+        $this->assertStringContainsString('function setOverlayTarget(node)', $script);
+        $this->assertStringContainsString('setOverlayTarget(folderOverlayUnderPointer(moveEvent.clientX, moveEvent.clientY));', $script);
+        $this->assertMatchesRegularExpression("/entry\.parent_folder = dropOverlayId;/", $script);
         $this->assertMatchesRegularExpression("/dragItems\.some\(function \(entry\) \{ return entry\.kind === 'folder'; \}\)/", $script);
         $this->assertMatchesRegularExpression("/entry\.parent_folder = targetFolder\.id;/", $script);
         $this->assertStringContainsString('refreshFolderOverlay(targetFolder.id);', $script);

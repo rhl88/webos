@@ -9419,11 +9419,32 @@
             if (!item || item.kind !== 'folder') {
                 return null;
             }
-            // 拖动项中含文件夹时禁止嵌套收纳
-            if (dragItems.some(function (entry) { return entry.kind === 'folder'; })) {
+            return dragItems.some(function (entry) { return entry.kind === 'folder'; }) ? null : button;
+        }
+        function folderOverlayUnderPointer(clientX, clientY) {
+            // 文件夹浮层打开时，松手落在浮层内同样收纳（浮层容器 data-folder-id 定位目标文件夹）
+            var over = document.elementFromPoint(clientX, clientY);
+            var overlay = over ? over.closest('.webos-folder-overlay') : null;
+            if (!overlay) {
                 return null;
             }
-            return button;
+            // 拖动项中含文件夹时禁止嵌套收纳（与拖入文件夹图标口径一致）
+            return dragItems.some(function (entry) { return entry.kind === 'folder'; }) ? null : (overlay.dataset.folderId || null);
+        }
+
+        // 悬停浮层高亮提示可移入（与文件夹图标高亮互斥：指针下方只会命中其一）
+        var overlayTarget = null;
+        function setOverlayTarget(node) {
+            if (overlayTarget === node) {
+                return;
+            }
+            if (overlayTarget) {
+                overlayTarget.classList.remove('is-folder-target');
+            }
+            overlayTarget = node || null;
+            if (overlayTarget) {
+                overlayTarget.classList.add('is-folder-target');
+            }
         }
 
         function move(moveEvent) {
@@ -9441,12 +9462,14 @@
                 entryButton.style.left = Math.max(4, Math.min(elements.desktopIcons.clientWidth - size.iconW, base.left + deltaX)) + 'px';
                 entryButton.style.top = Math.max(4, Math.min(elements.desktopIcons.clientHeight - size.iconH, base.top + deltaY)) + 'px';
             });
-            // 悬停文件夹图标时高亮提示可移入（macOS 拖拽收纳反馈）
+            // 悬停文件夹图标 / 打开中的浮层时高亮提示可移入（macOS 拖拽收纳反馈）
             setFolderTarget(folderUnderPointer(moveEvent.clientX, moveEvent.clientY));
+            setOverlayTarget(folderOverlayUnderPointer(moveEvent.clientX, moveEvent.clientY));
         }
         function cleanup() {
             dragButtons.forEach(function (entryButton) { entryButton.classList.remove('is-dragging'); });
             setFolderTarget(null);
+            setOverlayTarget(null);
             // 监听统一绑在 document：无论指针捕获是否被原生拖选中断，收尾必执行，杜绝图标黏住鼠标
             document.removeEventListener('pointermove', move);
             document.removeEventListener('pointerup', end);
@@ -9457,24 +9480,45 @@
                 // 指针捕获已随 pointercancel 释放，忽略
             }
         }
-        function end() {
+        function end(upEvent) {
+            // 松手目标判定必须用 pointerup 事件坐标（此前误用 pointerdown 闭包坐标，永远指向按下原点），
+            // 且必须在 cleanup 之前：is-dragging 的 pointer-events:none 穿透依赖拖动进行中状态，
+            // cleanup 后 elementFromPoint 只会命中压在指针下的拖动项自身
+            var dropFolderButton = moved ? folderUnderPointer(upEvent.clientX, upEvent.clientY) : null;
+            var dropOverlayId = moved && !dropFolderButton ? folderOverlayUnderPointer(upEvent.clientX, upEvent.clientY) : null;
             cleanup();
             if (moved) {
+                var droppedId = id;
                 // 拖到文件夹图标上：整批移入文件夹（macOS 式收纳），不落桌面格子
-                var targetFolderButton = folderUnderPointer(event.clientX, event.clientY);
-                if (targetFolderButton) {
-                    var targetFolder = findDesktopItem(targetFolderButton.dataset.desktopId);
+                if (dropFolderButton) {
+                    var targetFolder = findDesktopItem(dropFolderButton.dataset.desktopId);
                     dragItems.forEach(function (entry) { entry.parent_folder = targetFolder.id; });
                     renderDesktop();
                     saveWorkspace(false);
                     refreshFolderOverlay(targetFolder.id);
                     toast('已移入「' + targetFolder.title + '」');
                     // renderDesktop 重建了按钮节点，拖动标记要写到新节点上（双击打开据此跳过误触）
-                    var droppedButton = desktopButtonById(id);
+                    var droppedButton = desktopButtonById(droppedId);
                     if (droppedButton) {
                         droppedButton.dataset.wasDragged = '1';
                     }
                     return;
+                }
+                // 拖到打开中的文件夹浮层上：同样整批移入该文件夹
+                if (dropOverlayId) {
+                    var overlayFolder = findDesktopItem(dropOverlayId);
+                    if (overlayFolder && overlayFolder.kind === 'folder') {
+                        dragItems.forEach(function (entry) { entry.parent_folder = dropOverlayId; });
+                        renderDesktop();
+                        saveWorkspace(false);
+                        refreshFolderOverlay(dropOverlayId);
+                        toast('已移入「' + overlayFolder.title + '」');
+                        var overlayDroppedButton = desktopButtonById(droppedId);
+                        if (overlayDroppedButton) {
+                            overlayDroppedButton.dataset.wasDragged = '1';
+                        }
+                        return;
+                    }
                 }
                 // 网格落点 + 冲突探测：占用集合为未参与拖动的可见图标（未分配入口不占位，可移入其原格子）
                 var selectedIds = new Set(dragItems.map(function (entry) { return entry.id; }));

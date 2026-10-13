@@ -5081,6 +5081,13 @@ textarea:focus-visible,
     backdrop-filter: blur(18px);
 }
 
+/* 文件夹浮层被拖动悬停时的移入高亮（与桌面图标 is-folder-target 同色系） */
+.webos-folder-overlay.is-folder-target {
+    outline: 2px solid #35d0ba;
+    outline-offset: -1px;
+    box-shadow: 0 0 0 4px rgba(53, 208, 186, 0.22), 0 26px 48px rgba(0, 0, 0, 0.4);
+}
+
 .webos-folder-overlay-head {
     display: flex;
     align-items: center;
