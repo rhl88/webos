@@ -2958,7 +2958,7 @@ class WebosWorkspaceApiTest extends WebosTestCase
         $this->assertStringContainsString('function removeIgnoredUpdate(key, dialogLayero)', $script);
         $this->assertStringContainsString("data-unignore-key=\"", $script);
         // 更新列表版本号升级指向（2.1.52）：版本 xx => xxx（当前版本 → 最新版本）；更新来源详情补「最新版本」行
-        $this->assertStringContainsString("version = (app.version || '-') + ' => ' + (app.latest_version || '-');", $script);
+        $this->assertStringContainsString("version = (app.version || app.current_version || '-') + ' => ' + (app.latest_version || '-');", $script);
         $this->assertStringContainsString("items.push(['最新版本', 'v' + escapeHtml(app.latest_version || '-')]);", $script);
         $this->assertStringContainsString('title="忽略本次版本更新，应用发布更新版本后会重新提示"', $script);
         $this->assertStringContainsString(">忽略</button>", $script);

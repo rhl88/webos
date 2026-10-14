@@ -5360,8 +5360,9 @@
                 actions = '<button class="small-action primary" type="button" data-upgrade-id="' + escapeHtml(id) + '">更新</button>'
                     + '<button class="small-action" type="button" data-ignore-update-id="' + escapeHtml(id)
                     + '" title="忽略本次版本更新，应用发布更新版本后会重新提示">忽略</button>';
-                // 版本号显示升级指向（2.1.52）：版本 xx => xxx（当前版本 → 最新版本）
-                version = (app.version || '-') + ' => ' + (app.latest_version || '-');
+                // 版本号显示升级指向（2.1.52→2.1.54）：版本 xx => xxx；市场接口的当前版本字段为
+                // current_version（本地记录由服务端回填），version 为备选，仅取 version 会显示「- => x.y.z」
+                version = (app.version || app.current_version || '-') + ' => ' + (app.latest_version || '-');
             } else {
                 // 与已安装行菜单对等：未安装应用同样提供导出；右上角 × 物理删除应用文件
                 actions = '<button class="small-action primary" type="button" data-install-id="' + escapeHtml(id)
@@ -5804,7 +5805,8 @@
 
     /** 本地详情基本信息：未安装应用不显示状态行，已安装应用显示启用状态；更新列表来源补最新版本行（与市场详情对齐，2.1.52） */
     function localDetailMetaMarkup(app, source) {
-        var items = [['当前版本', 'v' + escapeHtml(app.version || '-')]];
+        // 当前版本兼容市场接口字段 current_version（更新列表来源），本地记录字段为 version
+        var items = [['当前版本', 'v' + escapeHtml(app.version || app.current_version || '-')]];
         if (source === 'updates') {
             items.push(['最新版本', 'v' + escapeHtml(app.latest_version || '-')]);
         }
