@@ -786,6 +786,18 @@ class WebosWorkspaceApiTest extends WebosTestCase
         // 停用/启用复用应用中心状态开关，卸载前收起开始菜单面板避免弹窗遮挡
         $this->assertStringContainsString("action === 'toggle-app-status'", $javascript);
         $this->assertStringContainsString('function openUninstallDialog', $javascript);
+        // 安装弹窗改由 layui layer 托管（2.1.55）：maxmin 可最小化，关闭时节点复位到 body 恢复 hidden，
+        // 弹层未就绪退回自绘弹窗；Esc/×/安装成功统一走 closeInstallLayer
+        $this->assertStringContainsString('function openInstallLayer()', $javascript);
+        $this->assertStringContainsString('function closeInstallLayer()', $javascript);
+        $this->assertStringContainsString('function restoreInstallDialogNode()', $javascript);
+        $this->assertStringContainsString('maxmin: true,', $javascript);
+        $this->assertStringContainsString('content: window.jQuery ? window.jQuery(dialog) : dialog,', $javascript);
+        $this->assertStringContainsString("if (name === 'close-install') { closeInstallLayer(); }", $javascript);
+        // layer 作用域覆盖：剥离自绘弹窗的全屏遮罩容器样式，卡片自适应 layer 内容区
+        $stylesheet = file_get_contents(dirname(__DIR__, 2) . '/Assets/css/webos.css');
+        $this->assertIsString($stylesheet);
+        $this->assertStringContainsString('.layui-layer-content .webos-dialog {', $stylesheet);
         // 开始面板右键委托绑定（含「最近」区块卡片）
         $this->assertStringContainsString("elements.startPanel.addEventListener('contextmenu'", $javascript);
     }

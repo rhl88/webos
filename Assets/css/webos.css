@@ -5518,6 +5518,22 @@ textarea:focus-visible,
     color: #16b88d;
 }
 
+/* 安装弹窗由 layui layer 托管（2.1.55）：剥离自绘遮罩容器样式，卡片自适应 layer 内容区 */
+.layui-layer-content .webos-dialog {
+    position: static;
+    inset: auto;
+    display: block;
+    padding: 0;
+    background: transparent;
+    backdrop-filter: none;
+    z-index: auto;
+}
+
+.layui-layer-content .dialog-card {
+    width: 100%;
+    box-shadow: none;
+}
+
 /* 应用操作弹窗 */
 .action-dialog-card {
     display: flex;

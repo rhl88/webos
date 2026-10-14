@@ -105,6 +105,7 @@
         lockDate: document.getElementById('lock-date'),
         lockTime: document.getElementById('lock-time'),
         installDialog: document.getElementById('install-dialog'),
+        installLayerIndex: null,
         installSummary: document.getElementById('install-app-summary'),
         installParents: document.getElementById('install-menu-parents'),
         installCreateShortcut: document.getElementById('install-create-shortcut'),
@@ -6482,6 +6483,55 @@
         });
     }
 
+    /** 安装弹窗层（2.1.55）：内容节点交由 layui layer 托管（title 栏自带最小化/最大化按钮）；
+     *  关闭时把节点搬回 body 并恢复 hidden，保证 elements.installDialog 引用与重复打开流程
+     *  不受「layer 关闭即移除内容」影响；弹层组件未就绪时退回自绘弹窗保证安装流程可用 */
+    function restoreInstallDialogNode() {
+        var dialog = elements.installDialog;
+        if (dialog && dialog.isConnected && dialog.closest('.layui-layer')) {
+            document.body.appendChild(dialog);
+            dialog.hidden = true;
+        }
+    }
+
+    function openInstallLayer() {
+        var layer = layuiLayer();
+        if (!layer) {
+            showModalDialog(elements.installDialog);
+            return;
+        }
+        if (state.installLayerIndex !== null && state.installLayerIndex !== undefined) {
+            layer.close(state.installLayerIndex);
+        }
+        var dialog = elements.installDialog;
+        dialog.hidden = false; // layer 负责显隐；原 hidden 属性会让搬入的内容不可见
+        state.installLayerIndex = layer.open({
+            type: 1,
+            title: '安装应用',
+            area: ['540px', 'auto'],
+            maxmin: true,
+            content: window.jQuery ? window.jQuery(dialog) : dialog,
+            cancel: function () {
+                // 点 × / Esc：先复位节点再让 layer 移除壳
+                restoreInstallDialogNode();
+                state.installLayerIndex = null;
+            },
+            end: function () {
+                restoreInstallDialogNode();
+                state.installLayerIndex = null;
+            }
+        });
+    }
+
+    /** 关闭安装弹窗层：layer 托管时走 layer.close（触发 cancel 复位节点），退回路径走自绘隐藏 */
+    function closeInstallLayer() {
+        if (state.installLayerIndex !== null && state.installLayerIndex !== undefined && layuiLayer()) {
+            layuiLayer().close(state.installLayerIndex);
+            return;
+        }
+        hideModalDialog(elements.installDialog);
+    }
+
     function openInstallDialog(app, source) {
         state.installTarget = Object.assign({}, app, { _source: source });
         state.installTerminals = [];
@@ -6492,7 +6542,7 @@
             + escapeHtml(app.description || '安装后可在 WebOS 中打开此应用') + '</span><span>版本 ' + escapeHtml(app.version || app.latest_version || '-') + '</span></div>';
         renderInstallMenuStatus('fa-circle-o-notch fa-spin', '正在识别应用菜单…', false);
         elements.confirmInstall.disabled = true;
-        showModalDialog(elements.installDialog);
+        openInstallLayer();
         loadInstallMenuFields(state.installTarget, source, requestId);
     }
 
@@ -6518,7 +6568,7 @@
         });
         var body = { parent_menu_ids: parentMenuIds };
         api(url, { method: 'POST', body: body }).then(function () {
-            hideModalDialog(elements.installDialog);
+            closeInstallLayer();
             return refreshCatalog();
         }).then(function () {
             if (createShortcut) {
@@ -10523,7 +10573,7 @@
                         toast('缓存已清除', 'success');
                     }).catch(function (error) { toast(error.message, 'error'); });
                 }
-                if (name === 'close-install') { hideModalDialog(elements.installDialog); }
+                if (name === 'close-install') { closeInstallLayer(); }
                 if (name === 'close-action') { closeActionDialog(); }
                 if (name === 'lock-desktop') { closePanels(); elements.lockScreen.hidden = false; updateClock(); }
                 if (name === 'unlock-desktop') { elements.lockScreen.hidden = true; }
@@ -11205,7 +11255,7 @@
                 if (activeDialog === elements.actionDialog) {
                     closeActionDialog();
                 } else {
-                    hideModalDialog(elements.installDialog);
+                    closeInstallLayer();
                 }
                 return;
             }

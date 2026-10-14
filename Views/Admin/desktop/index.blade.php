@@ -157,17 +157,9 @@
         </div>
     </section>
 
-    <section id="install-dialog" class="webos-dialog webos-dialog--plain" role="dialog" aria-modal="true" aria-labelledby="install-dialog-title" hidden>
+    <section id="install-dialog" class="webos-dialog webos-dialog--plain" role="dialog" aria-modal="true" aria-label="安装应用" hidden>
         <div class="dialog-card">
-            <header class="dialog-header">
-                <div>
-                    <span class="dialog-kicker">应用安装</span>
-                    <h2 id="install-dialog-title">安装应用</h2>
-                </div>
-                <button class="icon-button" type="button" data-action="close-install" aria-label="关闭安装窗口">
-                    <i class="fa fa-times"></i>
-                </button>
-            </header>
+            {{-- 标题栏由 layui layer 托管（可最小化/最大化），仅保留弹窗主体 --}}
             <div class="dialog-body">
                 <div id="install-app-summary" class="install-app-summary"></div>
                 <p class="install-entry-hint">安装后默认添加到系统菜单。</p>
