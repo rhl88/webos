@@ -792,7 +792,9 @@ class WebosWorkspaceApiTest extends WebosTestCase
         $this->assertStringContainsString('function closeInstallLayer()', $javascript);
         $this->assertStringContainsString('function restoreInstallDialogNode()', $javascript);
         $this->assertStringContainsString('maxmin: true,', $javascript);
-        $this->assertStringContainsString('content: window.jQuery ? window.jQuery(dialog) : dialog,', $javascript);
+        // content 必须传 jQuery 对象：layui vessel 对 content 调 .parents()，原生 DOM 会报 d.parents is not a function
+        $this->assertStringContainsString('var dialogJquery = window.jQuery || layuiJquery();', $javascript);
+        $this->assertStringContainsString('content: dialogJquery(dialog),', $javascript);
         $this->assertStringContainsString("if (name === 'close-install') { closeInstallLayer(); }", $javascript);
         // layer 作用域覆盖：剥离自绘弹窗的全屏遮罩容器样式，卡片自适应 layer 内容区
         $stylesheet = file_get_contents(dirname(__DIR__, 2) . '/Assets/css/webos.css');

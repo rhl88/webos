@@ -6496,7 +6496,9 @@
 
     function openInstallLayer() {
         var layer = layuiLayer();
-        if (!layer) {
+        var dialogJquery = window.jQuery || layuiJquery();
+        if (!layer || !dialogJquery) {
+            // 弹层组件或其 jQuery 未就绪时退回自绘弹窗，保证安装流程可用
             showModalDialog(elements.installDialog);
             return;
         }
@@ -6510,7 +6512,9 @@
             title: '安装应用',
             area: ['540px', 'auto'],
             maxmin: true,
-            content: window.jQuery ? window.jQuery(dialog) : dialog,
+            // layui 的 vessel 对 content 调用 jQuery 方法（.parents），原生 DOM 会报
+            // 「d.parents is not a function」，必须传 jQuery 对象（页面无全局 jQuery 时取 layui 内置实例）
+            content: dialogJquery(dialog),
             cancel: function () {
                 // 点 × / Esc：先复位节点再让 layer 移除壳
                 restoreInstallDialogNode();
