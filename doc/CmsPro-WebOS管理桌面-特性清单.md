@@ -1,7 +1,7 @@
 # CmsPro WebOS 管理桌面 · 特性清单
 
-> 文档版本：2.1.56 | 更新日期：2026-10-14
-> 应用版本：2.1.56 | 应用 ID：`cmspro.webos`
+> 文档版本：2.1.57 | 更新日期：2026-10-14
+> 应用版本：2.1.57 | 应用 ID：`cmspro.webos`
 
 ## 一、应用定位
 
@@ -104,6 +104,7 @@ WebOS 管理桌面是 CmsPro 后台的可选交互层，不替换系统后台框
 66. 更新列表版本号当前版本字段修复（2.1.54，用户反馈「实际上显示：版本 - => 1.4.3，缺少现在的版本号」）：市场接口返回对象带服务端回填的 `current_version`（当前站点已安装版本）与 `latest_version`，2.1.52 的升级指向只取 `app.version`（本地记录字段）→ undefined 回退 `-`。修复：升级指向与更新来源详情「当前版本」行均改为 `app.version || app.current_version || '-'` 双字段兼容（与旧版单版本显示链、webos 自身更新检查 L3356 的字段先例一致）。
 67. 安装弹窗改由 layui layer 托管并支持最小化（2.1.55，用户需求「安装应用时弹出层使用 layui，可以缩小」）：① `openInstallLayer` 用 `layer.open(type:1, maxmin:true)` 托管 `#install-dialog` 节点（标题栏自带最小化/最大化/关闭按钮，最小化收至左下角），内容以 jQuery 对象传入由 layer 搬移节点（不复制，`elements.confirmInstall` 等引用与「安装中」状态更新保持有效）；② 关闭链路统一 `closeInstallLayer`（安装成功、卡片 ×、Esc 三处）——`cancel/end` 回调把节点搬回 body 并恢复 hidden（`restoreInstallDialogNode`），规避「layer 关闭即移除内容导致节点引用失效」，重复打开流程不受影响；③ 弹层组件未就绪时退回原自绘弹窗（`showModalDialog`）保证安装流程可用；④ blade 移除弹窗内部标题栏（layer 标题替代，`aria-label` 保持可访问性），CSS 新增 `.layui-layer-content` 作用域覆盖剥离自绘全屏遮罩样式、卡片自适应 layer 内容区。补 8 条断言（三函数/maxmin/content 表达式/委托分支/CSS 覆盖）。
 68. 安装弹窗 content 类型修复（2.1.56，用户反馈「点击安装弹出安装对话控制台报错 layui.js d.parents is not a function」）：layui layer 的 `vessel` 对 type:1 的 content 调用 jQuery 方法（`.parents`），2.1.55 的 `window.jQuery ? … : 原生DOM` 回退在页面无全局 `window.jQuery`（jQuery 不挂全局，layui 用内置实例）时传了原生 DOM → TypeError 且弹窗未打开。修复：jQuery 取值改为 `window.jQuery || layuiJquery()`（复用既有 `window.layui.jquery` 取法，legacyAjax 同源先例证明必然存在），两者皆无时与「弹层未就绪」同分支退回自绘弹窗。更新 2 条断言（dialogJquery 取值表达式、content 调用）。
+69. 安装成功后旧自绘弹窗裸露修复（2.1.57，用户反馈「安装弹出层 layui 的和原来旧的同时存在了；安装成功后旧的安装界面就出来了」）：layui 关闭 type:1 弹层时会把 jQuery content **还原回原父级**（不还原 hidden——打开时置的 false 残留 → 弹窗以全屏遮罩容器形态裸露）；旧 `restoreInstallDialogNode` 以 `isConnected && closest('.layui-layer')` 为前置条件，还原后节点不在壳内 → `hidden = true` 未执行。修复：复位改为**无条件兜底**——节点不在文档或仍在 layer 壳内时搬回 body，`hidden = true` 无条件执行（幂等），覆盖 layui 还原 / 随壳移除 / 壳未销毁三种关闭时序。补 1 条断言（无条件兜底分支）。
 
 ## 四、数据结构
 
@@ -153,6 +154,7 @@ CmsproWebos/
 
 | 版本 | 日期 | 说明 |
 |---|---|---|
+| 2.1.57 | 2026-10-14 | 安装成功后旧自绘弹窗裸露修复（用户反馈）：layui 关闭时还原 content 到原父级但不还原 hidden，节点复位改为无条件兜底（搬回 body + hidden=true），覆盖全部关闭时序。137 测试 1605 断言通过。 |
 | 2.1.56 | 2026-10-14 | 安装弹窗 content 类型修复（用户反馈）：layer content 必须为 jQuery 对象，页面无全局 jQuery 时改取 layui 内置实例（layuiJquery），两者皆无退回自绘弹窗，不再报 d.parents is not a function。137 测试 1604 断言通过。 |
 | 2.1.55 | 2026-10-14 | 安装弹窗改由 layui layer 托管并支持最小化（用户需求）：标题栏自带最小化/最大化/关闭，关闭链路统一并保证节点复位可重复打开，弹层未就绪退回自绘弹窗。137 测试 1603 断言通过。 |
 | 2.1.54 | 2026-10-14 | 更新列表升级指向的当前版本字段修复（用户反馈）：市场接口当前版本在 current_version 字段，升级指向与详情「当前版本」行改为 version/current_version 双字段兼容，不再显示「- => x.y.z」。137 测试 1595 断言通过。 |

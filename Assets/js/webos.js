@@ -6483,15 +6483,18 @@
         });
     }
 
-    /** 安装弹窗层（2.1.55）：内容节点交由 layui layer 托管（title 栏自带最小化/最大化按钮）；
-     *  关闭时把节点搬回 body 并恢复 hidden，保证 elements.installDialog 引用与重复打开流程
-     *  不受「layer 关闭即移除内容」影响；弹层组件未就绪时退回自绘弹窗保证安装流程可用 */
+    /** 安装弹窗节点复位（幂等，cancel/end 双路径兜底）：layer 关闭时 layui 会把 jQuery content
+     *  还原回原父级（hidden 仍为打开时置的 false → 弹窗裸露），或随壳移除导致节点脱离文档；
+     *  这里无条件把节点搬回 body 并恢复 hidden，保证任何关闭路径后弹窗都不可见（2.1.57） */
     function restoreInstallDialogNode() {
         var dialog = elements.installDialog;
-        if (dialog && dialog.isConnected && dialog.closest('.layui-layer')) {
-            document.body.appendChild(dialog);
-            dialog.hidden = true;
+        if (!dialog) {
+            return;
         }
+        if (!dialog.isConnected || dialog.closest('.layui-layer')) {
+            document.body.appendChild(dialog);
+        }
+        dialog.hidden = true;
     }
 
     function openInstallLayer() {

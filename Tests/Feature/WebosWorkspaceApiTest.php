@@ -791,6 +791,9 @@ class WebosWorkspaceApiTest extends WebosTestCase
         $this->assertStringContainsString('function openInstallLayer()', $javascript);
         $this->assertStringContainsString('function closeInstallLayer()', $javascript);
         $this->assertStringContainsString('function restoreInstallDialogNode()', $javascript);
+        // 复位必须无条件兜底：layui 关闭时会把 content 还原回原父级（hidden 残留 false 弹窗裸露），
+        // 或随壳移除导致节点脱离文档；两条路径都要搬回 body 并恢复 hidden
+        $this->assertStringContainsString("if (!dialog.isConnected || dialog.closest('.layui-layer')) {", $javascript);
         $this->assertStringContainsString('maxmin: true,', $javascript);
         // content 必须传 jQuery 对象：layui vessel 对 content 调 .parents()，原生 DOM 会报 d.parents is not a function
         $this->assertStringContainsString('var dialogJquery = window.jQuery || layuiJquery();', $javascript);
