@@ -1955,6 +1955,8 @@
         }
         if (action === 'open') {
             openEntry(context.entry || findDesktopItem(iconId));
+            // 浮层子项右键「打开」与左键同语义：打开窗口后收起浮层（桌面场景无浮层时幂等）
+            closeFolderOverlay();
             return;
         }
         // 开始菜单右键「添加到桌面/从桌面移除」：与卡片图钉按钮同链路（toggleDesktopEntry 按固定状态双向切换）
@@ -11077,6 +11079,8 @@
             var folderItem = event.target.closest('.webos-folder-item');
             if (folderItem) {
                 openEntry(findEntry(folderItem.dataset.desktopId) || findDesktopItem(folderItem.dataset.desktopId));
+                // 打开应用窗口后关闭文件夹浮层：浮层（z-index 3500）会盖住新窗口，打开动作完成即收起
+                closeFolderOverlay();
                 return;
             }
 

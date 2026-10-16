@@ -799,6 +799,10 @@ class WebosWorkspaceApiTest extends WebosTestCase
         $this->assertStringContainsString('var dialogJquery = window.jQuery || layuiJquery();', $javascript);
         $this->assertStringContainsString('content: dialogJquery(dialog),', $javascript);
         $this->assertStringContainsString("if (name === 'close-install') { closeInstallLayer(); }", $javascript);
+        // 打开应用窗口后关闭文件夹浮层（2.1.58）：浮层 z-index 3500 会盖住新窗口，
+        // 左键单击与右键「打开」打开窗口后统一收起（桌面场景无浮层时幂等）
+        $this->assertStringContainsString('openEntry(findEntry(folderItem.dataset.desktopId) || findDesktopItem(folderItem.dataset.desktopId));', $javascript);
+        $this->assertStringContainsString('closeFolderOverlay();', $javascript);
         // layer 作用域覆盖：剥离自绘弹窗的全屏遮罩容器样式，卡片自适应 layer 内容区
         $stylesheet = file_get_contents(dirname(__DIR__, 2) . '/Assets/css/webos.css');
         $this->assertIsString($stylesheet);
