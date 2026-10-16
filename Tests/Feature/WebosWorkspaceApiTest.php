@@ -350,9 +350,10 @@ class WebosWorkspaceApiTest extends WebosTestCase
             "/windowAction\.dataset\.windowAction === 'refresh'\)\s*\{\s*\/\/ 标题栏刷新按钮[\s\S]*?reloadWindowTab\(refreshTarget,\s*refreshTab\);/",
             $script
         );
-        // iframe 独立文档点击不冒泡到父文档 click 委托：借 window blur 关闭右键菜单（桌面/任务栏/应用行）
+        // iframe 独立文档点击不冒泡到父文档 click 委托：借 window blur 关闭右键菜单（桌面/任务栏/应用行）；
+        // 2.1.64：浮层锁定（「+」添加弹窗打开期间）跳过浮层关闭
         $this->assertMatchesRegularExpression(
-            "/window\.addEventListener\('blur', function \(\)\s*\{\s*closeDesktopContextMenu\(\);\s*closeTaskbarContextMenu\(\);\s*closeAppRowMenus\(\);\s*closeFolderOverlay\(\);\s*\}\);/",
+            "/window\.addEventListener\('blur', function \(\)\s*\{\s*closeDesktopContextMenu\(\);\s*closeTaskbarContextMenu\(\);\s*closeAppRowMenus\(\);\s*if \(!state\.folderOverlayLocked\) \{\s*closeFolderOverlay\(\);\s*\}\s*\}\);/",
             $script
         );
         $this->assertMatchesRegularExpression(
@@ -2872,9 +2873,9 @@ class WebosWorkspaceApiTest extends WebosTestCase
         $this->assertStringContainsString('applyWorkspaceData(workspace);', $script);
         $this->assertStringContainsString('delete existing[key];', $script);
         $this->assertMatchesRegularExpression('/if \(removing && removing\.kind === \'folder\'\)\s*\{\s*state\.workspace\.desktop_items\.forEach/', $script);
-        // 关闭链：Esc 与窗口失焦均收起文件夹浮层
-        $this->assertMatchesRegularExpression("/closeDesktopContextMenu\(\);\s*[\r\n]+\s*closeFolderOverlay\(\);\s*[\r\n]+\s*closeActionDialog\(\);/", $script);
-        $this->assertMatchesRegularExpression("/closeAppRowMenus\(\);\s*[\r\n]+\s*closeFolderOverlay\(\);\s*[\r\n]+\s*\}\);/", $script);
+        // 关闭链：Esc 与窗口失焦均收起文件夹浮层；2.1.64 浮层锁定期间（「+」弹窗打开）跳过（Esc 分支与 if 间允许注释行）
+        $this->assertMatchesRegularExpression("/closeDesktopContextMenu\(\);\s*(?:\/\/[^\r\n]+[\r\n]+\s*)?if \(!state\.folderOverlayLocked\) \{\s*closeFolderOverlay\(\);\s*\}\s*[\r\n]+\s*closeActionDialog\(\);/", $script);
+        $this->assertMatchesRegularExpression("/closeAppRowMenus\(\);\s*[\r\n]+\s*if \(!state\.folderOverlayLocked\) \{\s*closeFolderOverlay\(\);\s*\}\s*[\r\n]+\s*\}\);/", $script);
 
         $this->assertIsString($stylesheet);
         // 浮层玻璃拟态面板 + 子项网格 + 拖动穿透与悬停高亮
@@ -2926,6 +2927,14 @@ class WebosWorkspaceApiTest extends WebosTestCase
         $this->assertStringNotContainsString('array_slice($items, 0, 48)', $service);
         $this->assertStringContainsString('state.workspace.desktop_items.length >= 200', $script);
         $this->assertStringContainsString("toast('桌面项已达上限（200），请先整理或移除部分图标', 'error');", $script);
+        // 2.1.64：「+」添加弹窗（body 级元素）打开期间锁定文件夹浮层——点击弹窗不再被「浮层外点击」
+        // 判定关闭浮层，Esc/窗口失焦同样跳过；弹窗 end 回调解锁并重绘浮层（添加路径已同步内容，幂等兜底）
+        $this->assertStringContainsString('folderOverlayLocked: false', $script);
+        $this->assertStringContainsString('state.folderOverlayLocked = true;', $script);
+        $this->assertStringContainsString('state.folderOverlayLocked = false;', $script);
+        $this->assertStringContainsString("if (!state.folderOverlayLocked && root.querySelector('.webos-folder-overlay')", $script);
+        $this->assertStringContainsString('if (!state.folderOverlayLocked) {', $script);
+        $this->assertStringContainsString('end: function () {', $script);
         $this->assertStringContainsString('.webos-folder-item .desktop-icon-label {', $stylesheet);
         $this->assertStringContainsString('.webos-folder-overlay .desktop-icon-badge.is-app-icon img,', $stylesheet);
         $this->assertStringContainsString('.webos-folder-overlay-empty {', $stylesheet);

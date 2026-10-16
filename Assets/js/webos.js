@@ -42,6 +42,10 @@
         desktopSelection: new Set(),
         // 当前打开的文件夹浮层 id（macOS 式浮层，同一时间至多一个）
         folderOverlayId: '',
+        // 浮层锁定：「+」添加弹窗打开期间置真——layui 弹窗是 body 级元素，点击弹窗会被
+        // 「浮层外点击」判定把浮层关掉；锁定期间浮层不响应点击外部/Esc/窗口失焦关闭，
+        // 弹窗关闭（end 回调）解锁并恢复浮层
+        folderOverlayLocked: false,
         catalog: { menus: [], applications: [], operation_logs: [] },
         flatMenus: [],
         // 开始菜单数据源：flatMenus 并入停用应用菜单后的展开项（桌面/任务栏仍用 flatMenus，不含停用应用）
@@ -2578,8 +2582,20 @@
                 addPickedEntries(entries, folder);
                 layer.close(index);
             },
+            // 弹窗以任何方式关闭（添加/取消/×/Esc）后解锁并恢复浮层：
+            // 添加路径已同步浮层内容，此处重绘为幂等兜底；浮层已关闭时 refreshFolderOverlay 内部直接返回
+            end: function () {
+                state.folderOverlayLocked = false;
+                if (folder) {
+                    refreshFolderOverlay(folder.id);
+                }
+            },
             content: '<div class="webos-entry-pick-list">' + (pickListMarkup() || emptyMarkup) + '</div>',
             success: function (layero) {
+                // 文件夹「+」弹窗打开期间锁定浮层（普通「新建桌面入口」无浮层无需锁定）
+                if (folder) {
+                    state.folderOverlayLocked = true;
+                }
                 // 分支行：展开/收起后重渲染列表（弹窗内独立展开集合，默认全部收起）
                 layero.on('click', '[data-pick-branch-id]', function () {
                     var key = this.dataset.pickBranchId;
@@ -2635,7 +2651,8 @@
 
     /**
      * 桌面文件夹浮层（macOS 式）：锚定文件夹图标位置向右展开，内容为拖入的桌面子项网格，
-     * 单击子项直接打开，右键可移回桌面；点击浮层外部 / Esc 关闭（见全局 click 与 keydown 委托）。
+     * 单击子项直接打开，右键可移回桌面；点击浮层外部 / Esc 关闭（见全局 click 与 keydown 委托，
+     * 「+」添加弹窗打开期间锁定不关闭，见 state.folderOverlayLocked）。
      */
     function openFolderOverlay(folder) {
         closeFolderOverlay();
@@ -2753,7 +2770,7 @@
         state.folderOverlayId = folder.id;
     }
 
-    /** 关闭文件夹浮层：传入 folderId 时仅关闭对应浮层，否则关闭任意打开中的浮层 */
+    /** 关闭文件夹浮层：传入 folderId 时仅关闭对应浮层，否则关闭任意打开中的浮层（关闭即清锁） */
     function closeFolderOverlay(folderId) {
         var overlay = root.querySelector('.webos-folder-overlay');
         if (overlay && (folderId === undefined || overlay.dataset.folderId === folderId)) {
@@ -2762,6 +2779,7 @@
         if (folderId === undefined || state.folderOverlayId === folderId) {
             state.folderOverlayId = '';
         }
+        state.folderOverlayLocked = false;
     }
 
     /** 浮层打开中且内容变化（拖入/移出/删除子项）时按文件夹 id 重绘浮层 */
@@ -11302,8 +11320,9 @@
             // 文件夹浮层（macOS 式）：点击浮层外部关闭；单击浮层内子项直接打开。
             // isConnected 防御：浮层标题原地重命名时 target（旧 strong）已被 replaceWith 移出文档，
             // 同一次 click 仍沿旧路径冒泡到这里，detached target 的 closest 恒为空会被误判「浮层外」，
-            // 导致编辑态刚建立浮层即被关闭并对已移走节点 remove 抛 NotFoundError
-            if (root.querySelector('.webos-folder-overlay') && event.target.isConnected && !event.target.closest('.webos-folder-overlay')) {
+            // 导致编辑态刚建立浮层即被关闭并对已移走节点 remove 抛 NotFoundError。
+            // folderOverlayLocked：「+」添加弹窗（body 级元素）打开期间锁定，点击弹窗不算「浮层外」
+            if (!state.folderOverlayLocked && root.querySelector('.webos-folder-overlay') && event.target.isConnected && !event.target.closest('.webos-folder-overlay')) {
                 closeFolderOverlay();
             }
             var folderItem = event.target.closest('.webos-folder-item');
@@ -11331,12 +11350,15 @@
         });
 
         // iframe 是独立文档，其内部点击不会冒泡到父文档的 click 委托（上方监听收不到），
-        // 导致右键菜单在点击 iframe 内容后残留；点击 iframe 会使父窗口失焦，借 blur 事件关闭
+        // 导致右键菜单在点击 iframe 内容后残留；点击 iframe 会使父窗口失焦，借 blur 事件关闭。
+        // 浮层锁定（「+」弹窗打开）期间跳过浮层关闭，避免点弹窗周围 iframe 时浮层被顺带关掉
         window.addEventListener('blur', function () {
             closeDesktopContextMenu();
             closeTaskbarContextMenu();
             closeAppRowMenus();
-            closeFolderOverlay();
+            if (!state.folderOverlayLocked) {
+                closeFolderOverlay();
+            }
         });
 
         elements.confirmInstall.addEventListener('click', confirmInstall);
@@ -11512,7 +11534,10 @@
                 closePanels();
                 closeAppRowMenus();
                 closeDesktopContextMenu();
-                closeFolderOverlay();
+                // 浮层锁定（「+」弹窗打开）期间不关浮层：Esc 先交给 layui 关闭弹窗，end 回调解锁
+                if (!state.folderOverlayLocked) {
+                    closeFolderOverlay();
+                }
                 closeActionDialog();
             }
         });
