@@ -57,6 +57,9 @@ class WorkspaceService
         return $workspace;
     }
 
+    /** 桌面项保存上限（含文件夹子项）：与前端添加入口的容量预检查一致 */
+    protected const DESKTOP_ITEM_LIMIT = 200;
+
     /**
      * @param array{desktop_items?:array<int,array<string,mixed>>,taskbar_items?:array<int,array<string,mixed>>,preferences?:array<string,mixed>} $payload
      */
@@ -87,7 +90,14 @@ class WorkspaceService
     /** @return array<int,array<string,mixed>> */
     protected function sanitizeDesktopItems(array $items): array
     {
-        return collect(array_slice($items, 0, 48))
+        // 超限拒绝保存而非静默截断：截断会让排在数组尾部的项（如文件夹）在响应回填后凭空消失
+        if (count($items) > self::DESKTOP_ITEM_LIMIT) {
+            throw new InvalidArgumentException(
+                '桌面项数量超出上限（' . self::DESKTOP_ITEM_LIMIT . '），请先整理或移除部分图标'
+            );
+        }
+
+        return collect($items)
             ->map(fn (array $item): array => $this->sanitizeDesktopItem($item))
             ->values()
             ->all();

@@ -1601,7 +1601,7 @@
     }
 
     /** 桌面入口单条添加核心（不含提示/渲染/保存）：folder 为空时添加到桌面，否则归入文件夹。
-     *  返回 'added'|'moved'|'duplicate'|'nested'|'no-slot'|'invalid'，供单条与多选批量共用 */
+     *  返回 'added'|'moved'|'duplicate'|'nested'|'limit'|'no-slot'|'invalid'，供单条与多选批量共用 */
     function applyDesktopEntryChange(entry, folder) {
         if (!entry) {
             return 'invalid';
@@ -1618,6 +1618,11 @@
                 item.parent_folder = folder.id;
                 return 'moved';
             }
+            // 桌面项总数上限（含文件夹子项）：与服务端 sanitizeDesktopItems 上限一致，
+            // 新建前预检查提前反馈，避免保存时才报错（本地 state 与服务端不一致）
+            if (state.workspace.desktop_items.length >= 200) {
+                return 'limit';
+            }
             // 入口不在桌面：新建并归入文件夹，坐标取当前空位（无空位存 0 兜底，
             // 移回桌面时 findFreeDesktopSlot 会重新计算，不占用桌面格子）
             var slot = findFreeDesktopSlot();
@@ -1631,6 +1636,9 @@
         if (item) {
             return 'duplicate';
         }
+        if (state.workspace.desktop_items.length >= 200) {
+            return 'limit';
+        }
         var freeSlot = findFreeDesktopSlot();
         if (!freeSlot) {
             return 'no-slot';
@@ -1643,6 +1651,10 @@
         var result = applyDesktopEntryChange(entry, null);
         if (result === 'invalid' || result === 'duplicate') {
             toast('该入口已经在桌面上');
+            return;
+        }
+        if (result === 'limit') {
+            toast('桌面项已达上限（200），请先整理或移除部分图标', 'error');
             return;
         }
         if (result === 'no-slot') {
@@ -1672,6 +1684,10 @@
             toast('文件夹不支持放入文件夹内', 'error');
             return;
         }
+        if (result === 'limit') {
+            toast('桌面项已达上限（200），请先整理或移除部分图标', 'error');
+            return;
+        }
         if (state.folderOverlayId === folder.id) {
             refreshFolderOverlay(folder.id);
         }
@@ -1697,7 +1713,7 @@
             }
         });
         if (!added && !moved) {
-            toast(folder ? '所选入口均已在该文件夹内' : '所选入口均已在桌面上');
+            toast(folder ? '所选入口均已在该文件夹内或不可添加' : '所选入口均已在桌面上或不可添加');
             return;
         }
         if (folder && state.folderOverlayId === folder.id) {

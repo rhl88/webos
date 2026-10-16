@@ -5,6 +5,7 @@ namespace App\Apps\CmsproWebos\Tests\Unit;
 use App\Apps\CmsproWebos\Models\WebosWorkspace;
 use App\Apps\CmsproWebos\Services\WorkspaceService;
 use App\Apps\CmsproWebos\Tests\WebosTestCase;
+use InvalidArgumentException;
 
 class WorkspaceServiceTest extends WebosTestCase
 {
@@ -131,6 +132,40 @@ class WorkspaceServiceTest extends WebosTestCase
         $this->assertSame(40, $workspace->preferences['window_height']);
         $this->assertArrayNotHasKey('unknown_setting', $workspace->preferences);
         $this->assertSame(1, WebosWorkspace::query()->count());
+    }
+
+    public function test_it_rejects_desktop_items_beyond_limit_instead_of_truncating(): void
+    {
+        $admin = $this->actingAdmin();
+
+        // 超限拒绝保存而非静默截断：截断会让数组尾部的项（如文件夹）在响应回填后凭空消失
+        $items = [];
+        for ($i = 0; $i < 201; $i++) {
+            $items[] = [
+                'id' => 'menu-' . $i,
+                'title' => '入口' . $i,
+                'path' => '/admin/content',
+                'icon' => 'fa fa-cube',
+                'x' => 0,
+                'y' => 0,
+            ];
+        }
+
+        try {
+            app(WorkspaceService::class)->saveForAdmin($admin->id, ['desktop_items' => $items]);
+            $this->fail('超出桌面项上限时应抛出异常');
+        } catch (InvalidArgumentException $exception) {
+            $this->assertStringContainsString('桌面项数量超出上限（200）', $exception->getMessage());
+        }
+
+        // 被拒绝的保存不应落库（避免部分写入）
+        $workspace = app(WorkspaceService::class)->getForAdmin($admin->id);
+        $this->assertSame([], $workspace->desktop_items);
+
+        // 上限之内（200 项）正常保存
+        array_pop($items);
+        $workspace = app(WorkspaceService::class)->saveForAdmin($admin->id, ['desktop_items' => $items]);
+        $this->assertCount(200, $workspace->desktop_items);
     }
 
     public function test_it_sanitizes_window_size_preferences(): void

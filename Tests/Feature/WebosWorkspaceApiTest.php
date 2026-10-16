@@ -2918,6 +2918,14 @@ class WebosWorkspaceApiTest extends WebosTestCase
         $this->assertStringContainsString('function firstPickLeaf(nodes, key)', $script);
         $this->assertStringContainsString('.webos-entry-pick-check {', $stylesheet);
         $this->assertStringContainsString('.webos-entry-pick-row .webos-entry-pick-item {', $stylesheet);
+        // 2.1.63：多选批量添加顶破桌面项 48 上限时服务端 array_slice 静默截断——排在数组尾部的
+        // 文件夹图标被截掉，响应回填后凭空消失。修复：上限提至 200 且超限抛异常拒绝（不静默截断），
+        // 前端新建入口前做容量预检查（'limit' 结果码）提前反馈
+        $this->assertStringContainsString('DESKTOP_ITEM_LIMIT = 200', $service);
+        $this->assertStringContainsString("'桌面项数量超出上限（' . self::DESKTOP_ITEM_LIMIT . '）", $service);
+        $this->assertStringNotContainsString('array_slice($items, 0, 48)', $service);
+        $this->assertStringContainsString('state.workspace.desktop_items.length >= 200', $script);
+        $this->assertStringContainsString("toast('桌面项已达上限（200），请先整理或移除部分图标', 'error');", $script);
         $this->assertStringContainsString('.webos-folder-item .desktop-icon-label {', $stylesheet);
         $this->assertStringContainsString('.webos-folder-overlay .desktop-icon-badge.is-app-icon img,', $stylesheet);
         $this->assertStringContainsString('.webos-folder-overlay-empty {', $stylesheet);
