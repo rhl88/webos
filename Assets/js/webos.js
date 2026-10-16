@@ -1600,59 +1600,170 @@
         return null;
     }
 
+    /** 桌面入口单条添加核心（不含提示/渲染/保存）：folder 为空时添加到桌面，否则归入文件夹。
+     *  返回 'added'|'moved'|'duplicate'|'nested'|'no-slot'|'invalid'，供单条与多选批量共用 */
+    function applyDesktopEntryChange(entry, folder) {
+        if (!entry) {
+            return 'invalid';
+        }
+        var item = findDesktopItem(entry.id);
+        if (folder) {
+            if (item && item.parent_folder === folder.id) {
+                return 'duplicate';
+            }
+            if (item && item.kind === 'folder') {
+                return 'nested';
+            }
+            if (item) {
+                item.parent_folder = folder.id;
+                return 'moved';
+            }
+            // 入口不在桌面：新建并归入文件夹，坐标取当前空位（无空位存 0 兜底，
+            // 移回桌面时 findFreeDesktopSlot 会重新计算，不占用桌面格子）
+            var slot = findFreeDesktopSlot();
+            state.workspace.desktop_items.push(Object.assign({}, entry, {
+                x: slot ? slot.x : 0,
+                y: slot ? slot.y : 0,
+                parent_folder: folder.id
+            }));
+            return 'added';
+        }
+        if (item) {
+            return 'duplicate';
+        }
+        var freeSlot = findFreeDesktopSlot();
+        if (!freeSlot) {
+            return 'no-slot';
+        }
+        state.workspace.desktop_items.push(Object.assign({}, entry, { x: freeSlot.x, y: freeSlot.y }));
+        return 'added';
+    }
+
     function addDesktopEntry(entry, successMessage) {
-        if (!entry || state.workspace.desktop_items.some(function (item) { return item.id === entry.id; })) {
+        var result = applyDesktopEntryChange(entry, null);
+        if (result === 'invalid' || result === 'duplicate') {
             toast('该入口已经在桌面上');
             return;
         }
-        var slot = findFreeDesktopSlot();
-        if (!slot) {
+        if (result === 'no-slot') {
             toast('桌面可视区域已满，请先整理或移除部分图标', 'error');
             return;
         }
-        state.workspace.desktop_items.push(Object.assign({}, entry, { x: slot.x, y: slot.y }));
         renderDesktop();
         renderStartMenu();
         saveWorkspace(false).then(function () { toast(successMessage || '已添加到桌面'); });
     }
 
     /** 文件夹浮层「+」添加：入口已在桌面时直接移入（保留原坐标便于移回），不在桌面时新建并归入文件夹；
-     *  文件夹不支持嵌套（与拖入判定同口径）；parent_folder 非空的项不占桌面格子，浮层开着时同步重绘 */
+     *  文件夹不支持嵌套（与拖入判定同口径）；浮层开着时同步重绘 */
     function addDesktopEntryToFolder(entry, folder) {
-        if (!entry || !folder) {
+        if (!folder) {
             return;
         }
-        var item = findDesktopItem(entry.id);
-        if (item) {
-            if (item.parent_folder === folder.id) {
-                toast('该图标已在此文件夹内');
-                return;
-            }
-            if (item.kind === 'folder') {
-                toast('文件夹不支持放入文件夹内', 'error');
-                return;
-            }
-            item.parent_folder = folder.id;
-            if (state.folderOverlayId === folder.id) {
-                refreshFolderOverlay(folder.id);
-            }
-            renderDesktop();
-            saveWorkspace(false).then(function () { toast('已移入「' + folder.title + '」'); });
+        var result = applyDesktopEntryChange(entry, folder);
+        if (result === 'invalid') {
             return;
         }
-        // 入口不在桌面：新建桌面项并直接归入文件夹，坐标取当前空位（无空位存 0 兜底，
-        // 移回桌面时 findFreeDesktopSlot 会重新计算，不占用桌面格子）
-        var slot = findFreeDesktopSlot();
-        state.workspace.desktop_items.push(Object.assign({}, entry, {
-            x: slot ? slot.x : 0,
-            y: slot ? slot.y : 0,
-            parent_folder: folder.id
-        }));
+        if (result === 'duplicate') {
+            toast('该图标已在此文件夹内');
+            return;
+        }
+        if (result === 'nested') {
+            toast('文件夹不支持放入文件夹内', 'error');
+            return;
+        }
         if (state.folderOverlayId === folder.id) {
             refreshFolderOverlay(folder.id);
         }
         renderDesktop();
-        saveWorkspace(false).then(function () { toast('已添加到「' + folder.title + '」'); });
+        saveWorkspace(false).then(function () {
+            toast(result === 'moved' ? '已移入「' + folder.title + '」' : '已添加到「' + folder.title + '」');
+        });
+    }
+
+    /** 多选批量添加：逐条复用单条添加核心，一次性渲染/保存，汇总一条 toast */
+    function addPickedEntries(entries, folder) {
+        var added = 0;
+        var moved = 0;
+        var skipped = 0;
+        entries.forEach(function (entry) {
+            var result = applyDesktopEntryChange(entry, folder);
+            if (result === 'added') {
+                added += 1;
+            } else if (result === 'moved') {
+                moved += 1;
+            } else if (result !== 'invalid') {
+                skipped += 1;
+            }
+        });
+        if (!added && !moved) {
+            toast(folder ? '所选入口均已在该文件夹内' : '所选入口均已在桌面上');
+            return;
+        }
+        if (folder && state.folderOverlayId === folder.id) {
+            refreshFolderOverlay(folder.id);
+        }
+        renderDesktop();
+        if (!folder) {
+            renderStartMenu();
+        }
+        saveWorkspace(false).then(function () {
+            var summary = [];
+            if (added) { summary.push('添加 ' + added + ' 项'); }
+            if (moved) { summary.push('移入 ' + moved + ' 项'); }
+            if (skipped) { summary.push(skipped + ' 项已存在或不可添加'); }
+            toast(summary.join('，'));
+        });
+    }
+
+    /** 多选勾选 key 解析为桌面入口：叶子按 id 查目录；应用/系统分组取其下第一个可打开菜单（与单条添加口径一致） */
+    function pickedEntryOfKey(key) {
+        if (typeof key !== 'string' || !key) {
+            return null;
+        }
+        if (key.indexOf('menu-') === 0) {
+            return findEntry(key) || null;
+        }
+        if (key.indexOf('app:') === 0) {
+            var appId = key.slice('app:'.length);
+            return state.flatMenus.find(function (item) { return item.app_id === appId; }) || null;
+        }
+        if (key.indexOf('branch:') === 0) {
+            var leaf = firstPickLeaf(buildEntryTree(), key);
+            return leaf ? findEntry(leaf.key) : null;
+        }
+        return null;
+    }
+
+    /** 在入口树中按 key 查找节点（分支/应用），返回其下第一个可打开叶子 */
+    function firstPickLeaf(nodes, key) {
+        for (var i = 0; i < (nodes || []).length; i++) {
+            if (nodes[i].key === key) {
+                return firstPickLeafOfNode(nodes[i]);
+            }
+            var found = firstPickLeaf(nodes[i].children, key);
+            if (found) {
+                return found;
+            }
+        }
+        return null;
+    }
+
+    /** 深度优先取节点下第一个叶子 */
+    function firstPickLeafOfNode(node) {
+        if (!node) {
+            return null;
+        }
+        if (node.type === 'leaf') {
+            return node;
+        }
+        for (var i = 0; i < (node.children || []).length; i++) {
+            var leaf = firstPickLeafOfNode(node.children[i]);
+            if (leaf) {
+                return leaf;
+            }
+        }
+        return null;
     }
 
     function removeDesktopEntry(id) {
@@ -2394,14 +2505,20 @@
         var folder = folderId ? findDesktopItem(folderId) : null;
         var index = null;
         var emptyMarkup = '<div class="webos-entry-pick-empty">所有菜单都已固定到桌面</div>';
-        /** 弹窗内树节点：分支展开/收起（独立于入口管理面板的展开状态），叶子点选即添加；
-         *  应用行额外提供「添加」按钮——点选整个应用（button 内不能嵌套 button，拆为行容器平级两钮） */
+        // 多选勾选集合（node.key）：展开/收起重渲染后按 checked 回填
+        var checkedPicks = new Set();
+        /** 弹窗内树节点：每行左侧复选框（多选，勾选后点底部「添加」批量加入）；
+         *  叶子整行点选即添加，应用行右侧「添加」按钮点选整个应用，分支行点选仅展开/收起
+         *  （button 内不能嵌套 button，行容器 .webos-entry-pick-row 承载缩进与平级控件） */
         function pickNodeMarkup(node, depth) {
             var indent = ' style="margin-left:' + (depth * 20) + 'px"';
+            var checkbox = '<input type="checkbox" class="webos-entry-pick-check" data-pick-check="' + escapeHtml(node.key) + '"'
+                + (checkedPicks.has(node.key) ? ' checked' : '') + ' title="多选（勾选后点「添加」批量加入）">';
             if (node.type === 'leaf') {
-                return '<button class="webos-entry-pick-item" type="button" data-pick-entry-id="' + escapeHtml(node.key) + '"'
-                    + indent + ' title="' + escapeHtml(node.path || '') + '">'
-                    + '<i class="' + safeIcon(node.icon) + '"></i><span>' + escapeHtml(node.title) + '</span></button>';
+                return '<div class="webos-entry-pick-row"' + indent + '>' + checkbox
+                    + '<button class="webos-entry-pick-item" type="button" data-pick-entry-id="' + escapeHtml(node.key) + '"'
+                    + ' title="' + escapeHtml(node.path || '') + '">'
+                    + '<i class="' + safeIcon(node.icon) + '"></i><span>' + escapeHtml(node.title) + '</span></button></div>';
             }
             var expanded = entryPickExpanded.has(node.key);
             var nodeIcon = node.type === 'app' && node.application
@@ -2413,13 +2530,13 @@
                 + nodeIcon
                 + '<strong>' + escapeHtml(node.title) + '</strong>'
                 + '<small>' + node.children.length + ' 项</small></button>';
+            var childrenMarkup = expanded ? node.children.map(function (child) { return pickNodeMarkup(child, depth + 1); }).join('') : '';
             if (node.type === 'app') {
-                return '<div class="webos-entry-pick-row"' + indent + '>' + branchButton
-                    + '<button class="webos-entry-pick-app-add" type="button" data-pick-app-id="' + escapeHtml(node.key.slice('app:'.length)) + '"'
-                    + ' title="添加整个应用">添加</button></div>';
+                return '<div class="webos-entry-pick-row"' + indent + '>' + checkbox + branchButton
+                    + '<button class="webos-entry-pick-app-add" type="button" data-pick-app-id="' + escapeHtml(node.key) + '"'
+                    + ' title="添加整个应用">添加</button></div>' + childrenMarkup;
             }
-            return branchButton
-                + (expanded ? node.children.map(function (child) { return pickNodeMarkup(child, depth + 1); }).join('') : '');
+            return '<div class="webos-entry-pick-row"' + indent + '>' + checkbox + branchButton + '</div>' + childrenMarkup;
         }
         function pickListMarkup() {
             return buildEntryTree().map(function (node) { return pickNodeMarkup(node, 0); }).join('');
@@ -2428,7 +2545,23 @@
             type: 1,
             title: folder ? '添加到「' + folder.title + '」' : '选择桌面入口',
             area: ['440px', '480px'],
-            btn: ['取消'],
+            btn: ['添加', '取消'],
+            yes: function () {
+                // 多选批量添加：勾选叶子加菜单本身，勾选应用/系统分组取其下第一个菜单作为入口
+                var entries = [];
+                checkedPicks.forEach(function (key) {
+                    var entry = pickedEntryOfKey(key);
+                    if (entry) {
+                        entries.push(entry);
+                    }
+                });
+                if (!entries.length) {
+                    toast('请先勾选要添加的入口');
+                    return;
+                }
+                addPickedEntries(entries, folder);
+                layer.close(index);
+            },
             content: '<div class="webos-entry-pick-list">' + (pickListMarkup() || emptyMarkup) + '</div>',
             success: function (layero) {
                 // 分支行：展开/收起后重渲染列表（弹窗内独立展开集合，默认全部收起）
@@ -2441,9 +2574,17 @@
                     }
                     layero.find('.webos-entry-pick-list').html(pickListMarkup() || emptyMarkup);
                 });
+                // 复选框勾选/取消：key 存入多选集合，重渲染后按 checked 回填
+                layero.on('change', '[data-pick-check]', function () {
+                    if (this.checked) {
+                        checkedPicks.add(this.dataset.pickCheck);
+                    } else {
+                        checkedPicks.delete(this.dataset.pickCheck);
+                    }
+                });
+                // 叶子点选：单条快捷添加（多选走勾选 + 底部「添加」）；文件夹弹窗移入/新建，普通弹窗创建到桌面
                 layero.on('click', '[data-pick-entry-id]', function () {
                     var entry = findEntry(this.dataset.pickEntryId);
-                    // 文件夹「+」弹窗：点选即移入/新建到文件夹；普通「新建桌面入口」：点选即创建到桌面
                     if (folder) {
                         addDesktopEntryToFolder(entry, folder);
                     } else {
@@ -2451,11 +2592,9 @@
                     }
                     layer.close(index);
                 });
-                // 应用行「添加」：整个应用作为桌面入口，与开始菜单应用卡片「添加到桌面」同口径——
-                // 取该应用在菜单目录中的第一个菜单作为应用入口（桌面项 id 为真实菜单 id，权限判定天然通过）
+                // 应用行「添加」：整个应用作为桌面入口（目录中该应用第一个菜单）
                 layero.on('click', '[data-pick-app-id]', function () {
-                    var appId = this.dataset.pickAppId;
-                    var entry = state.flatMenus.find(function (item) { return item.app_id === appId; });
+                    var entry = pickedEntryOfKey(this.dataset.pickAppId);
                     if (!entry) {
                         toast('该应用暂无可用菜单入口', 'error');
                         return;

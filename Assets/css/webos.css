@@ -5446,9 +5446,21 @@ textarea:focus-visible,
     gap: 4px;
 }
 
-.webos-entry-pick-row .webos-entry-pick-branch {
+.webos-entry-pick-row .webos-entry-pick-branch,
+.webos-entry-pick-row .webos-entry-pick-item {
     flex: 1;
     min-width: 0;
+}
+
+/* 行首复选框：叶子/应用/分组通用，勾选集合在重渲染后按 checked 回填 */
+.webos-entry-pick-check {
+    flex: 0 0 auto;
+    align-self: center;
+    width: 14px;
+    height: 14px;
+    margin: 0;
+    cursor: pointer;
+    accent-color: #087f75;
 }
 
 .webos-entry-pick-app-add {

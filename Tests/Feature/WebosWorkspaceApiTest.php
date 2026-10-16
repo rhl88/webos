@@ -2904,6 +2904,20 @@ class WebosWorkspaceApiTest extends WebosTestCase
         $this->assertStringContainsString("toast('该应用暂无可用菜单入口', 'error');", $script);
         $this->assertStringContainsString('.webos-entry-pick-row {', $stylesheet);
         $this->assertStringContainsString('.webos-entry-pick-app-add {', $stylesheet);
+        // 2.1.62：应用行展开失效修复（app 分支 return 拼接子节点渲染）+ 每行左侧复选框多选批量添加——
+        // 勾选叶子加菜单本身，勾选应用/系统分组取其下第一个菜单作为入口（单条核心抽为 applyDesktopEntryChange 共用）
+        $this->assertStringContainsString("+ ' title=\"添加整个应用\">添加</button></div>' + childrenMarkup;", $script);
+        $this->assertStringContainsString('data-pick-check="', $script);
+        $this->assertStringContainsString("layero.on('change', '[data-pick-check]'", $script);
+        $this->assertStringContainsString('var checkedPicks = new Set();', $script);
+        $this->assertStringContainsString("btn: ['添加', '取消']", $script);
+        $this->assertStringContainsString("toast('请先勾选要添加的入口');", $script);
+        $this->assertStringContainsString('function addPickedEntries(entries, folder)', $script);
+        $this->assertStringContainsString('function applyDesktopEntryChange(entry, folder)', $script);
+        $this->assertStringContainsString('function pickedEntryOfKey(key)', $script);
+        $this->assertStringContainsString('function firstPickLeaf(nodes, key)', $script);
+        $this->assertStringContainsString('.webos-entry-pick-check {', $stylesheet);
+        $this->assertStringContainsString('.webos-entry-pick-row .webos-entry-pick-item {', $stylesheet);
         $this->assertStringContainsString('.webos-folder-item .desktop-icon-label {', $stylesheet);
         $this->assertStringContainsString('.webos-folder-overlay .desktop-icon-badge.is-app-icon img,', $stylesheet);
         $this->assertStringContainsString('.webos-folder-overlay-empty {', $stylesheet);
