@@ -2896,6 +2896,14 @@ class WebosWorkspaceApiTest extends WebosTestCase
         $this->assertStringContainsString("if (folder) {\n                        addDesktopEntryToFolder(entry, folder);", $script);
         $this->assertStringContainsString("toast('文件夹不支持放入文件夹内', 'error');", $script);
         $this->assertStringContainsString('.webos-folder-overlay-add {', $stylesheet);
+        // 2.1.61：弹窗支持添加整个应用——应用行右侧「添加」按钮（行容器拆分避免 button 嵌套），
+        // 点选后与开始菜单应用卡片「添加到桌面」同口径取该应用菜单目录中的第一个菜单作为入口
+        $this->assertStringContainsString('data-pick-app-id="', $script);
+        $this->assertStringContainsString("layero.on('click', '[data-pick-app-id]'", $script);
+        $this->assertStringContainsString("state.flatMenus.find(function (item) { return item.app_id === appId; })", $script);
+        $this->assertStringContainsString("toast('该应用暂无可用菜单入口', 'error');", $script);
+        $this->assertStringContainsString('.webos-entry-pick-row {', $stylesheet);
+        $this->assertStringContainsString('.webos-entry-pick-app-add {', $stylesheet);
         $this->assertStringContainsString('.webos-folder-item .desktop-icon-label {', $stylesheet);
         $this->assertStringContainsString('.webos-folder-overlay .desktop-icon-badge.is-app-icon img,', $stylesheet);
         $this->assertStringContainsString('.webos-folder-overlay-empty {', $stylesheet);

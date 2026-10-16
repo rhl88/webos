@@ -2394,7 +2394,8 @@
         var folder = folderId ? findDesktopItem(folderId) : null;
         var index = null;
         var emptyMarkup = '<div class="webos-entry-pick-empty">所有菜单都已固定到桌面</div>';
-        /** 弹窗内树节点：分支展开/收起（独立于入口管理面板的展开状态），叶子点选即添加 */
+        /** 弹窗内树节点：分支展开/收起（独立于入口管理面板的展开状态），叶子点选即添加；
+         *  应用行额外提供「添加」按钮——点选整个应用（button 内不能嵌套 button，拆为行容器平级两钮） */
         function pickNodeMarkup(node, depth) {
             var indent = ' style="margin-left:' + (depth * 20) + 'px"';
             if (node.type === 'leaf') {
@@ -2406,12 +2407,18 @@
             var nodeIcon = node.type === 'app' && node.application
                 ? applicationIconMarkup(node.application, 'entry-tree-app-icon')
                 : '<span class="start-app-item-icon"><i class="' + node.icon + '"></i></span>';
-            return '<button class="webos-entry-pick-branch" type="button" data-pick-branch-id="' + escapeHtml(node.key) + '"'
-                + indent + ' aria-expanded="' + (expanded ? 'true' : 'false') + '">'
+            var branchButton = '<button class="webos-entry-pick-branch" type="button" data-pick-branch-id="' + escapeHtml(node.key) + '"'
+                + ' aria-expanded="' + (expanded ? 'true' : 'false') + '">'
                 + '<i class="fa ' + (expanded ? 'fa-chevron-down' : 'fa-chevron-right') + '"></i>'
                 + nodeIcon
                 + '<strong>' + escapeHtml(node.title) + '</strong>'
-                + '<small>' + node.children.length + ' 项</small></button>'
+                + '<small>' + node.children.length + ' 项</small></button>';
+            if (node.type === 'app') {
+                return '<div class="webos-entry-pick-row"' + indent + '>' + branchButton
+                    + '<button class="webos-entry-pick-app-add" type="button" data-pick-app-id="' + escapeHtml(node.key.slice('app:'.length)) + '"'
+                    + ' title="添加整个应用">添加</button></div>';
+            }
+            return branchButton
                 + (expanded ? node.children.map(function (child) { return pickNodeMarkup(child, depth + 1); }).join('') : '');
         }
         function pickListMarkup() {
@@ -2437,6 +2444,22 @@
                 layero.on('click', '[data-pick-entry-id]', function () {
                     var entry = findEntry(this.dataset.pickEntryId);
                     // 文件夹「+」弹窗：点选即移入/新建到文件夹；普通「新建桌面入口」：点选即创建到桌面
+                    if (folder) {
+                        addDesktopEntryToFolder(entry, folder);
+                    } else {
+                        addDesktopEntry(entry);
+                    }
+                    layer.close(index);
+                });
+                // 应用行「添加」：整个应用作为桌面入口，与开始菜单应用卡片「添加到桌面」同口径——
+                // 取该应用在菜单目录中的第一个菜单作为应用入口（桌面项 id 为真实菜单 id，权限判定天然通过）
+                layero.on('click', '[data-pick-app-id]', function () {
+                    var appId = this.dataset.pickAppId;
+                    var entry = state.flatMenus.find(function (item) { return item.app_id === appId; });
+                    if (!entry) {
+                        toast('该应用暂无可用菜单入口', 'error');
+                        return;
+                    }
                     if (folder) {
                         addDesktopEntryToFolder(entry, folder);
                     } else {

@@ -5439,6 +5439,38 @@ textarea:focus-visible,
     font-weight: 400;
 }
 
+/* 应用行：展开按钮 + 「添加」按钮平级排列（button 内不能嵌套 button，外层行容器承载树缩进） */
+.webos-entry-pick-row {
+    display: flex;
+    align-items: stretch;
+    gap: 4px;
+}
+
+.webos-entry-pick-row .webos-entry-pick-branch {
+    flex: 1;
+    min-width: 0;
+}
+
+.webos-entry-pick-app-add {
+    flex: 0 0 auto;
+    align-self: center;
+    padding: 4px 10px;
+    border: 1px solid #d9e2ec;
+    border-radius: 6px;
+    background: #fff;
+    color: #087f75;
+    cursor: pointer;
+    font-family: inherit;
+    font-size: 12px;
+    line-height: 1;
+    white-space: nowrap;
+}
+
+.webos-entry-pick-app-add:hover {
+    border-color: #087f75;
+    background: #eaf8f6;
+}
+
 .webos-entry-pick-empty {
     padding: 30px 10px;
     color: #a3b1c2;
