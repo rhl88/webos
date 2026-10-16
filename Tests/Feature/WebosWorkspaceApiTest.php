@@ -1828,6 +1828,9 @@ class WebosWorkspaceApiTest extends WebosTestCase
         // 角标只挂在侧栏「应用更新」项，数量为 0 或尚未检查时不渲染，超过 99 折叠为 99+
         $this->assertStringContainsString('function updateBadgeMarkup()', $script);
         $this->assertStringContainsString('<em class="window-nav-badge">', $script);
+        // 侧栏角标定位上下文（2.1.59）：通知中心「待办」按钮与应用中心「应用更新」按钮一样
+        // 必须自建 position:relative，否则绝对定位角标相对窗口壳定位、飞到窗口右上角盖住关闭按钮
+        $this->assertStringContainsString('.window-nav-button[data-special-tab="todos"] {', $stylesheet);
         $this->assertStringContainsString("(item.id === 'updates' ? updateBadgeMarkup() : '')", $script);
         $this->assertStringContainsString("count > 99 ? '99+' : count", $script);
         $this->assertStringContainsString('updateCount: null,', $script);
@@ -1915,9 +1918,10 @@ class WebosWorkspaceApiTest extends WebosTestCase
         $this->assertStringContainsString('item.title = name;', $script);
         $this->assertStringContainsString('renderDesktop();' . "\n" . '            saveWorkspace(false);', $script);
 
-        // 角标绝对定位在按钮右上角，定位上下文只给 updates 按钮，不影响菜单树按钮
+        // 角标绝对定位在按钮右上角，定位上下文由 updates 与 todos 按钮共用一个相对定位块（2.1.59），
+        // todos 按钮不建上下文时通知中心待办角标会相对窗口壳定位、飞到窗口右上角盖住关闭按钮
         $this->assertMatchesRegularExpression(
-            '/\.window-nav-button\[data-special-tab="updates"\]\s*\{[^}]*position:\s*relative;/s',
+            '/\.window-nav-button\[data-special-tab="updates"\],\s*\.window-nav-button\[data-special-tab="todos"\]\s*\{[^}]*position:\s*relative;/s',
             $stylesheet
         );
         $this->assertMatchesRegularExpression(

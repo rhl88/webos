@@ -1,7 +1,7 @@
 # CmsPro WebOS 管理桌面 · 特性清单
 
-> 文档版本：2.1.58 | 更新日期：2026-10-16
-> 应用版本：2.1.58 | 应用 ID：`cmspro.webos`
+> 文档版本：2.1.59 | 更新日期：2026-10-16
+> 应用版本：2.1.59 | 应用 ID：`cmspro.webos`
 
 ## 一、应用定位
 
@@ -106,6 +106,7 @@ WebOS 管理桌面是 CmsPro 后台的可选交互层，不替换系统后台框
 68. 安装弹窗 content 类型修复（2.1.56，用户反馈「点击安装弹出安装对话控制台报错 layui.js d.parents is not a function」）：layui layer 的 `vessel` 对 type:1 的 content 调用 jQuery 方法（`.parents`），2.1.55 的 `window.jQuery ? … : 原生DOM` 回退在页面无全局 `window.jQuery`（jQuery 不挂全局，layui 用内置实例）时传了原生 DOM → TypeError 且弹窗未打开。修复：jQuery 取值改为 `window.jQuery || layuiJquery()`（复用既有 `window.layui.jquery` 取法，legacyAjax 同源先例证明必然存在），两者皆无时与「弹层未就绪」同分支退回自绘弹窗。更新 2 条断言（dialogJquery 取值表达式、content 调用）。
 69. 安装成功后旧自绘弹窗裸露修复（2.1.57，用户反馈「安装弹出层 layui 的和原来旧的同时存在了；安装成功后旧的安装界面就出来了」）：layui 关闭 type:1 弹层时会把 jQuery content **还原回原父级**（不还原 hidden——打开时置的 false 残留 → 弹窗以全屏遮罩容器形态裸露）；旧 `restoreInstallDialogNode` 以 `isConnected && closest('.layui-layer')` 为前置条件，还原后节点不在壳内 → `hidden = true` 未执行。修复：复位改为**无条件兜底**——节点不在文档或仍在 layer 壳内时搬回 body，`hidden = true` 无条件执行（幂等），覆盖 layui 还原 / 随壳移除 / 壳未销毁三种关闭时序。补 1 条断言（无条件兜底分支）。
 70. 打开应用窗口后关闭文件夹浮层（2.1.58，用户反馈「点击文件夹内的图标打开后，弹出的窗口在文件夹层下面了；应该打开应用弹出的窗口后，文件夹应该关闭才合理」）：浮层（z-index 3500）盖住新开的窗口层。两处修改：① 浮层子项左键单击（`[data-desktop-action]` 委托内 `closest('.webos-folder-item')` 分支）`openEntry` 后调用 `closeFolderOverlay()` 收起浮层；② 浮层子项右键「打开」（`runDesktopContextAction` 的 `open` 分支，桌面图标与浮层子项共用）同样在打开后收起——桌面图标场景无浮层时 `closeFolderOverlay()` 为 no-op 幂等。补 2 条断言（左键分支 openEntry 表达式、closeFolderOverlay 调用）。
+71. 通知中心待办角标盖住关闭按钮修复（2.1.59，用户反馈「通知中心窗口的关闭按钮右上角有显示数字，按理来说不应该显示的」）：`.window-nav-badge` 绝对定位（top:2px/right:4px），定位上下文只给了应用中心「应用更新」按钮（`data-special-tab="updates"` 建 relative）；通知中心「待办」Tab 的数量角标（L3152 todos 分支）宿主按钮没有 relative → 角标相对窗口壳定位 → 飞到窗口右上角盖在关闭按钮 × 上。修复：定位上下文扩展为 updates 与 todos 按钮共用一个 relative 块（待办角标回到按钮右上角）。更新 2 条断言（共用块正则、todos 定位上下文）。
 
 ## 四、数据结构
 
@@ -155,6 +156,7 @@ CmsproWebos/
 
 | 版本 | 日期 | 说明 |
 |---|---|---|
+| 2.1.59 | 2026-10-16 | 通知中心待办角标盖住关闭按钮修复（用户反馈）：待办按钮补建角标定位上下文（与「应用更新」共用 relative 块），角标回到按钮右上角。137 测试 1608 断言通过。 |
 | 2.1.58 | 2026-10-16 | 打开应用窗口后关闭文件夹浮层（用户反馈）：浮层左键单击/右键「打开」打开窗口后统一收起浮层，避免新窗口被浮层盖住；桌面场景幂等不受影响。137 测试 1607 断言通过。 |
 | 2.1.57 | 2026-10-14 | 安装成功后旧自绘弹窗裸露修复（用户反馈）：layui 关闭时还原 content 到原父级但不还原 hidden，节点复位改为无条件兜底（搬回 body + hidden=true），覆盖全部关闭时序。137 测试 1605 断言通过。 |
 | 2.1.56 | 2026-10-14 | 安装弹窗 content 类型修复（用户反馈）：layer content 必须为 jQuery 对象，页面无全局 jQuery 时改取 layui 内置实例（layuiJquery），两者皆无退回自绘弹窗，不再报 d.parents is not a function。137 测试 1604 断言通过。 |

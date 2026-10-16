@@ -761,8 +761,10 @@ textarea:focus-visible,
     color: var(--webos-primary);
 }
 
-/* 应用中心侧栏「应用更新」右上角的可用更新数量角标：定位上下文只给该按钮，不影响菜单树按钮 */
-.window-nav-button[data-special-tab="updates"] {
+/* 侧栏数量角标的定位上下文：应用中心「应用更新」与通知中心「待办」右上角的可用数量角标
+   （window-nav-badge 绝对定位，宿主按钮不建上下文时角标会相对窗口壳定位、飞到窗口右上角盖住关闭按钮） */
+.window-nav-button[data-special-tab="updates"],
+.window-nav-button[data-special-tab="todos"] {
     position: relative;
 }
 
