@@ -2935,6 +2935,10 @@ class WebosWorkspaceApiTest extends WebosTestCase
         $this->assertStringContainsString("if (!state.folderOverlayLocked && root.querySelector('.webos-folder-overlay')", $script);
         $this->assertStringContainsString('if (!state.folderOverlayLocked) {', $script);
         $this->assertStringContainsString('end: function () {', $script);
+        // 2.1.65：浮层锁生命周期只由「+」弹窗管理（success 置真 / end 置假）——closeFolderOverlay 不清锁，
+        // 否则添加路径 refreshFolderOverlay 重建浮层经 close+open 清锁，第一次添加后锁即失效，
+        // 再点弹窗（勾选其他项）又被「浮层外点击」判定关闭浮层
+        $this->assertStringContainsString("    function closeFolderOverlay(folderId) {\n        var overlay = root.querySelector('.webos-folder-overlay');\n        if (overlay && (folderId === undefined || overlay.dataset.folderId === folderId)) {\n            overlay.remove();\n        }\n        if (folderId === undefined || state.folderOverlayId === folderId) {\n            state.folderOverlayId = '';\n        }\n    }", $script);
         $this->assertStringContainsString('.webos-folder-item .desktop-icon-label {', $stylesheet);
         $this->assertStringContainsString('.webos-folder-overlay .desktop-icon-badge.is-app-icon img,', $stylesheet);
         $this->assertStringContainsString('.webos-folder-overlay-empty {', $stylesheet);

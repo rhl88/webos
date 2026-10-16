@@ -2770,7 +2770,10 @@
         state.folderOverlayId = folder.id;
     }
 
-    /** 关闭文件夹浮层：传入 folderId 时仅关闭对应浮层，否则关闭任意打开中的浮层（关闭即清锁） */
+    /** 关闭文件夹浮层：传入 folderId 时仅关闭对应浮层，否则关闭任意打开中的浮层。
+     *  不在此清浮层锁（folderOverlayLocked）：锁的生命周期只由「+」弹窗管理（success 置真 / end 置假），
+     *  添加路径 refreshFolderOverlay 重建浮层会经本函数 close+open，若这里清锁，
+     *  第一次添加后锁即失效，再点弹窗又会被「浮层外点击」判定关掉浮层 */
     function closeFolderOverlay(folderId) {
         var overlay = root.querySelector('.webos-folder-overlay');
         if (overlay && (folderId === undefined || overlay.dataset.folderId === folderId)) {
@@ -2779,7 +2782,6 @@
         if (folderId === undefined || state.folderOverlayId === folderId) {
             state.folderOverlayId = '';
         }
-        state.folderOverlayLocked = false;
     }
 
     /** 浮层打开中且内容变化（拖入/移出/删除子项）时按文件夹 id 重绘浮层 */
