@@ -2889,7 +2889,13 @@ class WebosWorkspaceApiTest extends WebosTestCase
         $this->assertStringContainsString("entryIconMarkup(findEntry(item.id) || item, 'desktop-icon-badge')\n                        + '<span class=\"desktop-icon-label\">'", $script);
         $this->assertStringNotContainsString('webos-folder-item-icon', $script);
         $this->assertStringNotContainsString('webos-folder-item span', $stylesheet);
-        $this->assertStringContainsString('.webos-folder-overlay-close {', $stylesheet);
+        $this->assertStringContainsString(".webos-folder-overlay-close,\n.webos-folder-overlay-add {", $stylesheet);
+        // 2.1.60：浮层「+」添加按钮——弹「选择桌面入口」树弹窗，点选后移入/新建到当前文件夹
+        $this->assertStringContainsString('data-folder-add aria-label="添加"', $script);
+        $this->assertStringContainsString('function addDesktopEntryToFolder(entry, folder)', $script);
+        $this->assertStringContainsString("if (folder) {\n                        addDesktopEntryToFolder(entry, folder);", $script);
+        $this->assertStringContainsString("toast('文件夹不支持放入文件夹内', 'error');", $script);
+        $this->assertStringContainsString('.webos-folder-overlay-add {', $stylesheet);
         $this->assertStringContainsString('.webos-folder-item .desktop-icon-label {', $stylesheet);
         $this->assertStringContainsString('.webos-folder-overlay .desktop-icon-badge.is-app-icon img,', $stylesheet);
         $this->assertStringContainsString('.webos-folder-overlay-empty {', $stylesheet);

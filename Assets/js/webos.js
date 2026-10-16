@@ -1616,6 +1616,45 @@
         saveWorkspace(false).then(function () { toast(successMessage || '已添加到桌面'); });
     }
 
+    /** 文件夹浮层「+」添加：入口已在桌面时直接移入（保留原坐标便于移回），不在桌面时新建并归入文件夹；
+     *  文件夹不支持嵌套（与拖入判定同口径）；parent_folder 非空的项不占桌面格子，浮层开着时同步重绘 */
+    function addDesktopEntryToFolder(entry, folder) {
+        if (!entry || !folder) {
+            return;
+        }
+        var item = findDesktopItem(entry.id);
+        if (item) {
+            if (item.parent_folder === folder.id) {
+                toast('该图标已在此文件夹内');
+                return;
+            }
+            if (item.kind === 'folder') {
+                toast('文件夹不支持放入文件夹内', 'error');
+                return;
+            }
+            item.parent_folder = folder.id;
+            if (state.folderOverlayId === folder.id) {
+                refreshFolderOverlay(folder.id);
+            }
+            renderDesktop();
+            saveWorkspace(false).then(function () { toast('已移入「' + folder.title + '」'); });
+            return;
+        }
+        // 入口不在桌面：新建桌面项并直接归入文件夹，坐标取当前空位（无空位存 0 兜底，
+        // 移回桌面时 findFreeDesktopSlot 会重新计算，不占用桌面格子）
+        var slot = findFreeDesktopSlot();
+        state.workspace.desktop_items.push(Object.assign({}, entry, {
+            x: slot ? slot.x : 0,
+            y: slot ? slot.y : 0,
+            parent_folder: folder.id
+        }));
+        if (state.folderOverlayId === folder.id) {
+            refreshFolderOverlay(folder.id);
+        }
+        renderDesktop();
+        saveWorkspace(false).then(function () { toast('已添加到「' + folder.title + '」'); });
+    }
+
     function removeDesktopEntry(id) {
         if (id === 'webos-app-center') {
             toast('应用中心为内置入口，不允许删除');
@@ -2345,12 +2384,14 @@
     }
 
     /** 新建 > 桌面入口：树结构展示可用菜单（与入口管理「可用菜单」树同构，应用分支默认收起），点选叶子即添加 */
-    function openNewEntryDialog() {
+    function openNewEntryDialog(folderId) {
         var layer = layuiLayer();
         if (!layer) {
             toast('弹层组件未就绪，请刷新页面后重试', 'error');
             return;
         }
+        // 传入 folderId 时复用为文件夹浮层「+」添加弹窗：叶子点选后移入/新建到该文件夹
+        var folder = folderId ? findDesktopItem(folderId) : null;
         var index = null;
         var emptyMarkup = '<div class="webos-entry-pick-empty">所有菜单都已固定到桌面</div>';
         /** 弹窗内树节点：分支展开/收起（独立于入口管理面板的展开状态），叶子点选即添加 */
@@ -2378,7 +2419,7 @@
         }
         index = layer.open({
             type: 1,
-            title: '选择桌面入口',
+            title: folder ? '添加到「' + folder.title + '」' : '选择桌面入口',
             area: ['440px', '480px'],
             btn: ['取消'],
             content: '<div class="webos-entry-pick-list">' + (pickListMarkup() || emptyMarkup) + '</div>',
@@ -2394,7 +2435,13 @@
                     layero.find('.webos-entry-pick-list').html(pickListMarkup() || emptyMarkup);
                 });
                 layero.on('click', '[data-pick-entry-id]', function () {
-                    addDesktopEntry(findEntry(this.dataset.pickEntryId));
+                    var entry = findEntry(this.dataset.pickEntryId);
+                    // 文件夹「+」弹窗：点选即移入/新建到文件夹；普通「新建桌面入口」：点选即创建到桌面
+                    if (folder) {
+                        addDesktopEntryToFolder(entry, folder);
+                    } else {
+                        addDesktopEntry(entry);
+                    }
                     layer.close(index);
                 });
             }
@@ -2420,6 +2467,8 @@
         overlay.dataset.folderId = folder.id;
         overlay.innerHTML = '<div class="webos-folder-overlay-head"><strong class="webos-folder-overlay-title" data-folder-rename title="点击重命名">' + escapeHtml(folder.title) + '</strong>'
             + '<span>' + children.length + ' 项</span>'
+            // 「+」添加：弹「选择桌面入口」同款树弹窗，点选后移入/新建到当前文件夹
+            + '<button class="webos-folder-overlay-add" type="button" data-folder-add aria-label="添加" title="添加应用或菜单"><i class="fa fa-plus"></i></button>'
             + '<button class="webos-folder-overlay-close" type="button" data-folder-close aria-label="关闭" title="关闭"><i class="fa fa-times"></i></button></div>'
             + (children.length
                 ? '<div class="webos-folder-overlay-grid">' + children.map(function (item) {
@@ -2430,10 +2479,13 @@
                         + '<span class="desktop-icon-label">' + escapeHtml(item.title) + '</span></button>';
                 }).join('') + '</div>'
                 : '<div class="webos-folder-overlay-empty">将桌面图标拖到这里收纳</div>');
-        // 右上角关闭按钮
+        // 右上角按钮：关闭浮层 / 打开「+」添加弹窗（点选入口移入当前文件夹）
         overlay.addEventListener('click', function (event) {
             if (event.target.closest('[data-folder-close]')) {
                 closeFolderOverlay();
+            }
+            if (event.target.closest('[data-folder-add]')) {
+                openNewEntryDialog(folder.id);
             }
         });
         // 点击标题原地重命名：仅修改桌面显示名称（与 renameDesktopIcon 同口径，应用/菜单不受影响）；

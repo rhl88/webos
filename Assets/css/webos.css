@@ -5266,8 +5266,9 @@ textarea:focus-visible,
     white-space: nowrap;
 }
 
-/* 浮层右上角关闭按钮 */
-.webos-folder-overlay-close {
+/* 浮层右上角按钮（+ 添加 / × 关闭）：同一视觉规格，紧挨排列 */
+.webos-folder-overlay-close,
+.webos-folder-overlay-add {
     display: inline-flex;
     align-items: center;
     justify-content: center;
@@ -5283,7 +5284,8 @@ textarea:focus-visible,
     line-height: 1;
 }
 
-.webos-folder-overlay-close:hover {
+.webos-folder-overlay-close:hover,
+.webos-folder-overlay-add:hover {
     background: rgba(255, 255, 255, 0.24);
 }
 
