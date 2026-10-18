@@ -2946,6 +2946,15 @@ class WebosWorkspaceApiTest extends WebosTestCase
         $this->assertStringContainsString("return Object.assign({}, entry, { title: application && application.name ? application.name : entry.title });", $script);
         $this->assertStringContainsString('return appEntryOf(key.slice(\'app:\'.length));', $script);
         $this->assertStringContainsString('addDesktopEntry(appEntryOf(pinApp.dataset.pinAppId));', $script);
+        // 2.1.67：存量桌面项标题归一化——旧版本「添加整个应用」把标题存成了菜单名（数据实锤：历史项
+        // title=医院管理/资金类型 等，而应用名为儿康管理系统/财务管理），用户看到的仍是旧名。
+        // 启动与 refreshCatalog 时按「title 与该应用任一菜单名完全一致且 ≠ 应用名」识别旧默认值
+        // 统一修正为应用名（文件夹/URL/无 app_id 项与已显示应用名的项不受影响），修正后静默保存固化
+        $this->assertStringContainsString('function normalizeDesktopEntryTitles() {', $script);
+        $this->assertStringContainsString('if (item.kind || !item.app_id) {', $script);
+        $this->assertStringContainsString('return menu.app_id === item.app_id && menu.title === item.title;', $script);
+        $this->assertStringContainsString('var titlesNormalized = normalizeDesktopEntryTitles();', $script);
+        $this->assertStringContainsString('if (normalizeDesktopEntryTitles()) {', $script);
         $this->assertStringContainsString('.webos-folder-item .desktop-icon-label {', $stylesheet);
         $this->assertStringContainsString('.webos-folder-overlay .desktop-icon-badge.is-app-icon img,', $stylesheet);
         $this->assertStringContainsString('.webos-folder-overlay-empty {', $stylesheet);

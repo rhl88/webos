@@ -9489,14 +9489,45 @@
         });
     }
 
+    /** 2.1.67：存量桌面项标题归一化——旧版本「添加整个应用」链路把标题存成了菜单名（如「医院管理」「资金类型」），
+     *  与现链路（应用入口标题=应用名，见 appEntryOf/desktopEntryFromStart）不一致，历史图标仍显示旧菜单名。
+     *  桌面图标虽支持手动重命名，但手动改成同应用某个菜单名的概率极低，这里按「title 与该应用任一菜单名
+     *  完全一致且 ≠ 应用名」识别旧默认值并统一修正为应用名；文件夹/URL/系统应用（无 app_id）与已显示
+     *  应用名的项不受影响。返回是否有修正，供调用方决定重绘与静默保存 */
+    function normalizeDesktopEntryTitles() {
+        var changed = false;
+        state.workspace.desktop_items.forEach(function (item) {
+            if (item.kind || !item.app_id) {
+                return;
+            }
+            var application = findApplication(item.app_id);
+            if (!application || !application.name || item.title === application.name) {
+                return;
+            }
+            var isMenuTitle = state.flatMenus.some(function (menu) {
+                return menu.app_id === item.app_id && menu.title === item.title;
+            });
+            if (isMenuTitle) {
+                item.title = application.name;
+                changed = true;
+            }
+        });
+        return changed;
+    }
+
     function refreshCatalog() {
         return loadCatalog().then(function () {
             renderStartMenu();
+            // 2.1.67：存量标题归一化（旧版「添加整个应用」存的是菜单名，统一修正为应用名）
+            var titlesNormalized = normalizeDesktopEntryTitles();
             // 菜单目录刷新后同步重绘桌面与任务栏（角色授权/应用启停变化后图标即时过滤，
             // 归一化让重新启用的图标在坐标被占用时自动落到空白格）
             normalizeDesktopLayout();
             renderDesktop();
             renderPinnedApps();
+            if (titlesNormalized) {
+                saveWorkspace(false);
+            }
         });
     }
 
@@ -11632,7 +11663,11 @@
             applyWorkspacePreferences();
             return bootstrapDesktopItems();
         }).then(function () {
-            // 首次渲染前归一化：应用启停/授权变化导致坐标冲突的图标自动落到空白格
+            // 首次渲染前归一化：应用启停/授权变化导致坐标冲突的图标自动落到空白格；
+            // 2.1.67：存量标题归一化（旧版「添加整个应用」存的是菜单名，统一修正为应用名）
+            if (normalizeDesktopEntryTitles()) {
+                saveWorkspace(false);
+            }
             normalizeDesktopLayout();
             renderDesktop();
             renderStartMenu();
