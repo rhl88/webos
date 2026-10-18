@@ -2939,6 +2939,13 @@ class WebosWorkspaceApiTest extends WebosTestCase
         // 否则添加路径 refreshFolderOverlay 重建浮层经 close+open 清锁，第一次添加后锁即失效，
         // 再点弹窗（勾选其他项）又被「浮层外点击」判定关闭浮层
         $this->assertStringContainsString("    function closeFolderOverlay(folderId) {\n        var overlay = root.querySelector('.webos-folder-overlay');\n        if (overlay && (folderId === undefined || overlay.dataset.folderId === folderId)) {\n            overlay.remove();\n        }\n        if (folderId === undefined || state.folderOverlayId === folderId) {\n            state.folderOverlayId = '';\n        }\n    }", $script);
+        // 2.1.66：应用入口标题显示应用名而非其下第一个菜单名——入口弹窗勾选/点选应用（pickedEntryOfKey
+        // 的 app: 分支）与入口管理「固定到桌面」（data-pin-app-id）统一走 appEntryOf，
+        // path/icon 仍取第一个菜单作为入口（与安装快捷方式 title: app.name 同口径）
+        $this->assertStringContainsString('function appEntryOf(appId) {', $script);
+        $this->assertStringContainsString("return Object.assign({}, entry, { title: application && application.name ? application.name : entry.title });", $script);
+        $this->assertStringContainsString('return appEntryOf(key.slice(\'app:\'.length));', $script);
+        $this->assertStringContainsString('addDesktopEntry(appEntryOf(pinApp.dataset.pinAppId));', $script);
         $this->assertStringContainsString('.webos-folder-item .desktop-icon-label {', $stylesheet);
         $this->assertStringContainsString('.webos-folder-overlay .desktop-icon-badge.is-app-icon img,', $stylesheet);
         $this->assertStringContainsString('.webos-folder-overlay-empty {', $stylesheet);

@@ -1736,6 +1736,17 @@
         });
     }
 
+    /** 应用入口解析：取该应用在菜单目录中的第一个菜单作为打开路径（与安装快捷方式同口径），
+     *  桌面图标标题显示应用名而非第一个菜单名（安装快捷方式 L7344 同此口径） */
+    function appEntryOf(appId) {
+        var entry = state.flatMenus.find(function (item) { return item.app_id === appId; }) || null;
+        if (!entry) {
+            return null;
+        }
+        var application = findApplication(appId);
+        return Object.assign({}, entry, { title: application && application.name ? application.name : entry.title });
+    }
+
     /** 多选勾选 key 解析为桌面入口：叶子按 id 查目录；应用/系统分组取其下第一个可打开菜单（与单条添加口径一致） */
     function pickedEntryOfKey(key) {
         if (typeof key !== 'string' || !key) {
@@ -1745,8 +1756,7 @@
             return findEntry(key) || null;
         }
         if (key.indexOf('app:') === 0) {
-            var appId = key.slice('app:'.length);
-            return state.flatMenus.find(function (item) { return item.app_id === appId; }) || null;
+            return appEntryOf(key.slice('app:'.length));
         }
         if (key.indexOf('branch:') === 0) {
             var leaf = firstPickLeaf(buildEntryTree(), key);
@@ -11199,8 +11209,8 @@
 
             var pinApp = event.target.closest('[data-pin-app-id]');
             if (pinApp) {
-                var appMenu = state.flatMenus.find(function (entry) { return entry.app_id === pinApp.dataset.pinAppId; });
-                addDesktopEntry(appMenu);
+                // 固定到桌面：标题显示应用名而非第一个菜单名（与 pickedEntryOfKey 同口径）
+                addDesktopEntry(appEntryOf(pinApp.dataset.pinAppId));
             }
 
             var addEntry = event.target.closest('[data-add-entry-id]');
