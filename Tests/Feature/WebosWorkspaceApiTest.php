@@ -1602,6 +1602,9 @@ class WebosWorkspaceApiTest extends WebosTestCase
         $this->assertIsString($script);
         $this->assertStringContainsString('function findStartItem(id)', $script);
         $this->assertStringContainsString('state.startItems = entries;', $script);
+        // 2.1.68：findStartItem 快照落空时回源全部分组聚合条目——「常用」分类下点「最近」区
+        // 卡片时目标条目可能不在当前分组快照内，落空会回退 findEntry 取到菜单级条目（桌面图标显示菜单名）
+        $this->assertStringContainsString('return groupsFromMenus().reduce(function (all, group) { return all.concat(group.items); }, []).find(function (entry) {', $script);
         $this->assertStringContainsString('function desktopEntryFromStart(startItem)', $script);
         $this->assertStringContainsString("entry.title = startItem.start_title;", $script);
         $this->assertStringContainsString('toggleDesktopEntry(pinButton.dataset.pinId, findStartItem(pinButton.dataset.pinId))', $script);

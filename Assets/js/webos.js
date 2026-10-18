@@ -1912,7 +1912,16 @@
     }
 
     function findStartItem(id) {
-        return (state.startItems || []).find(function (item) { return item.id === id; });
+        var item = (state.startItems || []).find(function (entry) { return entry.id === id; });
+        if (item) {
+            return item;
+        }
+        // state.startItems 只是当前激活分组的条目快照：「常用」分类下点「最近」区块卡片时，
+        // 目标条目可能不在快照内（不在常用前 6），落空会让 pin 链路回退 findEntry 取到
+        // 菜单级条目（桌面图标显示菜单名而非应用名），这里回源全部分组聚合条目查找
+        return groupsFromMenus().reduce(function (all, group) { return all.concat(group.items); }, []).find(function (entry) {
+            return entry.id === id;
+        });
     }
 
     function closeDesktopContextMenu() {
