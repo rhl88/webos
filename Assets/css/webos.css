@@ -5162,7 +5162,11 @@ textarea:focus-visible,
     max-height: 320px;
     margin-top: 10px;
     overflow-y: auto;
-    grid-template-columns: repeat(4, 1fr);
+    /* minmax(0, 1fr) 严格均分列宽：裸 1fr 等价 minmax(auto, 1fr)，列最小宽受
+       nowrap 应用名（如「OpenAI 代理转发」）的 min-content 撑宽，长名列变宽、
+       其余列被压窄，格子宽窄不一；minmax(0,·) 后长名走 label 的 ellipsis 截断，
+       各列宽高保持一致 */
+    grid-template-columns: repeat(4, minmax(0, 1fr));
     gap: 4px;
 }
 

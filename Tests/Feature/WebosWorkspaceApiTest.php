@@ -2886,6 +2886,9 @@ class WebosWorkspaceApiTest extends WebosTestCase
         // 2.1.42/2.1.44/2.1.69：浮层宽度 328px → 428px → 438px → 478px（用户需求三轮加宽）
         $this->assertMatchesRegularExpression('/\.webos-folder-overlay \{[^}]*width: 478px;/', $stylesheet);
         $this->assertStringContainsString('.webos-folder-overlay-grid {', $stylesheet);
+        // 2.1.70：minmax(0, 1fr) 严格均分列宽——裸 1fr 等价 minmax(auto, 1fr)，列最小宽受 nowrap
+        // 应用名的 min-content 撑宽，长名（如「OpenAI 代理转发」）列变宽、其余列被压窄，格子宽窄不一
+        $this->assertStringContainsString('grid-template-columns: repeat(4, minmax(0, 1fr));', $stylesheet);
         $this->assertStringContainsString('.webos-folder-item {', $stylesheet);
         // 2.1.32：浮层右上角关闭按钮 + 子项图标复用桌面 badge/label 结构（修复图片图标爆框）
         $this->assertStringContainsString('data-folder-close aria-label="关闭"', $script);
