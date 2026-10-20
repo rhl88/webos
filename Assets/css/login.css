@@ -1,0 +1,192 @@
+/**
+ * WebOS 登录窗口（2.1.77）：未登录访问 /admin/cmspro/webos 时渲染的应用自有登录页。
+ * 与 2.1.74 回退版不同：本页 DOM 与样式均为应用自有（零 layui 依赖，无第三方表单结构
+ * 干扰），认证逻辑仍走框架 /admin/login。所有选择器使用 .webos-login-* 命名空间隔离。
+ * 壁纸/头像地址由视图注入的 CSS 变量下发，本文件不硬编码资源路径（兼容子目录部署）。
+ */
+
+:root {
+    --webos-login-primary: #198cf0;
+    --webos-login-primary-dark: #0b83e5;
+    --webos-login-text: #152238;
+    --webos-login-muted: #73829a;
+}
+
+html,
+body {
+    height: 100%;
+    margin: 0;
+    background-color: #0b2947;
+    background-image:
+        linear-gradient(180deg, rgba(7, 30, 56, 0.34), rgba(7, 30, 56, 0.58)),
+        var(--webos-login-wallpaper);
+    background-repeat: no-repeat;
+    background-position: center;
+    background-size: cover;
+    font-family: 'PingFang SC', 'Microsoft YaHei', 'Segoe UI', sans-serif;
+}
+
+.webos-login {
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 32px 16px;
+    box-sizing: border-box;
+}
+
+/* 毛玻璃登录卡片：Windows 风格 */
+.webos-login-card {
+    width: 100%;
+    max-width: 400px;
+    padding: 44px 38px 36px;
+    background: rgba(9, 33, 60, 0.58);
+    border: 1px solid rgba(255, 255, 255, 0.16);
+    border-radius: 16px;
+    box-shadow: 0 24px 64px rgba(4, 18, 36, 0.45);
+    -webkit-backdrop-filter: blur(18px);
+    backdrop-filter: blur(18px);
+    box-sizing: border-box;
+    text-align: center;
+}
+
+/* 卡片顶部圆形头像（Windows 登录窗口视觉） */
+.webos-login-avatar {
+    display: block;
+    width: 76px;
+    height: 76px;
+    margin: 0 auto 18px;
+    border-radius: 50%;
+    background-color: rgba(255, 255, 255, 0.92);
+    background-image: var(--webos-login-avatar);
+    background-repeat: no-repeat;
+    background-position: center;
+    background-size: cover;
+    border: 3px solid rgba(255, 255, 255, 0.55);
+    box-shadow: 0 10px 26px rgba(4, 18, 36, 0.4);
+}
+
+.webos-login-title {
+    margin: 0;
+    font-size: 24px;
+    font-weight: 600;
+    letter-spacing: 2px;
+    color: #ffffff;
+}
+
+.webos-login-title sup {
+    font-size: 12px;
+    color: rgba(255, 255, 255, 0.7);
+}
+
+.webos-login-desc {
+    margin: 6px 0 22px;
+    font-size: 13px;
+    color: rgba(255, 255, 255, 0.68);
+    letter-spacing: 1px;
+}
+
+/* 错误提示（框架 back()->withErrors 回显） */
+.webos-login-error {
+    margin: 0 0 16px;
+    padding: 10px 12px;
+    background: rgba(245, 108, 108, 0.16);
+    border: 1px solid rgba(245, 108, 108, 0.55);
+    border-radius: 8px;
+    color: #ffb3b3;
+    font-size: 13px;
+    text-align: left;
+}
+
+/* 输入框行：标签内嵌布局 */
+.webos-login-field {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 14px;
+    text-align: left;
+}
+
+.webos-login-label {
+    flex: 0 0 42px;
+    font-size: 13px;
+    color: rgba(255, 255, 255, 0.85);
+}
+
+.webos-login-field input {
+    flex: 1;
+    min-width: 0;
+    height: 44px;
+    padding: 0 12px;
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.92);
+    border: 1px solid rgba(255, 255, 255, 0.35);
+    color: var(--webos-login-text);
+    font-size: 14px;
+    box-sizing: border-box;
+    outline: none;
+    transition: border-color 160ms, box-shadow 160ms;
+}
+
+.webos-login-field input:focus {
+    border-color: rgba(25, 140, 240, 0.85);
+    box-shadow: 0 0 0 3px rgba(25, 140, 240, 0.28);
+}
+
+.webos-login-field input::placeholder {
+    color: var(--webos-login-muted);
+}
+
+/* 验证码行：输入框 + 可点击刷新图片 */
+.webos-login-captcha input {
+    flex: 1;
+}
+
+.webos-login-captcha img {
+    height: 44px;
+    border-radius: 8px;
+    cursor: pointer;
+    user-select: none;
+}
+
+/* 记住登录 */
+.webos-login-remember {
+    display: flex;
+    align-items: center;
+    justify-content: flex-start;
+    gap: 6px;
+    margin: 4px 0 18px;
+    color: rgba(255, 255, 255, 0.85);
+    font-size: 13px;
+    cursor: pointer;
+    text-align: left;
+}
+
+.webos-login-remember input {
+    accent-color: var(--webos-login-primary);
+    width: 15px;
+    height: 15px;
+    cursor: pointer;
+}
+
+/* 登录按钮：全宽 WebOS 蓝 */
+.webos-login-submit {
+    width: 100%;
+    height: 44px;
+    border: none;
+    border-radius: 8px;
+    background-color: var(--webos-login-primary);
+    color: #ffffff;
+    font-size: 15px;
+    letter-spacing: 6px;
+    cursor: pointer;
+    transition: background-color 160ms, transform 120ms;
+}
+
+.webos-login-submit:hover {
+    background-color: var(--webos-login-primary-dark);
+}
+
+.webos-login-submit:active {
+    transform: translateY(1px);
+}

@@ -14,6 +14,7 @@ use App\Http\Responses\ApiResponse;
 use App\Models\AdminMenu;
 use App\Models\AdminTodoRead;
 use App\Models\AppModel;
+use App\Services\LoginSecurityService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -25,13 +26,24 @@ class WebosController extends Controller
         protected WorkspaceService $workspaces,
         protected CalendarService $calendar,
         protected WallpaperService $wallpapers,
-        protected PageMetaService $pageMeta
+        protected PageMetaService $pageMeta,
+        protected LoginSecurityService $loginSecurity
     ) {
     }
 
     public function index(Request $request): View
     {
         $admin = $request->user('admin');
+
+        // 未登录：渲染 WebOS 登录窗口（2.1.77）——Windows 风格登录页承载于应用自有路由与
+        // 自有视图/样式（零 layui 依赖），认证逻辑仍走框架 /admin/login（CSRF/验证码/锁定/
+        // 记住登录全套复用），表单携带 redirect=/admin/cmspro/webos，登录成功 302 直达桌面
+        if (! $admin) {
+            return view('cmspro.webos::Admin.desktop.login', array_merge(
+                $this->loginSecurity->issueCaptcha($request, 'admin'),
+                ['webosAssetVersion' => $this->assetVersion()]
+            ));
+        }
 
         return view('cmspro.webos::Admin.desktop.index', [
             'admin' => $admin,

@@ -1,7 +1,7 @@
 # CmsPro WebOS 管理桌面 · 特性清单
 
-> 文档版本：2.1.76 | 更新日期：2026-10-20
-> 应用版本：2.1.76 | 应用 ID：`cmspro.webos`
+> 文档版本：2.1.77 | 更新日期：2026-10-20
+> 应用版本：2.1.77 | 应用 ID：`cmspro.webos`
 
 ## 一、应用定位
 
@@ -125,6 +125,7 @@ WebOS 管理桌面是 CmsPro 后台的可选交互层，不替换系统后台框
 87. 登录页 WebOS 化（2.1.74，用户需求「开启了覆盖传统后台，后台登录使用WebOS登录窗口（类似Windows登录）」）：OS 设置「覆盖传统后台」开启后，后台登录页（auth.login → layouts.auth）呈现 Windows 风格 WebOS 登录窗口——全屏 WebOS 默认壁纸（深色渐变遮罩）+ 毛玻璃居中登录卡片 + 卡片顶部圆形头像 + WebOS 蓝全宽登录按钮。实现：ServiceProvider 注册 `View::composer('layouts.auth')`（复用 1.9.36 合规先例），仅在登录路由且任一管理员开启覆盖时注入 `Assets/css/login.css` 与 CSS 变量（壁纸/头像地址经 asset() 生成，兼容子目录部署）；新增 `WorkspaceService::anyAdminOverridesAdminHome()`（登录页未登录无 per-admin 偏好，以任一管理员开启即生效口径判定）。纯 CSS 重塑：表单结构、CSRF、验证码刷新、回车提交、错误回显全部复用传统登录页，零后端/框架改动，应用禁用即恢复原登录页。补 1 条用例（判定开关真实数据流转 + ServiceProvider/login.css 源码断言）。140 测试 1699 断言通过。
 88. 登录成功直达 WebOS 桌面（2.1.75，用户反馈「登录 302 到 /admin 后又 302 回 /admin/login；如果覆盖了就应该直接是 /admin/cmspro/webos，这样就不会二次跳转」）：根因——原「覆盖传统后台首页」机制是 /admin 渲染后由 layouts.admin composer 注入 JS `location.replace` 跳转，登录成功 302 先落传统首页再中转。修复：复用框架 `loginSubmit` 原生 redirect 参数（成功后 `redirect($redirect)`，仅接受 `/` 开头防外域），WebOS 化登录页 composer 追加注入内联脚本——为登录表单补 `<input type="hidden" name="redirect" value="/admin/cmspro/webos">`（无值时才补），登录 302 直接落到 WebOS 桌面，彻底跳过 /admin 中转；URL 已带 redirect（被踢回登录前欲访问的深层页面）时保留原值尊重深层直达。零框架改动。补 4 条源码断言。140 测试 1703 断言通过。
 89. 登录页 WebOS 化回退（2.1.76，用户反馈「先不覆盖/admin/login 现在覆盖的无法正常登录」）：整体回退 2.1.74/2.1.75 的登录页覆盖——移除 `View::composer('layouts.auth')` 注入块（含 CSS 变量、login.css 样式与 redirect 隐藏域脚本）、`WorkspaceService::anyAdminOverridesAdminHome()` 判定方法与 `Assets/css/login.css`（应用内与 public 均删除），测试删除对应用例（139 测试 1682 断言，回到 2.1.73 水平）。「覆盖传统后台」恢复为仅覆盖后台首页（/admin 直达 WebOS），登录页保持框架原版；特性 87/88 作为记录保留，待定位登录失效根因（疑似 CSS 重塑对 layui 表单结构/事件的干扰）后再以更保守的方式重新评估。
+90. WebOS 登录窗口（2.1.77，用户需求「在/admin/cmspro/webos 中增加登录页面，未登录账号时显示登录窗口」）：与 2.1.74 覆盖框架登录页的失败路线彻底切割——登录窗口承载于应用自有路由与自有视图/样式，规避 layui 表单结构干扰根因。实现：ServiceProvider 桌面路由组拆分——`index` 移出 `auth:admin`（保留 web 组，CSRF/会话不受影响），未登录时 `WebosController::index` 渲染 `Admin/desktop/login.blade.php`；已登录渲染桌面（原逻辑不变）；其余 API 路由保持 auth:admin。登录窗口为 Windows 风格（全屏 WebOS 壁纸 + 毛玻璃卡片 + 圆形头像 + WebOS 蓝全宽按钮），自有 DOM（`.webos-login-*` 命名空间）+ `Assets/css/login.css` 全新重写（壁纸/头像地址由视图经 asset() 以 CSS 变量下发，兼容子目录部署），零 layui 依赖；认证逻辑仍走框架 `/admin/login`（CSRF/验证码/锁定/记住登录/错误回显全套复用），表单携带 `redirect=/admin/cmspro/webos`，登录成功 302 直达桌面（与 /admin/login 无关，框架登录页保持原版）。验证码为系统级可选配置，开启时展示并可点击刷新（复用框架公开接口 `/api/login-security/admin`）。补 1 条用例（未登录渲染断言 + API 仍受保护断言 + 路由拆分/样式/视图源码断言）。139 测试 1702 断言通过。
 
 ## 四、数据结构
 
@@ -174,6 +175,7 @@ CmsproWebos/
 
 | 版本 | 日期 | 说明 |
 |---|---|---|
+| 2.1.77 | 2026-10-20 | WebOS 登录窗口（用户需求）：未登录访问 /admin/cmspro/webos 直接显示 Windows 风格登录窗口（应用自有视图/样式，零 layui 依赖），认证走框架接口，登录成功 302 直达桌面。139 测试 1702 断言通过。 |
 | 2.1.76 | 2026-10-20 | 回退登录页 WebOS 化（用户反馈覆盖后无法正常登录）：移除 layouts.auth 注入与判定方法，登录页恢复框架原版，「覆盖传统后台」仅覆盖后台首页。139 测试 1682 断言通过。 |
 | 2.1.75 | 2026-10-20 | 登录成功直达 WebOS 桌面（用户反馈）：复用框架 loginSubmit 原生 redirect 参数为登录表单补隐藏域，302 直接落 /admin/cmspro/webos，跳过 /admin 传统首页中转。140 测试 1703 断言通过。 |
 | 2.1.74 | 2026-10-20 | 登录页 WebOS 化（用户需求）：覆盖传统后台开启后，登录页呈现 Windows 风格 WebOS 登录窗口（全屏壁纸 + 毛玻璃卡片 + 圆形头像）；纯 CSS 重塑复用传统登录全部功能。140 测试 1699 断言通过。 |

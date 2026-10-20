@@ -12,10 +12,16 @@ class ServiceProvider extends BaseServiceProvider
 {
     public function boot(): void
     {
+        // 桌面主页面（index）不挂 auth:admin：未登录访问时由控制器渲染 WebOS 登录窗口（2.1.77），
+        // 已登录渲染桌面；其余 API 路由全部保持 auth:admin
         Route::prefix('admin/cmspro/webos')
-            ->middleware(['web', 'auth:admin'])
+            ->middleware(['web'])
             ->name('cmspro.webos.admin.')
-            ->group(__DIR__ . '/Routes/admin.php');
+            ->group(function (): void {
+                Route::get('/', [\App\Apps\CmsproWebos\Controllers\Admin\WebosController::class, 'index'])->name('index');
+
+                Route::middleware('auth:admin')->group(__DIR__ . '/Routes/admin.php');
+            });
 
         $this->loadViewsFrom(__DIR__ . '/Views', 'cmspro.webos');
 
@@ -56,13 +62,13 @@ class ServiceProvider extends BaseServiceProvider
     }
 
     /**
-     * 入口静态资源版本号：取 entry.js/css 的最新修改时间，避免浏览器缓存旧版资源。
+     * 入口静态资源版本号：取 entry.js/css、login.css 的最新修改时间，避免浏览器缓存旧版资源。
      */
     protected function assetVersion(): int
     {
         $version = 1;
 
-        foreach (['css/entry.css', 'js/entry.js'] as $asset) {
+        foreach (['css/entry.css', 'js/entry.js', 'css/login.css'] as $asset) {
             $path = __DIR__ . '/Assets/' . $asset;
             if (is_file($path)) {
                 $version = max($version, (int) filemtime($path));

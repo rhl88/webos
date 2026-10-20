@@ -10,10 +10,45 @@ use Illuminate\Support\Facades\Http;
 
 class WebosWorkspaceApiTest extends WebosTestCase
 {
-    public function test_guest_is_redirected_to_admin_login(): void
+    /** 未登录访问桌面：渲染 WebOS 登录窗口（2.1.77，登录成功后 redirect 直达桌面） */
+    public function test_guest_sees_webos_login_window(): void
     {
-        $this->get('/admin/cmspro/webos')
-            ->assertRedirect('/admin/login');
+        $response = $this->get('/admin/cmspro/webos');
+        $response->assertOk()
+            // Windows 风格登录卡片：自有 DOM（零 layui 依赖），表单走框架 /admin/login
+            ->assertSee('webos-login-card', false)
+            ->assertSee('webos-login-avatar', false)
+            ->assertSee('action="' . url('/admin/login') . '"', false)
+            // redirect 隐藏域：登录成功 302 直达 WebOS 桌面（框架 loginSubmit 原生支持）
+            ->assertSee('name="redirect" value="/admin/cmspro/webos"', false);
+
+        // API 路由仍受 auth:admin 保护：未登录访问工作区接口被拒绝
+        $this->getJson('/admin/cmspro/webos/api/workspace')->assertUnauthorized();
+
+        // 路由拆分：index 移出 auth:admin 组（ServiceProvider），桌面页与 API 分层注册
+        $provider = file_get_contents(dirname(__DIR__, 2) . '/ServiceProvider.php');
+        $this->assertIsString($provider);
+        $this->assertStringContainsString("Route::prefix('admin/cmspro/webos')", $provider);
+        $this->assertStringContainsString("->middleware(['web'])", $provider);
+        $this->assertStringContainsString("Route::middleware('auth:admin')->group(__DIR__ . '/Routes/admin.php');", $provider);
+        $this->assertStringNotContainsString("->middleware(['web', 'auth:admin'])", $provider);
+
+        // 登录样式：命名空间隔离（.webos-login-*），壁纸/头像走 CSS 变量不硬编码路径
+        $loginCss = file_get_contents(dirname(__DIR__, 2) . '/Assets/css/login.css');
+        $this->assertIsString($loginCss);
+        $this->assertStringContainsString('.webos-login-card {', $loginCss);
+        $this->assertStringContainsString('backdrop-filter: blur(18px);', $loginCss);
+        $this->assertStringContainsString('var(--webos-login-avatar)', $loginCss);
+        $this->assertStringContainsString('var(--webos-login-wallpaper)', $loginCss);
+        $this->assertStringContainsString('.webos-login-submit {', $loginCss);
+
+        // 登录视图：自有 DOM + 验证码点击刷新（框架公开接口）
+        $view = file_get_contents(dirname(__DIR__, 2) . '/Views/Admin/desktop/login.blade.php');
+        $this->assertIsString($view);
+        $this->assertStringContainsString("{{ url('/admin/login') }}", $view);
+        $this->assertStringContainsString('name="redirect" value="/admin/cmspro/webos"', $view);
+        $this->assertStringContainsString('webos-login-captcha-image', $view);
+        $this->assertStringContainsString("{{ url('/api/login-security/admin') }}", $view);
     }
 
     public function test_admin_can_open_webos_desktop(): void

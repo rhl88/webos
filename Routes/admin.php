@@ -3,7 +3,8 @@
 use App\Apps\CmsproWebos\Controllers\Admin\WebosController;
 use Illuminate\Support\Facades\Route;
 
-Route::get('/', [WebosController::class, 'index'])->name('index');
+// 桌面主页面 index 路由已移至 ServiceProvider（未登录可达，控制器内分流登录窗口/桌面），
+// 本文件所有路由均在 ServiceProvider 的 auth:admin 组内
 
 Route::prefix('api')->name('api.')->group(function () {
     Route::get('/workspace', [WebosController::class, 'workspace'])->name('workspace.show');
