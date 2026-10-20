@@ -4524,8 +4524,11 @@
         if (entry.path === '/admin/account') {
             size.width = Math.max(MIN_WINDOW_WIDTH, Math.min(680, Math.round(layerRect.width) - 40));
         }
-        windowElement.style.left = Math.max(24, (layerRect.width - size.width) / 2 + offset * 18) + 'px';
-        windowElement.style.top = Math.max(20, (layerRect.height - size.height) / 2 + offset * 14) + 'px';
+        // 窗口初始定位：工作区内居中（offset 为多窗口层叠错位）。居中值本身 ≥ 0，
+        // 最小钳制只会在窗口接近/达到满屏时生效——若钳到常量边距（历史值 24/20），
+        // 100% 默认尺寸的窗口会被顶开，整体右下偏移约 22px，这里钳到 0 贴齐工作区
+        windowElement.style.left = Math.max(0, (layerRect.width - size.width) / 2 + offset * 18) + 'px';
+        windowElement.style.top = Math.max(0, (layerRect.height - size.height) / 2 + offset * 14) + 'px';
         windowElement.style.width = size.width + 'px';
         windowElement.style.height = size.height + 'px';
         // 官网动态窗口停靠桌面最右侧、垂直居中（仅超管桌面自动打开）

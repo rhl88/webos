@@ -2990,6 +2990,10 @@ class WebosWorkspaceApiTest extends WebosTestCase
         // 浮层定位宽度按实际渲染值测量（2.1.43）：2.1.42 CSS 加宽到 428px 后 JS 硬编码 328 未同步，
         // 右侧越界翻转判定偏窄，浮层实际铺展区域超出计算值，拖出落点被压在浮层下（视觉无响应）
         $this->assertStringContainsString('var overlayWidth = overlay.offsetWidth || 478;', $script);
+        // 2.1.71：窗口初始定位最小钳制为 0——100% 默认尺寸时居中值为 0，钳到常量边距（历史 24/20）
+        // 会把满屏窗口整体顶开右下偏移约 22px
+        $this->assertStringContainsString("windowElement.style.left = Math.max(0, (layerRect.width - size.width) / 2 + offset * 18) + 'px';", $script);
+        $this->assertStringContainsString("windowElement.style.top = Math.max(0, (layerRect.height - size.height) / 2 + offset * 14) + 'px';", $script);
         // 拖出松手在浮层内（回弹）时有提示（2.1.43）：此前该分支完全无声，用户无法分辨拖出结果
         $this->assertStringContainsString("toast('图标保留在文件夹内');", $script);
     }
