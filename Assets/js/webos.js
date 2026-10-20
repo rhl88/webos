@@ -4544,8 +4544,9 @@
         var offset = state.windows.size % 5;
         var layerRect = elements.windowLayer.getBoundingClientRect();
         var size = defaultWindowSize(key);
-        // 个人设置窗口宽度固定 680px（小屏收窄避免溢出）
-        if (entry.path === '/admin/account') {
+        // 个人设置窗口宽度固定 680px（小屏收窄避免溢出），双端（admin /admin/account、user /user/account）统一；
+        // 高度两端同由 defaultWindowSize 按同一 windowKey 计算（entry id 均为 account-settings），尺寸保持一致
+        if (entry.path === '/admin/account' || entry.path === '/user/account') {
             size.width = Math.max(MIN_WINDOW_WIDTH, Math.min(680, Math.round(layerRect.width) - 40));
         }
         // 窗口初始定位：工作区内居中（offset 为多窗口层叠错位）。居中值本身 ≥ 0，

@@ -1593,6 +1593,8 @@ class WebosWorkspaceApiTest extends WebosTestCase
         $this->assertIsString($view);
         // 账号入口路径随终端分流（user 端走 /user/account，admin 端值不变）
         $this->assertStringContainsString('data-account-path="{{ $webosTerminal === \'user\' ? \'/user/account\' : \'/admin/account\' }}"', $view);
+        // 修改密码双端可见：位于后台专属 @if 之前（不在其内），仅「清除缓存」由 @if 包裹
+        $this->assertStringContainsString('data-action="open-password-dialog"><i class="fa fa-key"></i>修改密码</button>' . "\n" . '            @if ($webosTerminal === \'admin\')' . "\n" . '            <button type="button" data-action="clear-cache">', $view);
         $this->assertStringContainsString('data-action="open-password-dialog"', $view);
         // 清除缓存：账号菜单项 + 点击分发复用系统缓存清理接口
         $this->assertStringContainsString('data-action="clear-cache"', $view);
@@ -1970,8 +1972,8 @@ class WebosWorkspaceApiTest extends WebosTestCase
         // OS 设置窗口宽度固定 1000px（小屏收窄避免溢出），高度仍按默认比例
         $this->assertStringContainsString("if (key === 'webos-settings') {" . "\n" . '            return {' . "\n" . '                width: Math.max(MIN_WINDOW_WIDTH, Math.min(1000, Math.round(rect.width) - 40)),', $script);
 
-        // 个人设置窗口宽度固定 680px；修改密码弹窗宽度固定 480px
-        $this->assertStringContainsString("if (entry.path === '/admin/account') {" . "\n" . '            size.width = Math.max(MIN_WINDOW_WIDTH, Math.min(680, Math.round(layerRect.width) - 40));', $script);
+        // 个人设置窗口宽度固定 680px（双端统一：user /user/account 与 admin /admin/account 尺寸一致）；修改密码弹窗宽度固定 480px
+        $this->assertStringContainsString("if (entry.path === '/admin/account' || entry.path === '/user/account') {" . "\n" . '            size.width = Math.max(MIN_WINDOW_WIDTH, Math.min(680, Math.round(layerRect.width) - 40));', $script);
         $this->assertStringContainsString("width: '480px',", $script);
 
         // 进入桌面时检查 WebOS 自身新版本：确认后打开应用中心并自动触发升级

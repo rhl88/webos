@@ -140,10 +140,10 @@
             </div>
         </div>
         <nav class="account-actions">
-            {{-- 用户端个人中心走 /user/account，且无修改密码弹窗/清除缓存能力（框架用户端接口未开放） --}}
+            {{-- 用户端个人中心走 /user/account；修改密码双端可用（弹窗按端分流接口：admin /api/admin/auth/password、user /api/user/password），清除缓存仅后台端 --}}
             <button type="button" data-account-path="{{ $webosTerminal === 'user' ? '/user/account' : '/admin/account' }}"><i class="fa fa-user-circle-o"></i>个人设置</button>
-            @if ($webosTerminal === 'admin')
             <button type="button" data-action="open-password-dialog"><i class="fa fa-key"></i>修改密码</button>
+            @if ($webosTerminal === 'admin')
             <button type="button" data-action="clear-cache"><i class="fa fa-eraser"></i>清除缓存</button>
             @endif
             <button type="button" data-action="lock-desktop"><i class="fa fa-lock"></i>锁定桌面</button>

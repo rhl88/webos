@@ -1,7 +1,7 @@
 # CmsPro WebOS 管理桌面 · 特性清单
 
-> 文档版本：2.1.86 | 更新日期：2026-10-20
-> 应用版本：2.1.86 | 应用 ID：`cmspro.webos`
+> 文档版本：2.1.87 | 更新日期：2026-10-20
+> 应用版本：2.1.87 | 应用 ID：`cmspro.webos`
 
 ## 一、应用定位
 
@@ -179,6 +179,7 @@ CmsproWebos/
 
 | 版本 | 日期 | 说明 |
 |---|---|---|
+| 2.1.87 | 2026-10-20 | 用户端账号菜单与个人设置窗口对齐（用户需求）：任务栏账号菜单面板的「修改密码」按钮由后台端专属（`@if ($webosTerminal === 'admin')`）改为双端共享，用户端点按后打开 WebOS 内置修改密码弹窗（按端分流接口 admin `/api/admin/auth/password`、user `/api/user/password`，字段自动映射），「清除缓存」仍仅后台端可见；`openEntry` 窗口尺寸覆盖由仅 `/admin/account` 改为 `'/admin/account' || '/user/account'`，用户端个人设置窗口宽度固定 680px、高度沿用同一 `windowKey` 计算，与后台端尺寸一致。156 测试 1787 断言通过。 |
 | 2.1.86 | 2026-10-20 | 用户端 WebOS 个人设置关闭刷新对齐（用户反馈）：`closeWindow` 原先仅判定 `path === '/admin/account'`，而用户端个人设置路径为 `/user/account`，关闭窗口后不刷新账号标识；改为 `'/admin/account' || '/user/account'` 双端共用 `refreshAdminIdentity`（重新请求 `data-identity-url`，按终端分流 admin 端管理员 / 用户端前台用户），同步任务栏账号按钮与账号菜单面板的昵称/头像。新增用户端 `admin-identity` 接口回归测试 `test_user_admin_identity_api_returns_current_account`。156 测试 1786 断言通过。 |
 | 2.1.85 | 2026-10-20 | 用户端 WebOS 渲染退化修复（用户反馈）：user 端 `loadCatalog` 原将 `applications` 置空，导致 `findApplication` 恒返回 null，开始菜单项、桌面入口选择树、桌面/任务栏自定义图标、窗口标题与品牌图标等渲染点退化为显示 app_id 与文件夹图标；新增用户端可见应用清单接口 `GET /user/cmspro/webos/api/applications`（数据源与 admin 端 `/api/admin/apps` 同构：apps 表 name/icon + 公开图标路由 icon_url，但仅返回 user 终端菜单涉及的 app_id，避免未分配应用外泄），`loadCatalog` user 分支改为并行拉取 applications + menus 并填充 `state.catalog.applications`；同时为桌面右键与任务栏固定项「卸载应用」补 `isSuperAdmin` 门控（原先依赖空应用清单隐式隐藏）。155 测试 1778 断言通过。 |
 | 2.1.84 | 2026-10-20 | 「用户首页直达 WebOS」失效修复（用户反馈线上开启后访问 `/user` 仍进入传统后台）：根因是 `RedirectUserHomeToWebos` 以 `prependMiddlewareToGroup` 注册到 web 组首，被 Laravel 中间件优先级排序排到 `StartSession` 之前，前置 `auth('web')->check()` 因会话尚未启动恒为 false 而静默漏判放行；改用 `pushMiddlewareToGroup` 后置注册后，`gatherRouteMiddleware` 验证中间件执行在 `StartSession` 之后，登录态判定恢复。新增时序契约回归测试 `test_user_home_redirect_middleware_runs_after_session_start` 锁定顺序；后台端「后台首页直达」走 View composer 注入跳转脚本，不受影响。154 测试 1771 断言通过。 |
