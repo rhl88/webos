@@ -324,6 +324,7 @@ class WebosController extends Controller
             'preferences.window_width' => ['sometimes', 'integer', 'between:40,100'],
             'preferences.window_height' => ['sometimes', 'integer', 'between:40,100'],
             'preferences.override_admin_home' => ['sometimes', 'boolean'],
+            'preferences.override_user_home' => ['sometimes', 'boolean'],
             'preferences.taskbar_autohide' => ['sometimes', 'boolean'],
             'preferences.taskbar_locked' => ['sometimes', 'boolean'],
             'preferences.taskbar_button_style' => ['sometimes', 'in:icon,text'],

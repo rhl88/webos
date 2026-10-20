@@ -39,6 +39,10 @@ class ServiceProvider extends BaseServiceProvider
         // 未登录 GET /admin/login 临时重定向到 WebOS 登录窗口（POST 登录提交不拦，判定异常放行）
         $this->app['router']->prependMiddlewareToGroup('web', Http\Middleware\RedirectAdminLoginToWebos::class);
 
+        // 「用户首页直达 WebOS」（2.1.82）：web 组前置中间件——任一管理员在 OS 设置开启后，
+        // 已登录前台用户 GET /user 首页临时重定向到 WebOS 用户端桌面（skip_webos=1 可绕过）
+        $this->app['router']->prependMiddlewareToGroup('web', Http\Middleware\RedirectUserHomeToWebos::class);
+
         $this->loadViewsFrom(__DIR__ . '/Views', 'cmspro.webos');
 
         // 通知中心待办数据源：其他应用通过系统 hook「admin.notifications.todos」聚合接入

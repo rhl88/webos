@@ -102,6 +102,43 @@ class WebosUserTerminalTest extends WebosTestCase
         $this->assertFalse(WorkspaceService::anyAdminOverridesAdminHome());
     }
 
+    /** 「用户首页直达 WebOS」判定仅看 admin 终端：用户端工作区开启该偏好不参与 */
+    public function test_any_admin_overrides_user_home_ignores_user_terminal(): void
+    {
+        $service = app(WorkspaceService::class);
+        $userWorkspace = $service->getFor('user', 888);
+        $userWorkspace->preferences = ['override_user_home' => true];
+        $userWorkspace->save();
+
+        $this->assertFalse(WorkspaceService::anyAdminOverridesUserHome());
+    }
+
+    /** 用户首页直达（2.1.82）：任一管理员开启后，登录用户 GET /user 302 到用户端桌面；skip_webos=1 与关闭开关均恢复框架首页 */
+    public function test_user_home_redirects_to_webos_when_any_admin_enabled(): void
+    {
+        $this->actingUser();
+        $service = app(WorkspaceService::class);
+
+        // 未开启：用户首页按框架原逻辑渲染
+        $this->get('/user')->assertOk();
+
+        // 任一管理员开启直达：302 到 WebOS 用户端桌面（临时跳转，非 301）
+        $adminWorkspace = $service->getFor('admin', 1);
+        $adminWorkspace->preferences = ['override_user_home' => true];
+        $adminWorkspace->save();
+        $this->assertTrue(WorkspaceService::anyAdminOverridesUserHome());
+
+        $this->get('/user')->assertRedirect('/user/cmspro/webos');
+
+        // skip_webos=1 临时绕过（与后台首页覆盖一致的逃生通道）
+        $this->get('/user?skip_webos=1')->assertOk();
+
+        // 关闭开关：用户首页恢复框架渲染
+        $adminWorkspace->preferences = ['override_user_home' => false];
+        $adminWorkspace->save();
+        $this->get('/user')->assertOk();
+    }
+
     /** 用户端菜单接口：仅返回 terminal_type=user 的启用可见菜单（树形嵌套），admin 菜单不外泄 */
     public function test_user_menus_api_returns_user_terminal_menus(): void
     {

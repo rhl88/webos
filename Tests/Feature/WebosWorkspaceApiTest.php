@@ -515,6 +515,28 @@ class WebosWorkspaceApiTest extends WebosTestCase
             ->assertJsonPath('data.preferences.override_admin_home', false);
     }
 
+    public function test_workspace_api_persists_override_user_home_preference(): void
+    {
+        $this->actingAdmin();
+
+        // 系统设置「用户首页直达 WebOS」（2.1.82）：开启后偏好持久化，供用户首页直达中间件读取
+        $this->putJson('/admin/cmspro/webos/api/workspace', [
+            'preferences' => ['override_user_home' => true],
+        ])->assertOk()
+            ->assertJsonPath('code', 0)
+            ->assertJsonPath('data.preferences.override_user_home', true);
+
+        $this->getJson('/admin/cmspro/webos/api/workspace')
+            ->assertOk()
+            ->assertJsonPath('data.preferences.override_user_home', true);
+
+        // 关闭直达
+        $this->putJson('/admin/cmspro/webos/api/workspace', [
+            'preferences' => ['override_user_home' => false],
+        ])->assertOk()
+            ->assertJsonPath('data.preferences.override_user_home', false);
+    }
+
     /** 「点击菜单进入」偏好持久化：HTTP 链路 menu_open_launcher=true 保存后再读保持开启 */
     public function test_workspace_api_persists_menu_open_launcher_preference(): void
     {

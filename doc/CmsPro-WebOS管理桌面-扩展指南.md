@@ -344,6 +344,7 @@ app(HookManager::class)->registerFilter(
 | `window_width` | int | `78` | 40–100（新建窗口宽度占可用桌面区域百分比） |
 | `window_height` | int | `80` | 40–100 |
 | `override_admin_home` | bool | `false` | 覆盖传统后台首页（`/admin` 直达 WebOS），并同步 WebOS 化后台登录页（任一管理员开启即生效，`WorkspaceService::anyAdminOverridesAdminHome()` 判定） |
+| `override_user_home` | bool | `false` | 用户首页直达 WebOS（`/user` 直达 `/user/cmspro/webos`，2.1.82，任一管理员开启即生效，`WorkspaceService::anyAdminOverridesUserHome()` 判定，`?skip_webos=1` 可绕过） |
 | `usage_stats` | object | `[]` | 入口使用统计，见下节 |
 
 ### 新增偏好键的「多层同步」教训（1.9.67/1.9.68 踩坑）

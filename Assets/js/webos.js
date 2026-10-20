@@ -3932,13 +3932,17 @@
 
     /** 系统设置：覆盖传统后台首页、重置工作区等高级选项 */
     function systemSectionMarkup(preferences) {
-        // 「覆盖传统后台」仅影响 /admin 首页，用户端不渲染该设置卡片
+        // 「覆盖传统后台」仅影响 /admin 首页，用户端不渲染该设置卡片；
+        // 「用户首页直达 WebOS」（2.1.82）与前者同卡并列，均为任一管理员开启即全局生效
         var overrideSection = isUserTerminal ? ''
             : '<section class="settings-card"><div class="settings-card-title"><i class="fa fa-sign-in"></i><div>'
             + '<strong>覆盖传统后台</strong><small>开启后访问后台首页将直接进入 WebOS 桌面；在地址后加 ?skip_webos=1 可临时打开传统首页</small></div></div>'
             + '<button class="settings-toggle" type="button" data-toggle-webos-setting="override_admin_home" aria-pressed="'
             + (preferences.override_admin_home ? 'true' : 'false') + '"><span><strong>后台首页直达 WebOS</strong>'
-            + '<small>仅影响后台首页，其它后台页面不受影响</small></span><i></i></button></section>';
+            + '<small>仅影响后台首页，其它后台页面不受影响</small></span><i></i></button>'
+            + '<button class="settings-toggle" type="button" data-toggle-webos-setting="override_user_home" aria-pressed="'
+            + (preferences.override_user_home ? 'true' : 'false') + '"><span><strong>用户首页直达 WebOS</strong>'
+            + '<small>前台用户访问用户首页将直接进入 WebOS 桌面，同样支持 ?skip_webos=1 临时绕过</small></span><i></i></button></section>';
         return overrideSection
             + '<section class="settings-card"><div class="settings-card-title"><i class="fa fa-clone"></i><div>'
             + '<strong>应用窗口多选项卡</strong><small>开启后窗口内点击菜单以选项卡方式打开，可在标题栏切换与关闭；切换选项卡不重新加载页面</small></div></div>'

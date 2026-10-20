@@ -28,6 +28,7 @@ class WorkspaceService
         'taskbar_locked' => false,
         'taskbar_button_style' => 'icon',
         'override_admin_home' => false,
+        'override_user_home' => false,
         'usage_stats' => [],
         'ignored_updates' => [],
     ];
@@ -79,6 +80,24 @@ class WorkspaceService
 
         foreach ($rows as $row) {
             if (! empty($row->preferences['override_admin_home'])) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * 是否存在任一后台管理员开启了「用户首页直达 WebOS」（2.1.82）：
+     * 判定口径与 anyAdminOverridesAdminHome 一致——任一管理员开启即全局生效
+     * （开关仅后台 OS 设置可配，用户端工作区不参与判定）。
+     */
+    public static function anyAdminOverridesUserHome(): bool
+    {
+        $rows = WebosWorkspace::query()->where('terminal', 'admin')->get(['preferences']);
+
+        foreach ($rows as $row) {
+            if (! empty($row->preferences['override_user_home'])) {
                 return true;
             }
         }
@@ -234,6 +253,7 @@ class WorkspaceService
             self::DEFAULT_PREFERENCES['window_height']
         );
         $preferences['override_admin_home'] = (bool) $preferences['override_admin_home'];
+        $preferences['override_user_home'] = (bool) $preferences['override_user_home'];
         // 任务栏行为（Windows 式）：自动隐藏任务栏、锁定任务栏（锁定后固定图标不可拖动）
         $preferences['taskbar_autohide'] = (bool) $preferences['taskbar_autohide'];
         $preferences['taskbar_locked'] = (bool) $preferences['taskbar_locked'];
