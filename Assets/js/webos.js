@@ -11578,6 +11578,22 @@
                 return;
             }
 
+            // Ctrl+W 关闭当前聚焦窗口（2.1.72）：与浏览器关闭标签页的习惯一致。无聚焦窗口时不拦截，
+            // 保留浏览器原生行为；焦点在窗口 iframe 内部时事件不冒泡到父页面，浏览器会执行原生
+            // Ctrl+W（关闭浏览器标签），该限制无法在父页面拦截
+            if (event.ctrlKey && !event.altKey && !event.shiftKey && (event.key === 'w' || event.key === 'W')) {
+                var focusedKey = '';
+                state.windows.forEach(function (windowState, key) {
+                    if (!focusedKey && windowState.element.classList.contains('is-focused')) {
+                        focusedKey = key;
+                    }
+                });
+                if (focusedKey) {
+                    event.preventDefault();
+                    closeWindow(focusedKey);
+                }
+            }
+
             var startItem = event.target.closest('.start-app-item[data-menu-id]');
             // 禁用应用的开始菜单卡片键盘激活同样拦截（与点击一致）
             if (startItem && !startItem.classList.contains('is-disabled') && event.target === startItem && (event.key === 'Enter' || event.key === ' ')) {

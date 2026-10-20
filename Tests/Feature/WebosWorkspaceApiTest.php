@@ -2994,6 +2994,9 @@ class WebosWorkspaceApiTest extends WebosTestCase
         // 会把满屏窗口整体顶开右下偏移约 22px
         $this->assertStringContainsString("windowElement.style.left = Math.max(0, (layerRect.width - size.width) / 2 + offset * 18) + 'px';", $script);
         $this->assertStringContainsString("windowElement.style.top = Math.max(0, (layerRect.height - size.height) / 2 + offset * 14) + 'px';", $script);
+        // 2.1.72：Ctrl+W 关闭当前聚焦窗口——is-focused 定位聚焦窗口，无聚焦窗口时不拦截浏览器原生行为
+        $this->assertStringContainsString("if (event.ctrlKey && !event.altKey && !event.shiftKey && (event.key === 'w' || event.key === 'W')) {", $script);
+        $this->assertStringContainsString("windowState.element.classList.contains('is-focused')) {", $script);
         // 拖出松手在浮层内（回弹）时有提示（2.1.43）：此前该分支完全无声，用户无法分辨拖出结果
         $this->assertStringContainsString("toast('图标保留在文件夹内');", $script);
     }
