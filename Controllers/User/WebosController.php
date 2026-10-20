@@ -5,6 +5,7 @@ namespace App\Apps\CmsproWebos\Controllers\User;
 use App\Apps\CmsproWebos\Controllers\Admin\WebosController as AdminWebosController;
 use App\Http\Responses\ApiResponse;
 use App\Models\AdminMenu;
+use App\Models\AppModel;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -108,6 +109,44 @@ class WebosController extends AdminWebosController
             ->toArray();
 
         return response()->json(ApiResponse::success($this->buildMenuTree($menus)));
+    }
+
+    /**
+     * 用户端可见应用清单：开始菜单、桌面入口选择树、桌面/任务栏图标、窗口标题与品牌图标等渲染点
+     * 统一依赖应用的名称与图标（前端 findApplication 数据源），缺少该清单会退化为显示 app_id 与文件夹图标。
+     * 数据源与 admin 端 /api/admin/apps 同构（apps 表 name/icon + 公开图标路由 icon_url），
+     * 但仅返回当前用户菜单中出现过 app_id 的应用，不暴露未在用户端分配的应用。
+     */
+    public function applications(): JsonResponse
+    {
+        $appIds = AdminMenu::query()
+            ->where('terminal_type', 'user')
+            ->where('status', 1)
+            ->where('visible', 1)
+            ->whereNotNull('app_id')
+            ->where('app_id', '!=', '')
+            ->distinct()
+            ->pluck('app_id')
+            ->all();
+
+        if (! $appIds) {
+            return response()->json(ApiResponse::success([]));
+        }
+
+        $applications = AppModel::query()
+            ->whereIn('app_id', $appIds)
+            ->orderBy('id', 'asc')
+            ->get()
+            ->map(function (AppModel $app) {
+                $data = $app->only(['app_id', 'name', 'icon', 'version', 'status', 'is_system']);
+                // 应用图标公开路由（无需认证），与 admin 端 getInstalledApps 同一口径
+                $data['icon_url'] = url('/api/app/' . $app->app_id . '/icon');
+                return $data;
+            })
+            ->values()
+            ->all();
+
+        return response()->json(ApiResponse::success($applications));
     }
 
     /** 按 parent_id 组树（AdminMenu 全字段直传，与前端 flattenMenus 契约一致） */

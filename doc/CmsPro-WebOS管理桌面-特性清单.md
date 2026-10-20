@@ -1,7 +1,7 @@
 # CmsPro WebOS 管理桌面 · 特性清单
 
-> 文档版本：2.1.84 | 更新日期：2026-10-20
-> 应用版本：2.1.84 | 应用 ID：`cmspro.webos`
+> 文档版本：2.1.85 | 更新日期：2026-10-20
+> 应用版本：2.1.85 | 应用 ID：`cmspro.webos`
 
 ## 一、应用定位
 
@@ -179,6 +179,7 @@ CmsproWebos/
 
 | 版本 | 日期 | 说明 |
 |---|---|---|
+| 2.1.85 | 2026-10-20 | 用户端 WebOS 渲染退化修复（用户反馈）：user 端 `loadCatalog` 原将 `applications` 置空，导致 `findApplication` 恒返回 null，开始菜单项、桌面入口选择树、桌面/任务栏自定义图标、窗口标题与品牌图标等渲染点退化为显示 app_id 与文件夹图标；新增用户端可见应用清单接口 `GET /user/cmspro/webos/api/applications`（数据源与 admin 端 `/api/admin/apps` 同构：apps 表 name/icon + 公开图标路由 icon_url，但仅返回 user 终端菜单涉及的 app_id，避免未分配应用外泄），`loadCatalog` user 分支改为并行拉取 applications + menus 并填充 `state.catalog.applications`；同时为桌面右键与任务栏固定项「卸载应用」补 `isSuperAdmin` 门控（原先依赖空应用清单隐式隐藏）。155 测试 1778 断言通过。 |
 | 2.1.84 | 2026-10-20 | 「用户首页直达 WebOS」失效修复（用户反馈线上开启后访问 `/user` 仍进入传统后台）：根因是 `RedirectUserHomeToWebos` 以 `prependMiddlewareToGroup` 注册到 web 组首，被 Laravel 中间件优先级排序排到 `StartSession` 之前，前置 `auth('web')->check()` 因会话尚未启动恒为 false 而静默漏判放行；改用 `pushMiddlewareToGroup` 后置注册后，`gatherRouteMiddleware` 验证中间件执行在 `StartSession` 之后，登录态判定恢复。新增时序契约回归测试 `test_user_home_redirect_middleware_runs_after_session_start` 锁定顺序；后台端「后台首页直达」走 View composer 注入跳转脚本，不受影响。154 测试 1771 断言通过。 |
 | 2.1.83 | 2026-10-20 | 用户端桌面 JS 空引用修复：bindEvents 对用户端被裁剪的通知中心元素（任务栏通知按钮、通知面板事件委托、全部已读按钮）判空跳过绑定，closePanels 面板遍历对已裁剪面板判空——修复用户端 `Cannot read properties of null (reading 'addEventListener')` 导致整个桌面初始化中断的问题；后台端元素始终存在，行为不变。153 测试 1768 断言通过。 |
 | 2.1.82 | 2026-10-20 | 「用户首页直达 WebOS」：OS 设置 → 覆盖传统后台卡片内新增第二个开关（偏好键 `override_user_home`），任一管理员开启后已登录前台用户访问用户首页 `/user` 即 302 直达 `/user/cmspro/webos`（新中间件 `RedirectUserHomeToWebos`，web 组前置注册；仅拦 user.index 首页路由，`?skip_webos=1` 可临时绕过，302 而非 301 避免永久缓存，判定异常放行原页面）。判定口径与「覆盖传统后台」一致（任一管理员开启即全局生效，用户端工作区不参与）。153 测试 1768 断言通过。 |

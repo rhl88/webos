@@ -1965,7 +1965,8 @@
         if (!builtinEntry) {
             items.push(['删除图标', 'fa-thumb-tack', 'remove']);
         }
-        if (context.application && Number(context.application.is_system) !== 1) {
+        // 卸载应用仅超级管理员可用：普通用户端不暴露卸载入口（原先依赖空应用清单隐式隐藏，补显式门控）
+        if (isSuperAdmin && context.application && Number(context.application.is_system) !== 1) {
             items.push(['卸载应用', 'fa-times-circle', 'uninstall', 'danger']);
         }
         // 文件夹特有：有子项时提供「释放文件夹」（全部子项移回桌面，2.1.40），图标设置置于菜单最下面
@@ -2334,7 +2335,8 @@
         }
         items.push({ label: entry && entry.app_id ? '打开应用' : '打开', icon: 'fa-external-link', action: 'open', id: id });
         items.push({ label: '解除固定', icon: 'fa-thumb-tack', action: 'unpin', id: id });
-        if (application && Number(application.is_system) !== 1) {
+        // 卸载应用仅超级管理员可用（与桌面右键、开始菜单右键一致，避免普通用户端出现卸载入口）
+        if (isSuperAdmin && application && Number(application.is_system) !== 1) {
             items.push({ label: '卸载应用', icon: 'fa-times-circle', action: 'uninstall', id: id, danger: true });
         }
         return items;
@@ -9539,10 +9541,15 @@
         // 避免个别浏览器对同 URL 短时间内的 GET 复用缓存导致界面显示旧分组
         var cacheBust = '?_t=' + Date.now();
         if (isUserTerminal) {
-            // 用户端裁剪应用中心：应用列表恒空，菜单源为应用自带 user 菜单接口（terminal_type='user'），无停用应用菜单
-            return api(webosApiUrl('menus') + cacheBust).then(function (menus) {
-                state.catalog.applications = [];
-                state.catalog.menus = filterAdminMenus(menus, 'user');
+            // 用户端裁剪应用中心：应用清单只取「当前用户菜单涉及的应用」（提供名称/图标，供开始菜单、
+            // 桌面入口树、窗口标题与图标等渲染点解析），不拉取完整应用中心列表；
+            // 菜单源为应用自带 user 菜单接口（terminal_type='user'），无停用应用菜单
+            return Promise.all([
+                api(webosApiUrl('applications') + cacheBust).catch(function () { return []; }),
+                api(webosApiUrl('menus') + cacheBust)
+            ]).then(function (responses) {
+                state.catalog.applications = responses[0] || [];
+                state.catalog.menus = filterAdminMenus(responses[1], 'user');
                 state.catalog.operation_logs = [];
                 state.flatMenus = flattenMenus(state.catalog.menus);
                 state.startFlatMenus = state.flatMenus;

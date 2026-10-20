@@ -5,7 +5,9 @@ namespace App\Apps\CmsproWebos\Tests\User;
 use App\Apps\CmsproWebos\Http\Middleware\RedirectUserHomeToWebos;
 use App\Apps\CmsproWebos\Services\WorkspaceService;
 use App\Apps\CmsproWebos\Tests\WebosTestCase;
+use App\Enums\AppStatus;
 use App\Models\AdminMenu;
+use App\Models\AppModel;
 
 /**
  * 用户端 WebOS 桌面（2.1.80）：入口分流、终端隔离与 API 能力验证。
@@ -183,6 +185,46 @@ class WebosUserTerminalTest extends WebosTestCase
         // admin 终端菜单与停用菜单不外泄
         $this->assertNull(collect($data)->firstWhere('name', 'WebOS 后台专属'));
         $this->assertNull(collect($data)->firstWhere('name', 'WebOS 停用菜单'));
+    }
+
+    /** 用户端应用清单接口（2.1.85）：返回菜单涉及应用的名称/图标，供开始菜单与桌面入口树渲染；
+     *  未在用户菜单中分配的应用（含仅 admin 终端菜单引用者）不外泄 */
+    public function test_user_applications_api_returns_menu_apps_with_identity(): void
+    {
+        $this->actingUser();
+
+        AppModel::create([
+            'app_id' => 'webos.app.visible',
+            'name' => '用户端可见应用',
+            'icon' => 'fa fa-cube',
+            'version' => '1.0.0',
+            'status' => AppStatus::ENABLED,
+            'is_system' => 0,
+        ]);
+        AppModel::create([
+            'app_id' => 'webos.app.hidden',
+            'name' => '未分配应用',
+            'icon' => 'fa fa-cube',
+            'version' => '1.0.0',
+            'status' => AppStatus::ENABLED,
+            'is_system' => 0,
+        ]);
+
+        // 仅 user 终端菜单引用的应用对用户端可见；admin 终端菜单引用的应用不进入清单
+        AdminMenu::create(['name' => 'WebOS 可见应用菜单', 'parent_id' => 0, 'app_id' => 'webos.app.visible', 'terminal_type' => 'user', 'status' => 1, 'visible' => 1, 'sort' => 1]);
+        AdminMenu::create(['name' => 'WebOS 后台应用菜单', 'parent_id' => 0, 'app_id' => 'webos.app.hidden', 'terminal_type' => 'admin', 'status' => 1, 'visible' => 1, 'sort' => 2]);
+
+        $data = $this->getJson('/user/cmspro/webos/api/applications')
+            ->assertOk()
+            ->assertJsonPath('code', 0)
+            ->json('data');
+
+        $app = collect($data)->firstWhere('app_id', 'webos.app.visible');
+        $this->assertNotNull($app, '用户端菜单涉及的应用应出现在应用清单中');
+        $this->assertSame('用户端可见应用', $app['name']);
+        $this->assertSame('fa fa-cube', $app['icon']);
+        $this->assertSame(url('/api/app/webos.app.visible/icon'), $app['icon_url']);
+        $this->assertNull(collect($data)->firstWhere('app_id', 'webos.app.hidden'), '仅 admin 终端菜单引用的应用不应外泄');
     }
 
     /** 用户端 CSRF Token 接口：返回当前会话 Token（419 后静默续期用） */
