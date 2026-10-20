@@ -31,7 +31,8 @@ class WebosController extends Controller
     ) {
     }
 
-    public function index(Request $request): View
+    // 返回类型不声明：admin 端恒返回 View，user 端子类未登录分支返回 RedirectResponse（协变限制）
+    public function index(Request $request)
     {
         $admin = $request->user('admin');
 
@@ -48,6 +49,8 @@ class WebosController extends Controller
         return view('cmspro.webos::Admin.desktop.index', [
             'admin' => $admin,
             'webosRuntime' => [
+                // 终端标识：前端按 admin/user 分流菜单源、API 前缀与能力开关
+                'terminal' => 'admin',
                 'admin' => [
                     'id' => $admin->id,
                     'name' => $admin->name ?: $admin->username,
@@ -235,7 +238,7 @@ class WebosController extends Controller
 
     public function workspace(Request $request): JsonResponse
     {
-        $workspace = $this->workspaces->getForAdmin((int) $request->user('admin')->id);
+        $workspace = $this->workspaces->getFor($this->terminalOf($request), $this->userIdOf($request));
 
         return response()->json(ApiResponse::success($workspace));
     }
@@ -330,8 +333,9 @@ class WebosController extends Controller
             'preferences.ignored_updates.*' => ['string', 'max:180'],
         ]);
 
-        $workspace = $this->workspaces->saveForAdmin(
-            (int) $request->user('admin')->id,
+        $workspace = $this->workspaces->saveFor(
+            $this->terminalOf($request),
+            $this->userIdOf($request),
             $validated
         );
 
@@ -344,7 +348,7 @@ class WebosController extends Controller
      */
     public function resetWorkspace(Request $request): JsonResponse
     {
-        $workspace = $this->workspaces->resetForAdmin((int) $request->user('admin')->id);
+        $workspace = $this->workspaces->resetFor($this->terminalOf($request), $this->userIdOf($request));
 
         return response()->json(ApiResponse::success($workspace, '工作区已恢复默认'));
     }
@@ -359,7 +363,7 @@ class WebosController extends Controller
             'wallpaper' => ['required', 'image', 'mimes:jpg,jpeg,png,gif,webp', 'max:5120'],
         ]);
 
-        $url = $this->wallpapers->store($validated['wallpaper'], (int) $request->user('admin')->id);
+        $url = $this->wallpapers->store($validated['wallpaper'], $this->userIdOf($request));
 
         return response()->json(ApiResponse::success(['url' => $url], '壁纸已上传'));
     }
@@ -369,7 +373,7 @@ class WebosController extends Controller
      */
     public function wallpapers(Request $request): JsonResponse
     {
-        $wallpapers = $this->wallpapers->listFor((int) $request->user('admin')->id);
+        $wallpapers = $this->wallpapers->listFor($this->userIdOf($request));
 
         return response()->json(ApiResponse::success($wallpapers));
     }
@@ -383,7 +387,7 @@ class WebosController extends Controller
             'url' => ['required', 'string', 'max:200'],
         ]);
 
-        if (! $this->wallpapers->delete($validated['url'], (int) $request->user('admin')->id)) {
+        if (! $this->wallpapers->delete($validated['url'], $this->userIdOf($request))) {
             return response()->json(ApiResponse::error(40302, '壁纸不存在或无权删除'));
         }
 
@@ -399,5 +403,20 @@ class WebosController extends Controller
         $month = $this->calendar->month($validated['month']);
 
         return response()->json(ApiResponse::success($month));
+    }
+
+    /**
+     * 当前请求的工作区终端标识：admin 端固定 admin；
+     * 用户端控制器（User\WebosController）覆写为 user，实现两端工作区隔离。
+     */
+    protected function terminalOf(Request $request): string
+    {
+        return 'admin';
+    }
+
+    /** 当前请求的工作区归属用户 ID：admin 端取管理员，用户端控制器覆写取前台用户 */
+    protected function userIdOf(Request $request): int
+    {
+        return (int) $request->user('admin')->id;
     }
 }

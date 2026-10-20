@@ -2,7 +2,7 @@
     "id": "cmspro.webos",
     "name": "WebOS 管理桌面",
     "description": "将 CmsPro 后台菜单、应用市场、通知与账号能力组织为可安装快捷方式、多窗口和任务栏协作的桌面式管理界面。",
-    "version": "2.1.79",
+    "version": "2.1.80",
     "author": "CmsPro",
     "author_url": "https://www.cmspro.cn",
     "icon": "fa fa-desktop",
@@ -27,6 +27,14 @@
             "path": "/admin/cmspro/webos",
             "code": "admin_cmspro_webos",
             "open_type": "_blank",
+            "order": 1
+        }
+    ],
+    "user_menus": [
+        {
+            "title": "WebOS 桌面",
+            "icon": "fa fa-desktop",
+            "path": "/user/cmspro/webos",
             "order": 1
         }
     ],

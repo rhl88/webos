@@ -23,6 +23,18 @@ class ServiceProvider extends BaseServiceProvider
                 Route::middleware('auth:admin')->group(__DIR__ . '/Routes/admin.php');
             });
 
+        // 用户端 WebOS 桌面（2.1.80）：入口页面不挂 auth:web（未登录由控制器分流框架
+        // 用户登录页），API 路由挂 auth:web + front_user_status，与框架用户端路由口径一致；
+        // 工作区按 terminal + admin_user_id 与后台隔离，UI 复用 admin 端同一桌面视图
+        Route::prefix('user/cmspro/webos')
+            ->middleware(['web'])
+            ->name('cmspro.webos.user.')
+            ->group(function (): void {
+                Route::get('/', [\App\Apps\CmsproWebos\Controllers\User\WebosController::class, 'index'])->name('index');
+
+                Route::middleware(['auth:web', 'front_user_status'])->group(__DIR__ . '/Routes/user.php');
+            });
+
         // 「覆盖传统后台」登录页接管（2.1.79）：web 组前置中间件——任一管理员开启覆盖后，
         // 未登录 GET /admin/login 临时重定向到 WebOS 登录窗口（POST 登录提交不拦，判定异常放行）
         $this->app['router']->prependMiddlewareToGroup('web', Http\Middleware\RedirectAdminLoginToWebos::class);

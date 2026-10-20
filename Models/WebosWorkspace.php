@@ -15,6 +15,7 @@ class WebosWorkspace extends BaseModel
     public const UPDATED_AT = 'update_time';
 
     protected $fillable = [
+        'terminal',
         'admin_user_id',
         'desktop_items',
         'taskbar_items',

@@ -3,6 +3,7 @@
 namespace App\Apps\CmsproWebos\Tests;
 
 use App\Models\AdminUser;
+use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Schema;
 use Tests\TestCase;
@@ -27,7 +28,10 @@ abstract class WebosTestCase extends TestCase
 
         Schema::create('app_cmspro_webos_workspaces', function ($table) {
             $table->bigIncrements('id');
-            $table->unsignedBigInteger('admin_user_id')->unique();
+            // terminal + admin_user_id 联合唯一：admin/user 双端各自隔离（2.1.80，与生产迁移一致）
+            $table->string('terminal', 10)->default('admin');
+            $table->unsignedBigInteger('admin_user_id');
+            $table->unique(['terminal', 'admin_user_id']);
             $table->text('desktop_items')->nullable();
             $table->text('taskbar_items')->nullable();
             $table->text('preferences')->nullable();
@@ -58,5 +62,20 @@ abstract class WebosTestCase extends TestCase
         $this->actingAs($admin, 'admin');
 
         return $admin;
+    }
+
+    /** 前台用户登录态（用户端 WebOS 桌面 2.1.80） */
+    protected function actingUser(): User
+    {
+        $user = User::create([
+            'username' => 'webos_u_' . uniqid(),
+            'password' => bcrypt('123456'),
+            'nickname' => 'WebOS 测试用户',
+            'status' => 1,
+        ]);
+
+        $this->actingAs($user, 'web');
+
+        return $user;
     }
 }

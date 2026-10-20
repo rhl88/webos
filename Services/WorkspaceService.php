@@ -34,8 +34,18 @@ class WorkspaceService
 
     public function getForAdmin(int $adminUserId): WebosWorkspace
     {
+        return $this->getFor('admin', $adminUserId);
+    }
+
+    /**
+     * 按终端取工作区：terminal 区分后台管理员（admin）与前台用户（user），
+     * 同一账号在两端各自持有独立工作区（联合唯一约束 terminal + admin_user_id）。
+     * admin_user_id 列继续承载「当前终端用户 ID」（历史列名，避免结构性迁移）。
+     */
+    public function getFor(string $terminal, int $userId): WebosWorkspace
+    {
         $workspace = WebosWorkspace::query()->firstOrCreate(
-            ['admin_user_id' => $adminUserId],
+            ['terminal' => $terminal, 'admin_user_id' => $userId],
             [
                 'desktop_items' => [],
                 'taskbar_items' => [],
@@ -58,13 +68,14 @@ class WorkspaceService
     }
 
     /**
-     * 是否存在任一管理员开启了「覆盖传统后台」：登录页接管中间件的判定依据。
+     * 是否存在任一后台管理员开启了「覆盖传统后台」：登录页接管中间件的判定依据。
      * 登录页处于未登录状态、无 per-admin 偏好可查，以「任一管理员开启即生效」口径
      * 全表扫描 preferences JSON（管理员数量有限，不缓存以保开关切换即时生效）。
+     * 仅扫描 admin 终端：用户端无该能力，其工作区不参与判定。
      */
     public static function anyAdminOverridesAdminHome(): bool
     {
-        $rows = WebosWorkspace::query()->get(['preferences']);
+        $rows = WebosWorkspace::query()->where('terminal', 'admin')->get(['preferences']);
 
         foreach ($rows as $row) {
             if (! empty($row->preferences['override_admin_home'])) {
@@ -83,7 +94,13 @@ class WorkspaceService
      */
     public function saveForAdmin(int $adminUserId, array $payload): WebosWorkspace
     {
-        $workspace = $this->getForAdmin($adminUserId);
+        return $this->saveFor('admin', $adminUserId, $payload);
+    }
+
+    /** 按终端保存工作区（桌面项/任务栏项/偏好），归属与读取口径见 getFor */
+    public function saveFor(string $terminal, int $userId, array $payload): WebosWorkspace
+    {
+        $workspace = $this->getFor($terminal, $userId);
 
         if (array_key_exists('desktop_items', $payload)) {
             $workspace->desktop_items = $this->sanitizeDesktopItems($payload['desktop_items'] ?? []);
@@ -231,15 +248,22 @@ class WorkspaceService
         return $preferences;
     }
 
-    /**
-     * 重置工作区：桌面/任务栏恢复初始默认布局，偏好恢复默认
-     * （不影响已上传的自定义壁纸文件）。返回重置后的工作区模型。
-     * 超级管理员初始固定「应用中心」；非超管桌面/任务栏为空（应用中心仅超管可用，与前端初始化一致）。
-     */
+    /** 重置后台管理员工作区（按终端口径见 resetFor） */
     public function resetForAdmin(int $adminUserId): WebosWorkspace
     {
-        $workspace = $this->getForAdmin($adminUserId);
-        $isSuperAdmin = (bool) Auth::guard('admin')->user()?->isSuperAdmin();
+        return $this->resetFor('admin', $adminUserId);
+    }
+
+    /**
+     * 按终端重置工作区：桌面/任务栏恢复初始默认布局，偏好恢复默认
+     * （不影响已上传的自定义壁纸文件）。返回重置后的工作区模型。
+     * 超级管理员初始固定「应用中心」；非超管桌面/任务栏为空（应用中心仅超管可用，与前端初始化一致）。
+     * 用户端无应用中心能力，重置后桌面/任务栏一律为空。
+     */
+    public function resetFor(string $terminal, int $userId): WebosWorkspace
+    {
+        $workspace = $this->getFor($terminal, $userId);
+        $isSuperAdmin = $terminal === 'admin' && (bool) Auth::guard('admin')->user()?->isSuperAdmin();
 
         $defaultEntry = [
             'id' => 'webos-app-center',
