@@ -23,6 +23,10 @@ class ServiceProvider extends BaseServiceProvider
                 Route::middleware('auth:admin')->group(__DIR__ . '/Routes/admin.php');
             });
 
+        // 「覆盖传统后台」登录页接管（2.1.79）：web 组前置中间件——任一管理员开启覆盖后，
+        // 未登录 GET /admin/login 临时重定向到 WebOS 登录窗口（POST 登录提交不拦，判定异常放行）
+        $this->app['router']->prependMiddlewareToGroup('web', Http\Middleware\RedirectAdminLoginToWebos::class);
+
         $this->loadViewsFrom(__DIR__ . '/Views', 'cmspro.webos');
 
         // 通知中心待办数据源：其他应用通过系统 hook「admin.notifications.todos」聚合接入

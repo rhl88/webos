@@ -57,6 +57,24 @@ class WorkspaceService
         return $workspace;
     }
 
+    /**
+     * 是否存在任一管理员开启了「覆盖传统后台」：登录页接管中间件的判定依据。
+     * 登录页处于未登录状态、无 per-admin 偏好可查，以「任一管理员开启即生效」口径
+     * 全表扫描 preferences JSON（管理员数量有限，不缓存以保开关切换即时生效）。
+     */
+    public static function anyAdminOverridesAdminHome(): bool
+    {
+        $rows = WebosWorkspace::query()->get(['preferences']);
+
+        foreach ($rows as $row) {
+            if (! empty($row->preferences['override_admin_home'])) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     /** 桌面项保存上限（含文件夹子项）：与前端添加入口的容量预检查一致 */
     protected const DESKTOP_ITEM_LIMIT = 200;
 

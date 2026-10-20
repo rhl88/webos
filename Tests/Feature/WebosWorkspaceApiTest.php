@@ -2,6 +2,7 @@
 
 namespace App\Apps\CmsproWebos\Tests\Feature;
 
+use App\Apps\CmsproWebos\Services\WorkspaceService;
 use App\Apps\CmsproWebos\Tests\WebosTestCase;
 use App\Models\AdminMenu;
 use App\Models\AdminUser;
@@ -10,6 +11,47 @@ use Illuminate\Support\Facades\Http;
 
 class WebosWorkspaceApiTest extends WebosTestCase
 {
+    /** 「覆盖传统后台」开启后，未登录访问 /admin/login 临时重定向到 WebOS 登录窗口（2.1.79） */
+    public function test_admin_login_redirects_to_webos_when_override_enabled(): void
+    {
+        // 仅创建管理员（不登录）：判定口径为「任一管理员开启即生效」
+        $admin = AdminUser::create([
+            'username' => 'webos_override_' . uniqid(),
+            'password' => bcrypt('123456'),
+            'name' => '覆盖开关管理员',
+            'status' => 1,
+        ]);
+        $service = new WorkspaceService();
+
+        // 未开启：传统登录页正常渲染，行为不变
+        $service->saveForAdmin($admin->id, ['preferences' => ['override_admin_home' => false]]);
+        $this->assertFalse(WorkspaceService::anyAdminOverridesAdminHome());
+        $this->get('/admin/login')->assertOk();
+
+        // 任一管理员开启覆盖：未登录 GET /admin/login → 302 到 WebOS 登录窗口
+        $service->saveForAdmin($admin->id, ['preferences' => ['override_admin_home' => true]]);
+        $this->assertTrue(WorkspaceService::anyAdminOverridesAdminHome());
+        $this->get('/admin/login')->assertRedirect('/admin/cmspro/webos');
+
+        // 中间件安全边界：仅拦 GET（POST 登录提交不拦，否则永远无法登录）、
+        // 判定异常放行（登录可用性优先）、302 而非 301（301 被浏览器永久缓存，
+        // 关闭开关或停用应用后登录页将不可达）
+        $middleware = file_get_contents(dirname(__DIR__, 2) . '/Http/Middleware/RedirectAdminLoginToWebos.php');
+        $this->assertIsString($middleware);
+        $this->assertStringContainsString("\$request->isMethod('get')", $middleware);
+        $this->assertStringContainsString("routeIs('admin.login')", $middleware);
+        $this->assertStringContainsString("! auth('admin')->check()", $middleware);
+        $this->assertStringContainsString("redirect('/admin/cmspro/webos')", $middleware);
+        // 302 而非 301：重定向调用不带显式状态码参数（301 会被浏览器永久缓存导致登录页不可达）
+        $this->assertStringNotContainsString("redirect('/admin/cmspro/webos', 301", $middleware);
+        $this->assertStringContainsString('catch (Throwable)', $middleware);
+
+        // ServiceProvider：web 组前置注册（框架登录路由在 web 组内被覆盖）
+        $provider = file_get_contents(dirname(__DIR__, 2) . '/ServiceProvider.php');
+        $this->assertIsString($provider);
+        $this->assertStringContainsString("prependMiddlewareToGroup('web', Http\\Middleware\\RedirectAdminLoginToWebos::class)", $provider);
+    }
+
     /** 未登录访问桌面：渲染 WebOS 登录窗口（2.1.77，登录成功后 redirect 直达桌面） */
     public function test_guest_sees_webos_login_window(): void
     {
