@@ -10020,11 +10020,10 @@
 
     function closePanels(except) {
         [['start', elements.startPanel, elements.startButton], ['notifications', elements.notificationPanel, elements.notificationButton], ['account', elements.accountPanel, elements.accountButton], ['calendar', elements.calendarPanel, elements.clockButton]].forEach(function (panel) {
-            if (panel[0] !== except) {
-                panel[1].hidden = true;
-                panel[2].classList.remove('is-active');
-                panel[2].setAttribute('aria-expanded', 'false');
-            }
+            if (panel[0] === except || !panel[1] || !panel[2]) { return; }
+            panel[1].hidden = true;
+            panel[2].classList.remove('is-active');
+            panel[2].setAttribute('aria-expanded', 'false');
         });
     }
 
@@ -10621,7 +10620,10 @@
             }
             togglePanel('start', elements.startPanel, elements.startButton);
         });
-        elements.notificationButton.addEventListener('click', function () { togglePanel('notifications', elements.notificationPanel, elements.notificationButton); });
+        // 用户端裁剪通知中心：任务栏通知按钮未渲染（blade @if admin），判空跳过绑定（后台端不受影响）
+        if (elements.notificationButton) {
+            elements.notificationButton.addEventListener('click', function () { togglePanel('notifications', elements.notificationPanel, elements.notificationButton); });
+        }
         // 前台首页：默认新标签页打开站点首页；全屏下新标签页会退出全屏，改在桌面内置浏览器窗口打开
         elements.websiteButton.addEventListener('click', function () {
             if (document.fullscreenElement || document.webkitFullscreenElement) {
@@ -10646,46 +10648,52 @@
             }
         });
 
-        document.getElementById('notification-read-all').addEventListener('click', function () {
-            api('/api/admin/notifications/read-all', { method: 'POST' }).then(function () {
-                toast('通知已全部标记为已读');
-                loadNotifications();
-            }).catch(function (error) { toast(error.message, 'error'); });
-        });
+        // 全部已读按钮位于通知面板内：用户端未渲染，判空跳过
+        var notificationReadAll = document.getElementById('notification-read-all');
+        if (notificationReadAll) {
+            notificationReadAll.addEventListener('click', function () {
+                api('/api/admin/notifications/read-all', { method: 'POST' }).then(function () {
+                    toast('通知已全部标记为已读');
+                    loadNotifications();
+                }).catch(function (error) { toast(error.message, 'error'); });
+            });
+        }
 
-        // 通知中心 Tab 切换（待办 / 通知）
-        elements.notificationPanel.addEventListener('click', function (event) {
-            var tab = event.target.closest('[data-notification-tab]');
-            if (tab) {
-                setNotificationTab(tab.dataset.notificationTab);
-                return;
-            }
-            // 待办条目：优先在 WebOS 内打开对应应用窗口并标记待办已读（徽标减少）
-            var todo = event.target.closest('[data-todo-key]');
-            if (todo && todo.dataset.todoKey) {
-                event.preventDefault();
-                markTodoRead(todo.dataset.todoKey, todo.dataset.todoCount);
-                openLinkInWebos(todo.getAttribute('href'));
-                return;
-            }
-            // 通知条目：标记已读（刷新任务栏徽标与面板）并优先在 WebOS 内打开对应应用窗口
-            var item = event.target.closest('[data-notification-link]');
-            if (item) {
-                var panelNoticeId = item.dataset.notificationId;
-                if (panelNoticeId) {
-                    api('/api/admin/notifications/' + encodeURIComponent(panelNoticeId) + '/read', { method: 'POST' })
-                        .then(loadNotifications)
-                        .catch(function () { /* 标记失败不阻断跳转 */ });
+        // 通知中心 Tab 切换（待办 / 通知）：用户端面板未渲染（blade @if admin），判空跳过
+        if (elements.notificationPanel) {
+            elements.notificationPanel.addEventListener('click', function (event) {
+                var tab = event.target.closest('[data-notification-tab]');
+                if (tab) {
+                    setNotificationTab(tab.dataset.notificationTab);
+                    return;
                 }
-                openLinkInWebos(item.dataset.notificationLink);
-                return;
-            }
-            // 底部「查看全部」：在 WebOS 窗口中打开通知中心页面
-            var viewAll = event.target.closest('[data-open-notification-page]');
-            if (viewAll) {
-                openEntry(notificationCenterEntry());
-            }
-        });
+                // 待办条目：优先在 WebOS 内打开对应应用窗口并标记待办已读（徽标减少）
+                var todo = event.target.closest('[data-todo-key]');
+                if (todo && todo.dataset.todoKey) {
+                    event.preventDefault();
+                    markTodoRead(todo.dataset.todoKey, todo.dataset.todoCount);
+                    openLinkInWebos(todo.getAttribute('href'));
+                    return;
+                }
+                // 通知条目：标记已读（刷新任务栏徽标与面板）并优先在 WebOS 内打开对应应用窗口
+                var item = event.target.closest('[data-notification-link]');
+                if (item) {
+                    var panelNoticeId = item.dataset.notificationId;
+                    if (panelNoticeId) {
+                        api('/api/admin/notifications/' + encodeURIComponent(panelNoticeId) + '/read', { method: 'POST' })
+                            .then(loadNotifications)
+                            .catch(function () { /* 标记失败不阻断跳转 */ });
+                    }
+                    openLinkInWebos(item.dataset.notificationLink);
+                    return;
+                }
+                // 底部「查看全部」：在 WebOS 窗口中打开通知中心页面
+                var viewAll = event.target.closest('[data-open-notification-page]');
+                if (viewAll) {
+                    openEntry(notificationCenterEntry());
+                }
+            });
+        }
 
         document.getElementById('show-desktop-button').addEventListener('click', function () {
             state.windows.forEach(function (_, key) { minimizeWindow(key); });

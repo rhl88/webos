@@ -1,7 +1,7 @@
 # CmsPro WebOS 管理桌面 · 特性清单
 
-> 文档版本：2.1.82 | 更新日期：2026-10-20
-> 应用版本：2.1.82 | 应用 ID：`cmspro.webos`
+> 文档版本：2.1.83 | 更新日期：2026-10-20
+> 应用版本：2.1.83 | 应用 ID：`cmspro.webos`
 
 ## 一、应用定位
 
@@ -179,6 +179,7 @@ CmsproWebos/
 
 | 版本 | 日期 | 说明 |
 |---|---|---|
+| 2.1.83 | 2026-10-20 | 用户端桌面 JS 空引用修复：bindEvents 对用户端被裁剪的通知中心元素（任务栏通知按钮、通知面板事件委托、全部已读按钮）判空跳过绑定，closePanels 面板遍历对已裁剪面板判空——修复用户端 `Cannot read properties of null (reading 'addEventListener')` 导致整个桌面初始化中断的问题；后台端元素始终存在，行为不变。153 测试 1768 断言通过。 |
 | 2.1.82 | 2026-10-20 | 「用户首页直达 WebOS」：OS 设置 → 覆盖传统后台卡片内新增第二个开关（偏好键 `override_user_home`），任一管理员开启后已登录前台用户访问用户首页 `/user` 即 302 直达 `/user/cmspro/webos`（新中间件 `RedirectUserHomeToWebos`，web 组前置注册；仅拦 user.index 首页路由，`?skip_webos=1` 可临时绕过，302 而非 301 避免永久缓存，判定异常放行原页面）。判定口径与「覆盖传统后台」一致（任一管理员开启即全局生效，用户端工作区不参与）。153 测试 1768 断言通过。 |
 | 2.1.81 | 2026-10-20 | 用户端扩展·前端适配（方案 A 单应用双端）：桌面视图与 WebOS 登录窗口按终端参数化（`webosRuntime.terminal` / `webosLoginTerminal`），JS 以 `isUserTerminal` 分流 API 前缀（`webosApiUrl`）、菜单源（user 菜单接口 `GET /user/cmspro/webos/api/menus`，与框架 admin userMenus 输出同构）、退出登录、密码修改（用户端字段映射 `password/password_confirmation`）与会话心跳/恢复探测（应用自带 identity/csrf-token 接口）；用户端裁剪应用中心、通知中心、「覆盖传统后台」设置卡片，预置工作区仅内置浏览器；未登录访问用户端入口渲染同一份 WebOS 登录窗口（验证码场景分流 user，表单提交 `/user/login`）。150 测试 1754 断言通过。 |
 | 2.1.80 | 2026-10-20 | 用户端扩展·服务端骨架（方案 A 单应用双端）：工作区表新增 `terminal` 字段并把唯一约束升级为 `(terminal, admin_user_id)` 联合唯一（存量回填 admin，含幂等 SQL 与回滚方案）；`WorkspaceService` 拆分 `getFor/saveFor/resetFor` 按终端读写；`ServiceProvider` 新增 user 路由组（`/user/cmspro/webos` 入口 + `auth:web` + `front_user_status` API 组）；新增 `Controllers/User/WebosController` 继承 admin 端控制器按 terminal 分流身份；manifest 声明 `user_menus` 挂「WebOS 桌面」入口；未登录访问入口 302 到框架用户登录页（携带回跳地址）。前端按 terminal 分流的界面适配由 2.1.81 承接。147 测试 1737 断言通过。 |
