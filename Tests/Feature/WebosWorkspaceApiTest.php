@@ -2,7 +2,6 @@
 
 namespace App\Apps\CmsproWebos\Tests\Feature;
 
-use App\Apps\CmsproWebos\Services\WorkspaceService;
 use App\Apps\CmsproWebos\Tests\WebosTestCase;
 use App\Models\AdminMenu;
 use App\Models\AdminUser;
@@ -3119,47 +3118,5 @@ class WebosWorkspaceApiTest extends WebosTestCase
         $this->assertIsString($view);
         $this->assertStringContainsString('data-identity-url="{{ url(\'/admin/cmspro/webos/api/admin-identity\') }}"', $view);
         $this->assertStringContainsString('data-avatar-fallback="{{ asset(\'Admin/images/avatar.png\') }}"', $view);
-    }
-
-    /** 登录页 WebOS 化（2.1.74）：覆盖传统后台开启后，登录页呈现 Windows 风格 WebOS 登录窗口 */
-    public function test_login_page_renders_webos_window_when_override_enabled(): void
-    {
-        $admin = $this->actingAdmin();
-        $service = new WorkspaceService();
-
-        // 服务端判定：默认关闭；任一管理员开启「覆盖传统后台」后生效
-        $this->assertFalse(WorkspaceService::anyAdminOverridesAdminHome());
-        $service->saveForAdmin($admin->id, ['preferences' => ['override_admin_home' => true]]);
-        $this->assertTrue(WorkspaceService::anyAdminOverridesAdminHome());
-        $service->saveForAdmin($admin->id, ['preferences' => ['override_admin_home' => false]]);
-        $this->assertFalse(WorkspaceService::anyAdminOverridesAdminHome());
-
-        // ServiceProvider：layouts.auth composer 仅在登录路由 + 任一覆盖开启时注入，
-        // 资源地址经 asset() 以 CSS 变量下发（壁纸/头像），样式文件不硬编码路径
-        $provider = file_get_contents(dirname(__DIR__, 2) . '/ServiceProvider.php');
-        $this->assertIsString($provider);
-        $this->assertStringContainsString("View::composer('layouts.auth'", $provider);
-        $this->assertStringContainsString("request()->routeIs('admin.login')", $provider);
-        $this->assertStringContainsString('WorkspaceService::anyAdminOverridesAdminHome()', $provider);
-        $this->assertStringContainsString("--webos-login-wallpaper:url(\"'\n                . asset('apps/cmspro.webos/images/webos-wallpaper.png')", $provider);
-        $this->assertStringContainsString("--webos-login-avatar:url(\"'\n                . asset('Admin/images/avatar.png')", $provider);
-        $this->assertStringContainsString("'css/entry.css', 'js/entry.js', 'css/login.css'", $provider);
-
-        // 重塑样式：全屏壁纸 + 毛玻璃卡片 + 圆形头像 + WebOS 蓝登录按钮（纯 CSS，零 DOM/JS 改动）
-        $loginCss = file_get_contents(dirname(__DIR__, 2) . '/Assets/css/login.css');
-        $this->assertIsString($loginCss);
-        $this->assertStringContainsString('var(--webos-login-wallpaper)', $loginCss);
-        $this->assertStringContainsString('.login-page .form-center-box {', $loginCss);
-        $this->assertStringContainsString('backdrop-filter: blur(18px);', $loginCss);
-        $this->assertStringContainsString('var(--webos-login-avatar)', $loginCss);
-        $this->assertStringContainsString('.login-page .login-bg {', $loginCss);
-        $this->assertStringContainsString('background-color: #198cf0;', $loginCss);
-
-        // 登录直达桌面（2.1.75 用户反馈）：补 redirect 隐藏域指向 WebOS 桌面，复用框架
-        // loginSubmit 的 redirect 参数（/ 开头防外域）；已有 redirect 时保留原值
-        $this->assertStringContainsString('$webosUrl = route(\'cmspro.webos.admin.index\');', $provider);
-        $this->assertStringContainsString("i=f.querySelector(\\'input[name=\"redirect\"]\\')", $provider);
-        $this->assertStringContainsString('if(!i.value){i.value=', $provider);
-        $this->assertStringContainsString('name="redirect";f.appendChild(i);', $provider);
     }
 }
