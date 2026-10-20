@@ -1,0 +1,189 @@
+/**
+ * WebOS 登录窗口（2.1.74）：「覆盖传统后台」开启后，后台登录页呈现为 Windows 风格——
+ * 全屏 WebOS 壁纸 + 毛玻璃居中登录卡片。纯 CSS 重塑传统登录页（auth.login）：
+ * 表单结构、CSRF、验证码刷新、回车提交、错误回显全部复用，仅改变视觉呈现。
+ * 壁纸/头像地址由 ServiceProvider 注入的 CSS 变量下发，本文件不硬编码资源路径。
+ * 选择器一律 .login-page 前缀（页内容器）或 html/body（仅登录布局内生效），覆盖传统布局底色。
+ */
+
+html,
+body {
+    height: 100% !important;
+    margin: 0 !important;
+    background-color: #0b2947 !important;
+    background-image:
+        linear-gradient(180deg, rgba(7, 30, 56, 0.34), rgba(7, 30, 56, 0.58)),
+        var(--webos-login-wallpaper) !important;
+    background-repeat: no-repeat !important;
+    background-position: center !important;
+    background-size: cover !important;
+}
+
+/* 页面容器：全屏居中，替换传统左右分栏 */
+.login-page {
+    width: 100%;
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 32px 16px;
+    background: transparent;
+}
+
+/* 解除 layui 栅格：左栏隐藏、右栏占满 */
+.login-page .layui-row {
+    display: block;
+    width: 100%;
+}
+
+.login-page .login-bg {
+    display: none;
+}
+
+.login-page .login-form {
+    width: 100%;
+    display: flex;
+    justify-content: center;
+}
+
+.login-page .layui-form,
+.login-page .form-center {
+    width: 100%;
+    display: flex;
+    justify-content: center;
+}
+
+/* 毛玻璃登录卡片：Windows 风格 */
+.login-page .form-center-box {
+    width: 100%;
+    max-width: 400px;
+    padding: 44px 38px 36px;
+    background: rgba(9, 33, 60, 0.58);
+    border: 1px solid rgba(255, 255, 255, 0.16);
+    border-radius: 16px;
+    box-shadow: 0 24px 64px rgba(4, 18, 36, 0.45);
+    -webkit-backdrop-filter: blur(18px);
+    backdrop-filter: blur(18px);
+    text-align: center;
+}
+
+/* 卡片顶部圆形头像（Windows 登录窗口视觉） */
+.login-page .form-center-box::before {
+    content: '';
+    display: block;
+    width: 76px;
+    height: 76px;
+    margin: 0 auto 18px;
+    border-radius: 50%;
+    background-color: rgba(255, 255, 255, 0.92);
+    background-image: var(--webos-login-avatar);
+    background-repeat: no-repeat;
+    background-position: center;
+    background-size: cover;
+    border: 3px solid rgba(255, 255, 255, 0.55);
+    box-shadow: 0 10px 26px rgba(4, 18, 36, 0.4);
+}
+
+/* 标题区：隐藏大 logo 图，头像替代；文字居中白化 */
+.login-page .top-log-title {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+}
+
+.login-page .top-log-title .top-log {
+    display: none;
+}
+
+.login-page .top-log-title span {
+    font-size: 24px;
+    font-weight: 600;
+    letter-spacing: 2px;
+    color: #ffffff;
+}
+
+.login-page .top-log-title sup {
+    color: rgba(255, 255, 255, 0.7);
+}
+
+.login-page .top-desc {
+    margin-top: 4px;
+    font-size: 13px;
+    color: rgba(255, 255, 255, 0.68);
+    letter-spacing: 1px;
+}
+
+/* 输入框：白色半透明、圆角，适配毛玻璃卡片 */
+.login-page .layui-input-wrap {
+    border-radius: 8px;
+}
+
+.login-page .layui-input-wrap .layui-input {
+    height: 44px;
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.92);
+    border: 1px solid rgba(255, 255, 255, 0.35);
+    color: #152238;
+    transition: border-color 160ms, box-shadow 160ms;
+}
+
+.login-page .layui-input-wrap .layui-input:focus {
+    border-color: rgba(25, 140, 240, 0.85);
+    box-shadow: 0 0 0 3px rgba(25, 140, 240, 0.28);
+}
+
+.login-page .layui-input-prefix {
+    color: #5a6b81;
+}
+
+/* 验证码图片：圆角与输入框对齐 */
+.login-page #loginCaptchaImage {
+    border-radius: 8px;
+}
+
+/* 记住登录 / 忘记密码 */
+.login-page .remember-passsword {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    color: rgba(255, 255, 255, 0.85);
+}
+
+.login-page .remember-right .greenText {
+    color: rgba(255, 255, 255, 0.75);
+}
+
+.login-page .remember-right .greenText:hover {
+    color: #ffffff;
+}
+
+/* 登录按钮：全宽 WebOS 蓝 */
+.login-page .login-btn {
+    margin-top: 6px;
+}
+
+.login-page .login-btn .layui-btn.login {
+    width: 100%;
+    height: 44px;
+    line-height: 44px;
+    border: none;
+    border-radius: 8px;
+    background-color: #198cf0;
+    font-size: 15px;
+    letter-spacing: 6px;
+    transition: background-color 160ms, transform 120ms;
+}
+
+.login-page .login-btn .layui-btn.login:hover {
+    background-color: #0b83e5;
+}
+
+.login-page .login-btn .layui-btn.login:active {
+    transform: translateY(1px);
+}
+
+/* 错误提示：卡片内保留浅红提示块（与原渲染一致），仅需收敛宽度对齐 */
+.login-page .layui-form-item > div[style*="background: #fef0f0"] {
+    border-radius: 8px;
+}

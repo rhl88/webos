@@ -53,16 +53,43 @@ class ServiceProvider extends BaseServiceProvider
             $factory->startPush('page_scripts', '<div id="webos-float-book-carrier" hidden data-url="' . $webosUrl . '"></div>'
                 . '<script src="' . asset('apps/cmspro.webos/js/entry.js') . '?v=' . $entryVersion . '"></script>');
         });
+
+        // 登录页 WebOS 化（2.1.74）：「覆盖传统后台」开启后，后台登录页（auth.login → layouts.auth）
+        // 注入重塑样式，呈现为 Windows 风格的 WebOS 登录窗口（全屏壁纸 + 毛玻璃居中卡片）。
+        // 纯 CSS 重塑：表单结构、CSRF、验证码刷新、回车提交、错误回显全部复用传统登录页，零后端改动。
+        // 未登录状态无 per-admin 偏好，override_admin_home 以「任一管理员开启即生效」口径读取。
+        View::composer('layouts.auth', function ($view): void {
+            if (! request()->routeIs('admin.login')) {
+                return;
+            }
+
+            try {
+                if (! WorkspaceService::anyAdminOverridesAdminHome()) {
+                    return;
+                }
+            } catch (Throwable) {
+                return;
+            }
+
+            $factory = $view->getFactory();
+            $loginVersion = $this->assetVersion();
+            // 资源地址经 asset() 生成后以 CSS 变量下发（壁纸/头像），样式文件内不硬编码路径，
+            // 兼容子目录部署
+            $factory->startPush('styles', '<style>:root{--webos-login-wallpaper:url("'
+                . asset('apps/cmspro.webos/images/webos-wallpaper.png') . '");--webos-login-avatar:url("'
+                . asset('Admin/images/avatar.png') . '");}</style>'
+                . '<link rel="stylesheet" href="' . asset('apps/cmspro.webos/css/login.css') . '?v=' . $loginVersion . '">');
+        });
     }
 
     /**
-     * 入口静态资源版本号：取 entry.js/css 的最新修改时间，避免浏览器缓存旧版资源。
+     * 入口静态资源版本号：取 entry.js/css、login.css 的最新修改时间，避免浏览器缓存旧版资源。
      */
     protected function assetVersion(): int
     {
         $version = 1;
 
-        foreach (['css/entry.css', 'js/entry.js'] as $asset) {
+        foreach (['css/entry.css', 'js/entry.js', 'css/login.css'] as $asset) {
             $path = __DIR__ . '/Assets/' . $asset;
             if (is_file($path)) {
                 $version = max($version, (int) filemtime($path));
