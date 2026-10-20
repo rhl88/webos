@@ -3198,8 +3198,9 @@ class WebosWorkspaceApiTest extends WebosTestCase
         $this->assertIsString($script);
         $this->assertStringNotContainsString("event.key === 'w' || event.key === 'W'", $script);
 
-        // 关闭接入：closeWindow 判定个人设置窗口（path=/admin/account）后调 refreshAdminIdentity
-        $this->assertStringContainsString("if (target.entry.path === '/admin/account') {", $script);
+        // 关闭接入：closeWindow 判定个人设置窗口后调 refreshAdminIdentity
+        // （admin 端 /admin/account；2.1.86 补齐用户端 /user/account，两端共用同一刷新逻辑）
+        $this->assertStringContainsString("if (target.entry.path === '/admin/account' || target.entry.path === '/user/account') {", $script);
         $this->assertStringContainsString('refreshAdminIdentity();', $script);
         // 刷新函数：请求应用身份接口 + 默认头像回退 + 更新任务栏账号按钮与账号菜单面板
         $this->assertStringContainsString('function refreshAdminIdentity() {', $script);

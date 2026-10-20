@@ -248,4 +248,17 @@ class WebosUserTerminalTest extends WebosTestCase
             ->assertJsonPath('code', 0)
             ->assertJsonPath('data.username', $user->username);
     }
+
+    /** 用户端账号标识接口（昵称/账号/头像）：个人设置窗口关闭后刷新状态栏与账号菜单所依赖 */
+    public function test_user_admin_identity_api_returns_current_account(): void
+    {
+        $user = $this->actingUser();
+
+        $this->getJson('/user/cmspro/webos/api/admin-identity')
+            ->assertOk()
+            ->assertJsonPath('code', 0)
+            ->assertJsonPath('data.username', $user->username)
+            ->assertJsonPath('data.name', $user->nickname ?: $user->username)
+            ->assertJsonStructure(['data' => ['name', 'username', 'avatar']]);
+    }
 }

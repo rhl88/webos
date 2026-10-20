@@ -4733,15 +4733,17 @@
         target.element.remove();
         state.windows.delete(key);
         renderTaskbarWindows();
-        // 个人设置窗口关闭后刷新管理员标识：头像/姓名可在窗口内修改，任务栏与账号菜单需同步（2.1.73）
-        if (target.entry.path === '/admin/account') {
+        // 个人设置窗口关闭后刷新当前账号标识：头像/姓名可在窗口内修改，任务栏与账号菜单需同步
+        // （2.1.73 覆盖 admin 端 /admin/account；2.1.86 补齐用户端 /user/account，两端共用同一刷新逻辑）
+        if (target.entry.path === '/admin/account' || target.entry.path === '/user/account') {
             refreshAdminIdentity();
         }
     }
 
     /**
-     * 刷新管理员标识展示（2.1.73）：重新请求当前管理员姓名/头像，更新两处服务端渲染的初始值——
-     * 任务栏账号按钮（.taskbar-avatar img + 姓名）与账号菜单面板（.account-avatar img + 姓名）。
+     * 刷新当前账号标识展示（2.1.73；2.1.86 扩展至用户端）：重新请求当前登录账号姓名/头像，
+     * 更新两处服务端渲染的初始值——任务栏账号按钮（.taskbar-avatar img + 姓名）与账号菜单面板
+     * （.account-avatar img + 姓名）。接口按终端分流（admin 端管理员 / 用户端前台用户）。
      * 头像为空回退默认头像（与 Blade 渲染同源的 asset 地址）；请求失败静默保持现状。
      */
     function refreshAdminIdentity() {
