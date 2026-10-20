@@ -39,9 +39,12 @@ class ServiceProvider extends BaseServiceProvider
         // 未登录 GET /admin/login 临时重定向到 WebOS 登录窗口（POST 登录提交不拦，判定异常放行）
         $this->app['router']->prependMiddlewareToGroup('web', Http\Middleware\RedirectAdminLoginToWebos::class);
 
-        // 「用户首页直达 WebOS」（2.1.82）：web 组前置中间件——任一管理员在 OS 设置开启后，
-        // 已登录前台用户 GET /user 首页临时重定向到 WebOS 用户端桌面（skip_webos=1 可绕过）
-        $this->app['router']->prependMiddlewareToGroup('web', Http\Middleware\RedirectUserHomeToWebos::class);
+        // 「用户首页直达 WebOS」（2.1.82，2.1.84 修正注册位置）：web 组后置中间件——
+        // 任一管理员在 OS 设置开启后，已登录前台用户 GET /user 首页临时重定向到 WebOS 用户端桌面
+        // （skip_webos=1 可绕过）。必须后置：判定「已登录」依赖 Session，须晚于 web 组内
+        // StartSession 启动（Laravel 按中间件优先级排序，prepend 会被排到 StartSession 之前，
+        // 使 auth('web')->check() 恒为 false 而漏判放行）。
+        $this->app['router']->pushMiddlewareToGroup('web', Http\Middleware\RedirectUserHomeToWebos::class);
 
         $this->loadViewsFrom(__DIR__ . '/Views', 'cmspro.webos');
 

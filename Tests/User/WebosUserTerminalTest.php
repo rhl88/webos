@@ -2,6 +2,7 @@
 
 namespace App\Apps\CmsproWebos\Tests\User;
 
+use App\Apps\CmsproWebos\Http\Middleware\RedirectUserHomeToWebos;
 use App\Apps\CmsproWebos\Services\WorkspaceService;
 use App\Apps\CmsproWebos\Tests\WebosTestCase;
 use App\Models\AdminMenu;
@@ -137,6 +138,25 @@ class WebosUserTerminalTest extends WebosTestCase
         $adminWorkspace->preferences = ['override_user_home' => false];
         $adminWorkspace->save();
         $this->get('/user')->assertOk();
+    }
+
+    /**
+     * 「用户首页直达」注册时序契约（2.1.84）：中间件必须挂在 web 组内 StartSession 之后。
+     * 其前置判断 auth('web')->check() 依赖会话已启动；若注册到组首（prepend），Laravel 会按
+     * 中间件优先级把它排到 StartSession 之前，判定恒为 false 而静默漏判（线上失效根因）。
+     */
+    public function test_user_home_redirect_middleware_runs_after_session_start(): void
+    {
+        $middleware = app('router')->gatherRouteMiddleware(
+            app('router')->getRoutes()->getByName('user.index')
+        );
+
+        $sessionIndex = array_search(\Illuminate\Session\Middleware\StartSession::class, $middleware, true);
+        $redirectIndex = array_search(RedirectUserHomeToWebos::class, $middleware, true);
+
+        $this->assertNotFalse($sessionIndex, 'user.index 路由缺少 StartSession');
+        $this->assertNotFalse($redirectIndex, '「用户首页直达」中间件未挂载到 user.index 路由');
+        $this->assertGreaterThan($sessionIndex, $redirectIndex, '中间件必须在 StartSession 之后执行，否则登录态判定失效');
     }
 
     /** 用户端菜单接口：仅返回 terminal_type=user 的启用可见菜单（树形嵌套），admin 菜单不外泄 */
