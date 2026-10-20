@@ -79,6 +79,18 @@ class ServiceProvider extends BaseServiceProvider
                 . asset('apps/cmspro.webos/images/webos-wallpaper.png') . '");--webos-login-avatar:url("'
                 . asset('Admin/images/avatar.png') . '");}</style>'
                 . '<link rel="stylesheet" href="' . asset('apps/cmspro.webos/css/login.css') . '?v=' . $loginVersion . '">');
+
+            // 登录成功直达 WebOS 桌面：框架 loginSubmit 原生支持 redirect 参数（/ 开头防外域），
+            // 无显式 redirect 时为表单补隐藏域指向 WebOS 桌面——登录 302 直接落到
+            // /admin/cmspro/webos，跳过 /admin 传统首页中转（避免「进首页再 JS 跳桌面」的二次跳转）。
+            // URL 已带 redirect（被踢回登录前欲访问的深层页面）时保留原值，尊重深层直达
+            $webosUrl = route('cmspro.webos.admin.index');
+            $factory->startPush('scripts', '<script>(function(){'
+                . 'var f=document.querySelector(".login-page form");if(!f)return;'
+                . 'var i=f.querySelector(\'input[name="redirect"]\');'
+                . 'if(!i){i=document.createElement("input");i.type="hidden";i.name="redirect";f.appendChild(i);}'
+                . 'if(!i.value){i.value=' . json_encode($webosUrl) . ';}'
+                . '})();</script>');
         });
     }
 

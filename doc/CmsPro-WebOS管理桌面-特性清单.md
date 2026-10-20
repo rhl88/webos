@@ -1,7 +1,7 @@
 # CmsPro WebOS 管理桌面 · 特性清单
 
-> 文档版本：2.1.74 | 更新日期：2026-10-20
-> 应用版本：2.1.74 | 应用 ID：`cmspro.webos`
+> 文档版本：2.1.75 | 更新日期：2026-10-20
+> 应用版本：2.1.75 | 应用 ID：`cmspro.webos`
 
 ## 一、应用定位
 
@@ -123,6 +123,7 @@ WebOS 管理桌面是 CmsPro 后台的可选交互层，不替换系统后台框
 85. Ctrl+W 快捷键移除（2.1.73，用户反馈「Ctrl+W 会关闭浏览器，还是把这个快捷键移除吧」）：回退 2.1.72 的全局 keydown Ctrl+W 分支——焦点在窗口 iframe 内时事件不冒泡到父页面，浏览器执行原生 Ctrl+W 直接关闭浏览器标签页，体验不可接受。删除 2 条旧断言并新增「已移除」反断言。139 测试 1682 断言通过。
 86. 个人设置窗口关闭后刷新管理员标识（2.1.73，用户需求「点击状态栏个人设置出现账号个人设置窗口，关闭后重新请求个人信息（头像和姓名），使状态栏头像和姓名更新」）：任务栏账号按钮与账号菜单面板的头像/姓名为 Blade 服务端渲染初始值，窗口内修改后不同步。新增应用级接口 `GET /api/admin-identity`（WebosController::adminIdentity，返回 name/username/avatar，name 空回退 username）；`closeWindow` 判定 `entry.path === '/admin/account'` 关闭后调用 `refreshAdminIdentity()`——请求接口更新两处 DOM（`.taskbar-avatar img` + 姓名、`.account-avatar img` + 姓名），头像空回退 `data-avatar-fallback`（与 Blade 初始渲染同源的默认头像地址），请求失败静默保持现状。Blade 注入 `data-identity-url` 与 `data-avatar-fallback`。补 1 条真实请求测试（接口返回登录管理员标识）+ 12 条源码断言。139 测试 1682 断言通过。
 87. 登录页 WebOS 化（2.1.74，用户需求「开启了覆盖传统后台，后台登录使用WebOS登录窗口（类似Windows登录）」）：OS 设置「覆盖传统后台」开启后，后台登录页（auth.login → layouts.auth）呈现 Windows 风格 WebOS 登录窗口——全屏 WebOS 默认壁纸（深色渐变遮罩）+ 毛玻璃居中登录卡片 + 卡片顶部圆形头像 + WebOS 蓝全宽登录按钮。实现：ServiceProvider 注册 `View::composer('layouts.auth')`（复用 1.9.36 合规先例），仅在登录路由且任一管理员开启覆盖时注入 `Assets/css/login.css` 与 CSS 变量（壁纸/头像地址经 asset() 生成，兼容子目录部署）；新增 `WorkspaceService::anyAdminOverridesAdminHome()`（登录页未登录无 per-admin 偏好，以任一管理员开启即生效口径判定）。纯 CSS 重塑：表单结构、CSRF、验证码刷新、回车提交、错误回显全部复用传统登录页，零后端/框架改动，应用禁用即恢复原登录页。补 1 条用例（判定开关真实数据流转 + ServiceProvider/login.css 源码断言）。140 测试 1699 断言通过。
+88. 登录成功直达 WebOS 桌面（2.1.75，用户反馈「登录 302 到 /admin 后又 302 回 /admin/login；如果覆盖了就应该直接是 /admin/cmspro/webos，这样就不会二次跳转」）：根因——原「覆盖传统后台首页」机制是 /admin 渲染后由 layouts.admin composer 注入 JS `location.replace` 跳转，登录成功 302 先落传统首页再中转。修复：复用框架 `loginSubmit` 原生 redirect 参数（成功后 `redirect($redirect)`，仅接受 `/` 开头防外域），WebOS 化登录页 composer 追加注入内联脚本——为登录表单补 `<input type="hidden" name="redirect" value="/admin/cmspro/webos">`（无值时才补），登录 302 直接落到 WebOS 桌面，彻底跳过 /admin 中转；URL 已带 redirect（被踢回登录前欲访问的深层页面）时保留原值尊重深层直达。零框架改动。补 4 条源码断言。140 测试 1703 断言通过。
 
 ## 四、数据结构
 
@@ -172,6 +173,7 @@ CmsproWebos/
 
 | 版本 | 日期 | 说明 |
 |---|---|---|
+| 2.1.75 | 2026-10-20 | 登录成功直达 WebOS 桌面（用户反馈）：复用框架 loginSubmit 原生 redirect 参数为登录表单补隐藏域，302 直接落 /admin/cmspro/webos，跳过 /admin 传统首页中转。140 测试 1703 断言通过。 |
 | 2.1.74 | 2026-10-20 | 登录页 WebOS 化（用户需求）：覆盖传统后台开启后，登录页呈现 Windows 风格 WebOS 登录窗口（全屏壁纸 + 毛玻璃卡片 + 圆形头像）；纯 CSS 重塑复用传统登录全部功能。140 测试 1699 断言通过。 |
 | 2.1.73 | 2026-10-20 | 移除 Ctrl+W 快捷键（用户反馈会触发浏览器关闭标签页）；个人设置窗口关闭后重新请求管理员标识，状态栏头像与姓名同步更新（新增 admin-identity 接口）。139 测试 1682 断言通过。 |
 | 2.1.72 | 2026-10-20 | Ctrl+W 快捷键关闭当前聚焦窗口（用户需求）：无聚焦窗口时不拦截浏览器原生行为；焦点在 iframe 内时受浏览器限制无法拦截。138 测试 1661 断言通过。 |

@@ -3154,5 +3154,12 @@ class WebosWorkspaceApiTest extends WebosTestCase
         $this->assertStringContainsString('var(--webos-login-avatar)', $loginCss);
         $this->assertStringContainsString('.login-page .login-bg {', $loginCss);
         $this->assertStringContainsString('background-color: #198cf0;', $loginCss);
+
+        // 登录直达桌面（2.1.75 用户反馈）：补 redirect 隐藏域指向 WebOS 桌面，复用框架
+        // loginSubmit 的 redirect 参数（/ 开头防外域）；已有 redirect 时保留原值
+        $this->assertStringContainsString('$webosUrl = route(\'cmspro.webos.admin.index\');', $provider);
+        $this->assertStringContainsString("i=f.querySelector(\\'input[name=\"redirect\"]\\')", $provider);
+        $this->assertStringContainsString('if(!i.value){i.value=', $provider);
+        $this->assertStringContainsString('name="redirect";f.appendChild(i);', $provider);
     }
 }
