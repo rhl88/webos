@@ -4,9 +4,10 @@ namespace App\Apps\CmsproWebos\Controllers\User;
 
 use App\Apps\CmsproWebos\Controllers\Admin\WebosController as AdminWebosController;
 use App\Http\Responses\ApiResponse;
+use App\Models\AdminMenu;
 use Illuminate\Http\JsonResponse;
-use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\View\View;
 
 /**
@@ -19,16 +20,22 @@ use Illuminate\View\View;
 class WebosController extends AdminWebosController
 {
     /**
-     * 用户端桌面入口：未登录 302 到框架用户登录页并携带回跳地址
-     * （2.1.81 替换为 WebOS 自有登录窗口）；已登录渲染与 admin 端同一份桌面视图，
+     * 用户端桌面入口：未登录渲染与 admin 端同一份 WebOS 登录窗口（2.1.81，验证码场景分流 user，
+     * 表单提交框架 /user/login 并携带 redirect 回跳桌面）；已登录渲染与 admin 端同一份桌面视图，
      * 身份以轻量对象注入（视图仅消费 name/username/avatar 三属性）。
      */
-    public function index(Request $request): View|RedirectResponse
+    public function index(Request $request): View
     {
         $user = $request->user('web');
 
         if (! $user) {
-            return redirect('/user/login?redirect=' . urlencode('/user/cmspro/webos'));
+            return view('cmspro.webos::Admin.desktop.login', array_merge(
+                $this->loginSecurity->issueCaptcha($request, 'user'),
+                [
+                    'webosAssetVersion' => $this->assetVersion(),
+                    'webosLoginTerminal' => 'user',
+                ]
+            ));
         }
 
         return view('cmspro.webos::Admin.desktop.index', [
@@ -82,5 +89,65 @@ class WebosController extends AdminWebosController
     protected function userIdOf(Request $request): int
     {
         return (int) $request->user('web')->id;
+    }
+
+    /**
+     * 用户端开始菜单数据源：与框架 admin 端 /api/admin/menus/user 输出同构的树形结构
+     * （AdminMenu 全字段 + children），前端 flattenMenus 无需感知终端差异。
+     * 与框架用户端菜单接口（User\ConfigController::menus）口径一致：
+     * terminal_type=user、status/visible 开启即全员可见（用户端菜单不做角色授权过滤）。
+     */
+    public function menus(): JsonResponse
+    {
+        $menus = AdminMenu::query()
+            ->where('status', 1)
+            ->where('visible', 1)
+            ->where('terminal_type', 'user')
+            ->orderBy('sort')
+            ->get()
+            ->toArray();
+
+        return response()->json(ApiResponse::success($this->buildMenuTree($menus)));
+    }
+
+    /** 按 parent_id 组树（AdminMenu 全字段直传，与前端 flattenMenus 契约一致） */
+    private function buildMenuTree(array $items, int $parentId = 0): array
+    {
+        $tree = [];
+
+        foreach ($items as $item) {
+            if ((int) ($item['parent_id'] ?? 0) !== $parentId) {
+                continue;
+            }
+
+            $children = $this->buildMenuTree($items, (int) $item['id']);
+            if ($children) {
+                $item['children'] = $children;
+            }
+
+            $tree[] = $item;
+        }
+
+        return $tree;
+    }
+
+    /** 会话恢复：419 后静默换取新 CSRF Token（与框架 admin 端 AuthController::csrfToken 行为一致） */
+    public function csrfToken(): JsonResponse
+    {
+        return response()->json(ApiResponse::success([
+            'token' => csrf_token(),
+        ]));
+    }
+
+    /** 当前登录用户标识（昵称/账号/头像），供 JS 会话心跳与恢复层轮询登录态 */
+    public function identity(): JsonResponse
+    {
+        $user = Auth::guard('web')->user();
+
+        return response()->json(ApiResponse::success([
+            'name' => $user->nickname ?: $user->username,
+            'username' => $user->username,
+            'avatar' => $user->avatar,
+        ]));
     }
 }

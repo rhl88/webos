@@ -16,17 +16,24 @@
     @include('admin.partials.permission-script')
 </head>
 <body>
+@php
+    // 终端分流（2.1.80）：admin/user 双端复用同一桌面视图，仅数据接口前缀与裁剪的模块不同
+    $webosTerminal = ($webosRuntime['terminal'] ?? 'admin') === 'user' ? 'user' : 'admin';
+    $webosApiBase = $webosTerminal === 'user'
+        ? url('/user/cmspro/webos/api')
+        : url('/admin/cmspro/webos/api');
+@endphp
 <main
     id="webos-desktop"
     class="webos-desktop is-loading"
-    data-workspace-url="{{ url('/admin/cmspro/webos/api/workspace') }}"
-    data-calendar-url="{{ url('/admin/cmspro/webos/api/calendar') }}"
+    data-workspace-url="{{ $webosApiBase }}/workspace"
+    data-calendar-url="{{ $webosApiBase }}/calendar"
     data-wallpaper-url="{{ asset('apps/cmspro.webos/images/webos-wallpaper.png') }}"
-    data-wallpapers-url="{{ url('/admin/cmspro/webos/api/wallpapers') }}"
-    data-page-meta-url="{{ url('/admin/cmspro/webos/api/page-meta') }}"
-    data-identity-url="{{ url('/admin/cmspro/webos/api/admin-identity') }}"
+    data-wallpapers-url="{{ $webosApiBase }}/wallpapers"
+    data-page-meta-url="{{ $webosApiBase }}/page-meta"
+    data-identity-url="{{ $webosApiBase }}/admin-identity"
     data-avatar-fallback="{{ asset('Admin/images/avatar.png') }}"
-    data-login-url="{{ route('admin.login') }}"
+    data-login-url="{{ $webosTerminal === 'user' ? route('user.login') : route('admin.login') }}"
     data-market-base-url="{{ $marketBaseUrl }}"
     data-taskbar-position="bottom"
 >
@@ -80,6 +87,7 @@
         </footer>
     </section>
 
+    @if ($webosTerminal === 'admin')
     <section id="notification-panel" class="webos-panel notification-panel" aria-label="通知中心" hidden>
         <header class="panel-header">
             <div>
@@ -98,6 +106,7 @@
             <button class="panel-footer-link" type="button" data-open-notification-page>查看全部 <i class="fa fa-angle-right"></i></button>
         </footer>
     </section>
+    @endif
 
     <section id="calendar-panel" class="webos-panel calendar-panel" aria-label="日历" hidden>
         <header class="panel-header">
@@ -131,9 +140,12 @@
             </div>
         </div>
         <nav class="account-actions">
-            <button type="button" data-account-path="/admin/account"><i class="fa fa-user-circle-o"></i>个人设置</button>
+            {{-- 用户端个人中心走 /user/account，且无修改密码弹窗/清除缓存能力（框架用户端接口未开放） --}}
+            <button type="button" data-account-path="{{ $webosTerminal === 'user' ? '/user/account' : '/admin/account' }}"><i class="fa fa-user-circle-o"></i>个人设置</button>
+            @if ($webosTerminal === 'admin')
             <button type="button" data-action="open-password-dialog"><i class="fa fa-key"></i>修改密码</button>
             <button type="button" data-action="clear-cache"><i class="fa fa-eraser"></i>清除缓存</button>
+            @endif
             <button type="button" data-action="lock-desktop"><i class="fa fa-lock"></i>锁定桌面</button>
             <button type="button" class="danger" data-action="logout"><i class="fa fa-sign-out"></i>退出登录</button>
         </nav>
@@ -223,10 +235,12 @@
         <button id="website-button" class="taskbar-button website-button" type="button" aria-label="访问前台首页" data-website-url="{{ url('/') }}">
             <i class="fa fa-globe" aria-hidden="true"></i>
         </button>
+        @if ($webosTerminal === 'admin')
         <button id="notification-button" class="taskbar-button notification-button" type="button" aria-label="打开通知中心" aria-expanded="false">
             <i class="fa fa-bell" aria-hidden="true"></i>
             <span id="notification-badge" class="notification-badge" hidden>0</span>
         </button>
+        @endif
         <span class="taskbar-divider" aria-hidden="true"></span>
         <button id="account-button" class="account-button" type="button" aria-label="打开账号菜单" aria-expanded="false">
             <span class="taskbar-avatar">

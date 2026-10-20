@@ -1,12 +1,17 @@
-{{-- WebOS 登录窗口（2.1.77）：未登录访问 /admin/cmspro/webos 时由控制器渲染。 --}}
-{{-- Windows 风格登录页为应用自有视图与样式（零 layui 依赖），认证仍走框架 /admin/login： --}}
+{{-- WebOS 登录窗口（2.1.77）：未登录访问 /admin/cmspro/webos 或 /user/cmspro/webos 时由控制器渲染。 --}}
+{{-- Windows 风格登录页为应用自有视图与样式（零 layui 依赖），认证仍走框架登录路由： --}}
 {{-- CSRF/验证码/锁定/记住登录全套复用框架逻辑，redirect 参数登录成功后 302 直达桌面。 --}}
+{{-- 2.1.81：终端参数化——控制器传 webosLoginTerminal=user 时表单走 /user/login（用户账号场景）， --}}
+{{-- 缺省沿用 admin 场景默认值，admin 端行为不变。 --}}
 <!DOCTYPE html>
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>登录 · WebOS 管理桌面</title>
+    @php
+        $webosLoginIsUser = ($webosLoginTerminal ?? 'admin') === 'user';
+    @endphp
+    <title>登录 · WebOS {{ $webosLoginIsUser ? '桌面' : '管理桌面' }}</title>
     {{-- 壁纸/CMSPRO logo 地址经 asset() 生成后以 CSS 变量下发（login.css 内不硬编码路径，兼容子目录部署）：
          背景取 WebOS 默认壁纸（与桌面一致），头像位取框架登录页同源 CMSPRO logo --}}
     <style>:root{--webos-login-wallpaper:url("{{ asset('apps/cmspro.webos/images/webos-wallpaper.png') }}");--webos-login-avatar:url("{{ asset('Admin/images/logo.png') }}");}</style>
@@ -14,12 +19,12 @@
 </head>
 <body>
     <main class="webos-login">
-        <form class="webos-login-card" method="POST" action="{{ url('/admin/login') }}">
+        <form class="webos-login-card" method="POST" action="{{ $webosLoginIsUser ? url('/user/login') : url('/admin/login') }}">
             @csrf
-            <input type="hidden" name="redirect" value="/admin/cmspro/webos">
+            <input type="hidden" name="redirect" value="{{ $webosLoginIsUser ? '/user/cmspro/webos' : '/admin/cmspro/webos' }}">
             <span class="webos-login-avatar" aria-hidden="true"></span>
             <h1 class="webos-login-title">CMSPRO <sup>v5</sup></h1>
-            <p class="webos-login-desc">WebOS 管理桌面 · 请登录管理员账号</p>
+            <p class="webos-login-desc">WebOS {{ $webosLoginIsUser ? '桌面 · 请登录用户账号' : '管理桌面 · 请登录管理员账号' }}</p>
             @if($errors->any())
             <p class="webos-login-error">{{ $errors->first() }}</p>
             @endif
@@ -50,10 +55,10 @@
     </main>
     @if($captcha_enabled)
     <script>
-    // 验证码点击刷新：复用框架公开接口（与传统登录页同源同逻辑）
+    // 验证码点击刷新：复用框架公开接口（与传统登录页同源同逻辑；scene 随终端分流 admin/user）
     document.getElementById('webos-login-captcha-image').addEventListener('click', function () {
         var image = this;
-        fetch('{{ url('/api/login-security/admin') }}').then(function (res) { return res.json(); }).then(function (res) {
+        fetch('{{ url($webosLoginIsUser ? '/api/login-security/user' : '/api/login-security/admin') }}').then(function (res) { return res.json(); }).then(function (res) {
             if (res.code === 0 && res.data && res.data.captcha_image) {
                 image.src = res.data.captcha_image;
             }

@@ -88,12 +88,13 @@ class WebosWorkspaceApiTest extends WebosTestCase
         // + 验证码点击刷新（框架公开接口）
         $view = file_get_contents(dirname(__DIR__, 2) . '/Views/Admin/desktop/login.blade.php');
         $this->assertIsString($view);
-        $this->assertStringContainsString("{{ url('/admin/login') }}", $view);
-        $this->assertStringContainsString('name="redirect" value="/admin/cmspro/webos"', $view);
+        $this->assertStringContainsString("{{ \$webosLoginIsUser ? url('/user/login') : url('/admin/login') }}", $view);
+        // redirect 隐藏域随终端分流（user 端回跳 /user/cmspro/webos），admin 场景值不变
+        $this->assertStringContainsString("value=\"{{ \$webosLoginIsUser ? '/user/cmspro/webos' : '/admin/cmspro/webos' }}\"", $view);
         $this->assertStringContainsString("--webos-login-wallpaper:url(\"{{ asset('apps/cmspro.webos/images/webos-wallpaper.png') }}\")", $view);
         $this->assertStringContainsString("--webos-login-avatar:url(\"{{ asset('Admin/images/logo.png') }}\")", $view);
         $this->assertStringContainsString('webos-login-captcha-image', $view);
-        $this->assertStringContainsString("{{ url('/api/login-security/admin') }}", $view);
+        $this->assertStringContainsString("{{ url(\$webosLoginIsUser ? '/api/login-security/user' : '/api/login-security/admin') }}", $view);
     }
 
     public function test_admin_can_open_webos_desktop(): void
@@ -1037,8 +1038,8 @@ class WebosWorkspaceApiTest extends WebosTestCase
         // 内置窗口白名单（不读管理员偏好尺寸）与固定单实例 key
         $this->assertStringContainsString("BUILTIN_WINDOW_KEYS = ['webos-app-center', 'webos-settings', 'webos-official-news', 'webos-browser']", $script);
         $this->assertStringContainsString("if (entry.id === 'webos-browser') {\n            return 'webos-browser';", $script);
-        // 桌面初始预置与存量补齐（超管：应用中心+浏览器；非超管仅浏览器）
-        $this->assertStringContainsString('var selected = isSuperAdmin ? [applicationCenterEntry(), webosBrowserEntry()] : [webosBrowserEntry()];', $script);
+        // 桌面初始预置与存量补齐（超管：应用中心+浏览器；非超管仅浏览器；用户端仅浏览器）
+        $this->assertStringContainsString(': (isSuperAdmin ? [applicationCenterEntry(), webosBrowserEntry()] : [webosBrowserEntry()]);', $script);
         $this->assertStringContainsString("return item.id === 'webos-browser';", $script);
         // 右键菜单不可删除（与应用中心同待遇）
         $this->assertStringContainsString("context.entry.id === 'webos-app-center' || context.entry.id === 'webos-browser'", $script);
@@ -1088,7 +1089,7 @@ class WebosWorkspaceApiTest extends WebosTestCase
         $this->assertStringContainsString('Cache::put($key, $meta, $succeeded ? now()->addDay() : now()->addMinutes(5));', $service);
         $this->assertStringContainsString('\'<img class="browser-tab-favicon" src="\' + escapeHtml(tab.icon)', $script);
         $this->assertStringContainsString('.browser-tab-favicon {', $stylesheet);
-        $this->assertStringContainsString("data-page-meta-url=\"{{ url('/admin/cmspro/webos/api/page-meta') }}\"", $view);
+        $this->assertStringContainsString('data-page-meta-url="{{ $webosApiBase }}/page-meta"', $view);
         $this->assertStringContainsString('function pageMeta(Request $request)', $controller);
         // 浏览器窗口无标题栏：控制按钮内嵌标签栏右侧，标签栏空白区承担窗口拖动（手势事件委托到窗口元素）
         $this->assertStringContainsString("'<div class=\"browser-tabbar\" data-window-drag>", $script);
@@ -1154,8 +1155,8 @@ class WebosWorkspaceApiTest extends WebosTestCase
         $this->assertStringContainsString("'is_super_admin' => \$admin->isSuperAdmin(),", $controller);
         // 前端读取超管标记
         $this->assertStringContainsString('var isSuperAdmin = !!(runtime.admin && runtime.admin.is_super_admin);', $script);
-        // 初始预置：非超管不固定应用中心（内置浏览器对所有角色可用）
-        $this->assertStringContainsString('var selected = isSuperAdmin ? [applicationCenterEntry(), webosBrowserEntry()] : [webosBrowserEntry()];', $script);
+        // 初始预置：非超管不固定应用中心（内置浏览器对所有角色可用）；用户端裁剪应用中心仅预置浏览器
+        $this->assertStringContainsString(': (isSuperAdmin ? [applicationCenterEntry(), webosBrowserEntry()] : [webosBrowserEntry()]);', $script);
         // 图标过滤：非超管的桌面/任务栏不显示应用中心（含历史工作区数据）
         $this->assertStringContainsString("if (entryId === 'webos-app-center') { return isSuperAdmin; }", $script);
         // 升级提醒：非超管跳过 WebOS 自身版本检测
@@ -1312,7 +1313,7 @@ class WebosWorkspaceApiTest extends WebosTestCase
         $this->assertStringContainsString('openLinkInWebos(noticeLink);', $script);
         // 通知中心待办数据源：WebOS 自身不注册演示数据，由其他应用通过系统 hook 接入；
         // 窗口待办列表显示全部（含已读）走应用侧全量接口 + 已读弱化样式
-        $this->assertStringContainsString("'/admin/cmspro/webos/api/all-todos'", $script);
+        $this->assertStringContainsString("webosApiUrl('all-todos')", $script);
         $this->assertStringContainsString("class=\"notification-todo' + (isRead ? ' is-read' : '')", $script);
         $this->assertStringContainsString('.notification-todo.is-read {', $stylesheet);
         $this->assertStringContainsString('public function allTodos(): JsonResponse', file_get_contents(dirname(__DIR__, 2) . '/Controllers/Admin/WebosController.php'));
@@ -1508,7 +1509,7 @@ class WebosWorkspaceApiTest extends WebosTestCase
         $this->assertIsString($script);
         $this->assertIsString($stylesheet);
         $this->assertIsString($view);
-        $this->assertStringContainsString('data-calendar-url="{{ url(\'/admin/cmspro/webos/api/calendar\') }}"', $view);
+        $this->assertStringContainsString('data-calendar-url="{{ $webosApiBase }}/calendar"', $view);
         $this->assertStringContainsString('id="calendar-today" data-calendar-today hidden', $view);
         $this->assertStringContainsString('function calendarDayLabel(info)', $script);
         $this->assertStringContainsString('function describeLunar(key)', $script);
@@ -1568,7 +1569,8 @@ class WebosWorkspaceApiTest extends WebosTestCase
         $this->assertIsString($script);
         $this->assertIsString($stylesheet);
         $this->assertIsString($view);
-        $this->assertStringContainsString('data-account-path="/admin/account"', $view);
+        // 账号入口路径随终端分流（user 端走 /user/account，admin 端值不变）
+        $this->assertStringContainsString('data-account-path="{{ $webosTerminal === \'user\' ? \'/user/account\' : \'/admin/account\' }}"', $view);
         $this->assertStringContainsString('data-action="open-password-dialog"', $view);
         // 清除缓存：账号菜单项 + 点击分发复用系统缓存清理接口
         $this->assertStringContainsString('data-action="clear-cache"', $view);
@@ -1580,7 +1582,9 @@ class WebosWorkspaceApiTest extends WebosTestCase
         $this->assertStringContainsString('function submitPasswordChange()', $script);
         $this->assertStringContainsString('class="password-form"', $script);
         $this->assertStringContainsString("event.target.classList.contains('password-form')", $script);
-        $this->assertStringContainsString("'/api/admin/auth/password'", $script);
+        // 密码修改走终端分流变量（user 端 PUT /api/user/password，字段映射 password/password_confirmation）
+        $this->assertStringContainsString('api(passwordUrl, {', $script);
+        $this->assertStringContainsString('password_confirmation: values.confirm', $script);
         $this->assertStringContainsString('old_password: values.old', $script);
         $this->assertStringContainsString('新密码长度需为 6-20 位', $script);
         $this->assertStringContainsString('两次输入的新密码不一致', $script);
@@ -2365,9 +2369,9 @@ class WebosWorkspaceApiTest extends WebosTestCase
         $script = file_get_contents(dirname(__DIR__, 2) . '/Assets/js/webos.js');
 
         $this->assertIsString($script);
-        // 初始预置：超管 = 应用中心 + 内置浏览器；非超管 = 仅内置浏览器（浏览器无权限要求）
-        $this->assertStringContainsString('var selected = isSuperAdmin ? [applicationCenterEntry(), webosBrowserEntry()] : [webosBrowserEntry()];', $script);
-        $this->assertStringContainsString('if (isSuperAdmin && !state.workspace.taskbar_items.length) {', $script);
+        // 初始预置：超管 = 应用中心 + 内置浏览器；非超管 = 仅内置浏览器（浏览器无权限要求）；用户端仅浏览器
+        $this->assertStringContainsString(': (isSuperAdmin ? [applicationCenterEntry(), webosBrowserEntry()] : [webosBrowserEntry()]);', $script);
+        $this->assertStringContainsString('if (isSuperAdmin && !isUserTerminal && !state.workspace.taskbar_items.length) {', $script);
         $this->assertStringNotContainsString("var preferred = ['文件', '内容', '系统'];", $script);
         $this->assertStringNotContainsString('selected = selected.slice(0, 3);', $script);
     }
@@ -3196,7 +3200,7 @@ class WebosWorkspaceApiTest extends WebosTestCase
         // Blade：接口地址与默认头像回退注入（默认头像与两处初始渲染同源）
         $view = file_get_contents(dirname(__DIR__, 2) . '/Views/Admin/desktop/index.blade.php');
         $this->assertIsString($view);
-        $this->assertStringContainsString('data-identity-url="{{ url(\'/admin/cmspro/webos/api/admin-identity\') }}"', $view);
+        $this->assertStringContainsString('data-identity-url="{{ $webosApiBase }}/admin-identity"', $view);
         $this->assertStringContainsString('data-avatar-fallback="{{ asset(\'Admin/images/avatar.png\') }}"', $view);
     }
 }

@@ -171,7 +171,7 @@ class WebosWallpaperApiTest extends WebosTestCase
         $this->assertIsString($stylesheet);
         $this->assertIsString($view);
         $this->assertStringContainsString(
-            'data-wallpapers-url="{{ url(\'/admin/cmspro/webos/api/wallpapers\') }}"',
+            'data-wallpapers-url="{{ $webosApiBase }}/wallpapers"',
             $view
         );
         $this->assertStringContainsString('wallpapers: null', $script);

@@ -9,6 +9,18 @@
     var runtime = window.CMSPRO_WEBOS || {};
     // 应用中心与 WebOS 升级提醒仅对超级管理员开放（后端注入）
     var isSuperAdmin = !!(runtime.admin && runtime.admin.is_super_admin);
+    // 终端分流（2.1.80）：admin=后台管理员桌面，user=前台用户桌面（裁剪应用中心/通知中心/官网动态/覆盖后台）
+    var isUserTerminal = runtime.terminal === 'user';
+    // 会话心跳/恢复层轮询登录态的探测接口：两端各自提供轻量 identity 接口（仅判断登录是否有效）
+    var identityProbeUrl = isUserTerminal ? '/user/cmspro/webos/api/identity' : '/api/admin/auth/user';
+    // 用户端退出登录走框架用户端接口（POST /api/user/logout）
+    var logoutUrl = isUserTerminal ? '/api/user/logout' : '/api/admin/auth/logout';
+    // 用户端修改密码走框架用户端接口（字段名与 admin 端不同：old_password/password/password_confirmation）
+    var passwordUrl = isUserTerminal ? '/api/user/password' : '/api/admin/auth/password';
+    // WebOS 自身 API 前缀：按终端分流（workspace/壁纸/日历等走 blade data-* 注入，此处仅覆盖 JS 内拼接的少数接口）
+    function webosApiUrl(path) {
+        return (isUserTerminal ? '/user/cmspro/webos/api/' : '/admin/cmspro/webos/api/') + path;
+    }
 
     // 桌面图标三档尺寸：格子尺寸用于布局定位与拖拽落点换算（iconW/iconH 为按钮盒尺寸，与 CSS [data-icon-size] 覆盖样式一一对应）
     var DESKTOP_ICON_SIZES = {
@@ -394,7 +406,7 @@
      * 返回 false（401 等）才说明登录态确实失效，需弹出登录恢复层。
      */
     function refreshCsrfToken() {
-        return fetch('/api/admin/csrf-token', { headers: { 'Accept': 'application/json' } }).then(function (response) {
+        return fetch(webosApiUrl('csrf-token'), { headers: { 'Accept': 'application/json' } }).then(function (response) {
             if (!response.ok) {
                 return false;
             }
@@ -444,7 +456,7 @@
             layer.hidden = false;
             var timer = window.setInterval(function () {
                 // 原生 fetch 轮询登录态：不经过 api()，避免 401 触发整页跳转或递归恢复
-                fetch('/api/admin/auth/user', { headers: { 'Accept': 'application/json' } }).then(function (response) {
+                fetch(identityProbeUrl, { headers: { 'Accept': 'application/json' } }).then(function (response) {
                     if (!response.ok) {
                         return null;
                     }
@@ -478,7 +490,7 @@
      */
     function startSessionHeartbeat() {
         window.setInterval(function () {
-            fetch('/api/admin/auth/user', { headers: { 'Accept': 'application/json' } }).then(function (response) {
+            fetch(identityProbeUrl, { headers: { 'Accept': 'application/json' } }).then(function (response) {
                 if (!response.ok) {
                     return refreshCsrfToken().then(function (refreshed) {
                         if (!refreshed) {
@@ -733,12 +745,15 @@
         }
 
         // 初始数据：超级管理员固定「应用中心 + 浏览器」，非超管仅浏览器（浏览器无权限要求）；系统菜单由用户按需从入口管理添加
-        var selected = isSuperAdmin ? [applicationCenterEntry(), webosBrowserEntry()] : [webosBrowserEntry()];
+        // 用户端裁剪应用中心，仅预置浏览器
+        var selected = isUserTerminal
+            ? [webosBrowserEntry()]
+            : (isSuperAdmin ? [applicationCenterEntry(), webosBrowserEntry()] : [webosBrowserEntry()]);
         state.workspace.desktop_items = selected.map(function (item, index) {
             return Object.assign({}, item, { x: 0, y: index });
         });
         // 任务栏初始同样固定「应用中心」（两列表相互独立，仅初始默认值相同）
-        if (isSuperAdmin && !state.workspace.taskbar_items.length) {
+        if (isSuperAdmin && !isUserTerminal && !state.workspace.taskbar_items.length) {
             state.workspace.taskbar_items = [Object.assign({}, applicationCenterEntry())];
         }
 
@@ -3917,11 +3932,14 @@
 
     /** 系统设置：覆盖传统后台首页、重置工作区等高级选项 */
     function systemSectionMarkup(preferences) {
-        return '<section class="settings-card"><div class="settings-card-title"><i class="fa fa-sign-in"></i><div>'
+        // 「覆盖传统后台」仅影响 /admin 首页，用户端不渲染该设置卡片
+        var overrideSection = isUserTerminal ? ''
+            : '<section class="settings-card"><div class="settings-card-title"><i class="fa fa-sign-in"></i><div>'
             + '<strong>覆盖传统后台</strong><small>开启后访问后台首页将直接进入 WebOS 桌面；在地址后加 ?skip_webos=1 可临时打开传统首页</small></div></div>'
             + '<button class="settings-toggle" type="button" data-toggle-webos-setting="override_admin_home" aria-pressed="'
             + (preferences.override_admin_home ? 'true' : 'false') + '"><span><strong>后台首页直达 WebOS</strong>'
-            + '<small>仅影响后台首页，其它后台页面不受影响</small></span><i></i></button></section>'
+            + '<small>仅影响后台首页，其它后台页面不受影响</small></span><i></i></button></section>';
+        return overrideSection
             + '<section class="settings-card"><div class="settings-card-title"><i class="fa fa-clone"></i><div>'
             + '<strong>应用窗口多选项卡</strong><small>开启后窗口内点击菜单以选项卡方式打开，可在标题栏切换与关闭；切换选项卡不重新加载页面</small></div></div>'
             + '<button class="settings-toggle" type="button" data-toggle-webos-setting="window_tabs" aria-pressed="'
@@ -7223,13 +7241,12 @@
         if (submit) {
             submit.disabled = true;
         }
-        api('/api/admin/auth/password', {
+        // 用户端框架接口字段为 old_password/password/password_confirmation，后台端为 old_password/new_password/confirm_password
+        api(passwordUrl, {
             method: 'PUT',
-            body: {
-                old_password: values.old,
-                new_password: values.new,
-                confirm_password: values.confirm
-            }
+            body: isUserTerminal
+                ? { old_password: values.old, password: values.new, password_confirmation: values.confirm }
+                : { old_password: values.old, new_password: values.new, confirm_password: values.confirm }
         }).then(function () {
             closeActionDialog();
             toast('密码修改成功');
@@ -9338,17 +9355,18 @@
     }
 
     /**
-     * WebOS 开始菜单仅展示后台终端菜单：terminal_type 缺省按旧版后台菜单处理（与传统后台菜单目录一致）
+     * WebOS 开始菜单仅展示当前终端菜单（admin/user）：terminal_type 缺省按旧版后台菜单处理（与传统后台菜单目录一致）
      */
-    function filterAdminMenus(menus) {
+    function filterAdminMenus(menus, expectedTerminal) {
+        var expected = expectedTerminal || 'admin';
         var filtered = [];
         (menus || []).forEach(function (menu) {
             if (!menu || typeof menu !== 'object') { return; }
             var terminal = menu.terminal_type;
             if (terminal === undefined || terminal === null || terminal === '') { terminal = 'admin'; }
-            if (terminal !== 'admin') { return; }
+            if (terminal !== expected) { return; }
             var item = Object.assign({}, menu);
-            if (Array.isArray(menu.children)) { item.children = filterAdminMenus(menu.children); }
+            if (Array.isArray(menu.children)) { item.children = filterAdminMenus(menu.children, expected); }
             filtered.push(item);
         });
         return filtered;
@@ -9509,13 +9527,24 @@
 
     /**
      * 应用中心/开始菜单目录：直接复用系统接口作为数据源（与传统后台应用管理同一数据源，便于统一维护）
-     * 已安装应用列表：GET /api/admin/apps；后台菜单目录：GET /api/admin/menus/user
+     * 已安装应用列表：GET /api/admin/apps；后台菜单目录：GET /api/admin/menus/user；用户端菜单目录：GET /user/cmspro/webos/api/menus
      * 操作记录不再随目录预取，切换到「安装记录」时按需读取 /api/admin/app-logs
      */
     function loadCatalog() {
         // GET 请求附时间戳破坏 HTTP 缓存：菜单移动/应用安装后 refreshCatalog 必须拿到实时数据，
         // 避免个别浏览器对同 URL 短时间内的 GET 复用缓存导致界面显示旧分组
         var cacheBust = '?_t=' + Date.now();
+        if (isUserTerminal) {
+            // 用户端裁剪应用中心：应用列表恒空，菜单源为应用自带 user 菜单接口（terminal_type='user'），无停用应用菜单
+            return api(webosApiUrl('menus') + cacheBust).then(function (menus) {
+                state.catalog.applications = [];
+                state.catalog.menus = filterAdminMenus(menus, 'user');
+                state.catalog.operation_logs = [];
+                state.flatMenus = flattenMenus(state.catalog.menus);
+                state.startFlatMenus = state.flatMenus;
+                return state.catalog;
+            });
+        }
         return Promise.all([
             api('/api/admin/apps' + cacheBust),
             api('/api/admin/menus/user' + cacheBust),
@@ -9587,6 +9616,8 @@
     }
 
     function loadNotifications() {
+        // 用户端裁剪通知中心（面板/任务栏按钮均未渲染，徽标元素不存在），直接跳过
+        if (isUserTerminal) { return Promise.resolve(); }
         return Promise.all([
             api('/api/admin/notifications/panel'),
             api('/api/admin/notifications/badge')
@@ -9870,7 +9901,7 @@
             }
         };
         var request = isTodos
-            ? api('/admin/cmspro/webos/api/all-todos').then(function (todos) {
+            ? api(webosApiUrl('all-todos')).then(function (todos) {
                 var unread = (Array.isArray(todos) ? todos : []).filter(function (todo) { return !todo.is_read; });
                 if (!unread.length) {
                     return Promise.resolve();
@@ -9902,7 +9933,7 @@
             notificationPanelData = panel || {};
             rerenderWindowNav(state.windows.get(windowKey(notificationCenterEntry())));
         }).catch(function () { /* 徽标刷新失败不阻断列表展示 */ });
-        api('/admin/cmspro/webos/api/all-todos').then(function (todos) {
+        api(webosApiUrl('all-todos')).then(function (todos) {
             todos = Array.isArray(todos) ? todos : [];
             var filter = notificationCenterState.todoFilter;
             var filtered = todos.filter(function (todo) {
@@ -10922,7 +10953,7 @@
                 if (name === 'lock-desktop') { closePanels(); elements.lockScreen.hidden = false; updateClock(); }
                 if (name === 'unlock-desktop') { elements.lockScreen.hidden = true; }
                 if (name === 'logout') {
-                    api('/api/admin/auth/logout', { method: 'POST' }).then(function () {
+                    api(logoutUrl, { method: 'POST' }).then(function () {
                         window.location.href = root.dataset.loginUrl || '/admin/login';
                     }).catch(function (error) { toast(error.message, 'error'); });
                 }
