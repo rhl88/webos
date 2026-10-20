@@ -50,18 +50,18 @@ body {
     text-align: center;
 }
 
-/* 卡片顶部圆形头像（Windows 登录窗口视觉） */
+/* 卡片顶部圆形 logo（Windows 登录窗口视觉）：CMSPRO logo 为矩形图，contain 完整显示 */
 .webos-login-avatar {
     display: block;
     width: 76px;
     height: 76px;
     margin: 0 auto 18px;
     border-radius: 50%;
-    background-color: rgba(255, 255, 255, 0.92);
+    background-color: #ffffff;
     background-image: var(--webos-login-avatar);
     background-repeat: no-repeat;
     background-position: center;
-    background-size: cover;
+    background-size: 58px auto;
     border: 3px solid rgba(255, 255, 255, 0.55);
     box-shadow: 0 10px 26px rgba(4, 18, 36, 0.4);
 }

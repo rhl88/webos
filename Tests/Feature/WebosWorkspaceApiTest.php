@@ -42,11 +42,14 @@ class WebosWorkspaceApiTest extends WebosTestCase
         $this->assertStringContainsString('var(--webos-login-wallpaper)', $loginCss);
         $this->assertStringContainsString('.webos-login-submit {', $loginCss);
 
-        // 登录视图：自有 DOM + 验证码点击刷新（框架公开接口）
+        // 登录视图：自有 DOM + CSS 变量注入（壁纸与 CMSPRO logo，经 asset() 生成）
+        // + 验证码点击刷新（框架公开接口）
         $view = file_get_contents(dirname(__DIR__, 2) . '/Views/Admin/desktop/login.blade.php');
         $this->assertIsString($view);
         $this->assertStringContainsString("{{ url('/admin/login') }}", $view);
         $this->assertStringContainsString('name="redirect" value="/admin/cmspro/webos"', $view);
+        $this->assertStringContainsString("--webos-login-wallpaper:url(\"{{ asset('apps/cmspro.webos/images/webos-wallpaper.png') }}\")", $view);
+        $this->assertStringContainsString("--webos-login-avatar:url(\"{{ asset('Admin/images/logo.png') }}\")", $view);
         $this->assertStringContainsString('webos-login-captcha-image', $view);
         $this->assertStringContainsString("{{ url('/api/login-security/admin') }}", $view);
     }

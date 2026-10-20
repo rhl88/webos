@@ -7,6 +7,9 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>登录 · WebOS 管理桌面</title>
+    {{-- 壁纸/CMSPRO logo 地址经 asset() 生成后以 CSS 变量下发（login.css 内不硬编码路径，兼容子目录部署）：
+         背景取 WebOS 默认壁纸（与桌面一致），头像位取框架登录页同源 CMSPRO logo --}}
+    <style>:root{--webos-login-wallpaper:url("{{ asset('apps/cmspro.webos/images/webos-wallpaper.png') }}");--webos-login-avatar:url("{{ asset('Admin/images/logo.png') }}");}</style>
     <link rel="stylesheet" href="{{ asset('apps/cmspro.webos/css/login.css') }}?v={{ $webosAssetVersion }}">
 </head>
 <body>
