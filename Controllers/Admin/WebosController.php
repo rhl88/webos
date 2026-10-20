@@ -65,6 +65,21 @@ class WebosController extends Controller
     }
 
     /**
+     * 当前管理员标识（姓名/账号/头像）：头像与姓名可在个人设置窗口（/admin/account）内修改，
+     * 窗口关闭后前端重新拉取本接口，同步更新任务栏账号按钮与账号菜单面板两处展示。
+     */
+    public function adminIdentity(Request $request): JsonResponse
+    {
+        $admin = $request->user('admin');
+
+        return response()->json(ApiResponse::success([
+            'name' => $admin->name ?: $admin->username,
+            'username' => $admin->username,
+            'avatar' => $admin->avatar,
+        ]));
+    }
+
+    /**
      * 通知中心窗口「待办」数据源：全部待办（含已读）。
      *
      * 系统聚合接口（/api/admin/notifications/panel）按契约过滤已读条目，

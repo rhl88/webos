@@ -2994,9 +2994,6 @@ class WebosWorkspaceApiTest extends WebosTestCase
         // 会把满屏窗口整体顶开右下偏移约 22px
         $this->assertStringContainsString("windowElement.style.left = Math.max(0, (layerRect.width - size.width) / 2 + offset * 18) + 'px';", $script);
         $this->assertStringContainsString("windowElement.style.top = Math.max(0, (layerRect.height - size.height) / 2 + offset * 14) + 'px';", $script);
-        // 2.1.72：Ctrl+W 关闭当前聚焦窗口——is-focused 定位聚焦窗口，无聚焦窗口时不拦截浏览器原生行为
-        $this->assertStringContainsString("if (event.ctrlKey && !event.altKey && !event.shiftKey && (event.key === 'w' || event.key === 'W')) {", $script);
-        $this->assertStringContainsString("windowState.element.classList.contains('is-focused')) {", $script);
         // 拖出松手在浮层内（回弹）时有提示（2.1.43）：此前该分支完全无声，用户无法分辨拖出结果
         $this->assertStringContainsString("toast('图标保留在文件夹内');", $script);
     }
@@ -3077,5 +3074,49 @@ class WebosWorkspaceApiTest extends WebosTestCase
         $this->assertStringContainsString('$this->sanitizeIgnoredUpdates($preferences[\'ignored_updates\'] ?? [])', $service);
         $this->assertStringContainsString("'preferences.ignored_updates' => ['sometimes', 'array', 'max:200'],", $controller);
         $this->assertStringContainsString("'preferences.ignored_updates.*' => ['string', 'max:180'],", $controller);
+    }
+
+    /** 管理员标识接口 + 个人设置窗口关闭刷新（2.1.73）：任务栏/账号菜单的头像姓名在窗口内修改后同步更新 */
+    public function test_admin_identity_refreshed_after_account_window_closed(): void
+    {
+        // 真实请求：接口返回当前登录管理员姓名/账号/头像（name 为空回退 username）
+        $admin = $this->actingAdmin();
+        $this->getJson('/admin/cmspro/webos/api/admin-identity')
+            ->assertOk()
+            ->assertJsonPath('code', 0)
+            ->assertJsonPath('data.username', $admin->username)
+            ->assertJsonPath('data.name', $admin->name ?: $admin->username);
+
+        // Ctrl+W 快捷键已移除（2.1.73 回退 2.1.72）：快捷键会触发浏览器关闭标签页行为
+        $script = file_get_contents(dirname(__DIR__, 2) . '/Assets/js/webos.js');
+        $this->assertIsString($script);
+        $this->assertStringNotContainsString("event.key === 'w' || event.key === 'W'", $script);
+
+        // 关闭接入：closeWindow 判定个人设置窗口（path=/admin/account）后调 refreshAdminIdentity
+        $this->assertStringContainsString("if (target.entry.path === '/admin/account') {", $script);
+        $this->assertStringContainsString('refreshAdminIdentity();', $script);
+        // 刷新函数：请求应用身份接口 + 默认头像回退 + 更新任务栏账号按钮与账号菜单面板
+        $this->assertStringContainsString('function refreshAdminIdentity() {', $script);
+        $this->assertStringContainsString('return api(root.dataset.identityUrl).then(function (identity) {', $script);
+        $this->assertStringContainsString('var avatarSrc = identity.avatar || root.dataset.avatarFallback;', $script);
+        $this->assertStringContainsString("elements.accountButton.querySelector('.taskbar-avatar img')", $script);
+        $this->assertStringContainsString("elements.accountPanel.querySelector('.account-avatar img')", $script);
+        $this->assertStringContainsString("elements.accountPanel.querySelector('.account-card strong')", $script);
+
+        // 服务端：接口路由与方法（与 pageMeta 同层级）
+        $controller = file_get_contents(dirname(__DIR__, 2) . '/Controllers/Admin/WebosController.php');
+        $this->assertIsString($controller);
+        $this->assertStringContainsString('public function adminIdentity(Request $request): JsonResponse', $controller);
+        $this->assertStringContainsString("'name' => \$admin->name ?: \$admin->username,", $controller);
+        $this->assertStringContainsString("'avatar' => \$admin->avatar,", $controller);
+        $routes = file_get_contents(dirname(__DIR__, 2) . '/Routes/admin.php');
+        $this->assertIsString($routes);
+        $this->assertStringContainsString("Route::get('/admin-identity', [WebosController::class, 'adminIdentity'])", $routes);
+
+        // Blade：接口地址与默认头像回退注入（默认头像与两处初始渲染同源）
+        $view = file_get_contents(dirname(__DIR__, 2) . '/Views/Admin/desktop/index.blade.php');
+        $this->assertIsString($view);
+        $this->assertStringContainsString('data-identity-url="{{ url(\'/admin/cmspro/webos/api/admin-identity\') }}"', $view);
+        $this->assertStringContainsString('data-avatar-fallback="{{ asset(\'Admin/images/avatar.png\') }}"', $view);
     }
 }

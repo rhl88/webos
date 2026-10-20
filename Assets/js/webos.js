@@ -4709,6 +4709,38 @@
         target.element.remove();
         state.windows.delete(key);
         renderTaskbarWindows();
+        // 个人设置窗口关闭后刷新管理员标识：头像/姓名可在窗口内修改，任务栏与账号菜单需同步（2.1.73）
+        if (target.entry.path === '/admin/account') {
+            refreshAdminIdentity();
+        }
+    }
+
+    /**
+     * 刷新管理员标识展示（2.1.73）：重新请求当前管理员姓名/头像，更新两处服务端渲染的初始值——
+     * 任务栏账号按钮（.taskbar-avatar img + 姓名）与账号菜单面板（.account-avatar img + 姓名）。
+     * 头像为空回退默认头像（与 Blade 渲染同源的 asset 地址）；请求失败静默保持现状。
+     */
+    function refreshAdminIdentity() {
+        return api(root.dataset.identityUrl).then(function (identity) {
+            var avatarSrc = identity.avatar || root.dataset.avatarFallback;
+            var displayName = identity.name || identity.username;
+            var taskbarAvatar = elements.accountButton.querySelector('.taskbar-avatar img');
+            var taskbarName = elements.accountButton ? elements.accountButton.querySelector('span:last-child') : null;
+            var panelAvatar = elements.accountPanel.querySelector('.account-avatar img');
+            var panelName = elements.accountPanel.querySelector('.account-card strong');
+            if (taskbarAvatar) {
+                taskbarAvatar.src = avatarSrc;
+            }
+            if (taskbarName) {
+                taskbarName.textContent = displayName;
+            }
+            if (panelAvatar) {
+                panelAvatar.src = avatarSrc;
+            }
+            if (panelName) {
+                panelName.textContent = displayName;
+            }
+        }).catch(function () {});
     }
 
     function renderTaskbarWindows() {
@@ -11576,22 +11608,6 @@
                     closeInstallLayer();
                 }
                 return;
-            }
-
-            // Ctrl+W 关闭当前聚焦窗口（2.1.72）：与浏览器关闭标签页的习惯一致。无聚焦窗口时不拦截，
-            // 保留浏览器原生行为；焦点在窗口 iframe 内部时事件不冒泡到父页面，浏览器会执行原生
-            // Ctrl+W（关闭浏览器标签），该限制无法在父页面拦截
-            if (event.ctrlKey && !event.altKey && !event.shiftKey && (event.key === 'w' || event.key === 'W')) {
-                var focusedKey = '';
-                state.windows.forEach(function (windowState, key) {
-                    if (!focusedKey && windowState.element.classList.contains('is-focused')) {
-                        focusedKey = key;
-                    }
-                });
-                if (focusedKey) {
-                    event.preventDefault();
-                    closeWindow(focusedKey);
-                }
             }
 
             var startItem = event.target.closest('.start-app-item[data-menu-id]');
