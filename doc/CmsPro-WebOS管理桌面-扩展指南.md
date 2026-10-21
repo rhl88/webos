@@ -1,7 +1,7 @@
 # CmsPro WebOS 管理桌面 · 扩展指南
 
-> 文档版本：2.1.93 | 更新日期：2026-10-21
-> 应用版本：2.1.93 | 应用 ID：`cmspro.webos`
+> 文档版本：2.1.94 | 更新日期：2026-10-21
+> 应用版本：2.1.94 | 应用 ID：`cmspro.webos`
 
 ## 一、概述
 
@@ -200,7 +200,7 @@ $wallpapers = app(WallpaperService::class)->listFor($adminUserId);
 | GET | `/admin/cmspro/webos/api/calendar` | 查询参数 `month`（`YYYY-MM` 格式，正则 `^\d{4}-(0[1-9]|1[0-2])$`） | 返回当月日历数据（含农历与二十四节气换算） |
 | GET | `/admin/cmspro/webos/api/all-todos` | — | 全量待办（含已读）：聚合系统待办 hook（含权限过滤/去重/归零过滤），附加 `seen` 与 `is_read`（`seen_count ≥ count` 视为已读）；数据源见第七章 |
 | GET | `/admin/cmspro/webos/api/user-desktop-preset` | — | 读取全局用户桌面预设（`data.desktop_items`）及用户端可选菜单/应用目录（`data.catalog.menus`、`data.catalog.applications`）；仅后台端可用（用户端路由不存在）。2.1.88 新增；2.1.89 起该预设按差异化增量同步下发到前台用户桌面 |
-| PUT | `/admin/cmspro/webos/api/user-desktop-preset` | JSON：`desktop_items`（≤48，校验同工作区 `desktopItemsRules()`） | 保存全局用户桌面预设，成功返回 `message='用户桌面预设已保存'`；仅后台端可用。2.1.88 新增 |
+| PUT | `/admin/cmspro/webos/api/user-desktop-preset` | JSON：`desktop_items`（≤48，校验同工作区 `desktopItemsRules()`） | 保存全局用户桌面预设，成功返回 `message='用户桌面预设已保存'`；仅后台端可用。2.1.88 新增；2.1.94 起预设网格支持拖动排序，请求体 `desktop_items` 的**数组顺序即预设排列顺序**（前端把拖动后的顶层项顺序回填数组，用户端同步时按该顺序列优先落位），接口与校验无变更 |
 
 工作区数据是**当前管理员的个人数据**，接口强制绑定当前管理员 ID；其它应用没有跨管理员读写他人工作区的合法途径，也不应依赖工作区接口传递业务数据。
 
@@ -418,6 +418,7 @@ app(HookManager::class)->registerFilter(
 
 | 版本 | 日期 | 更新人 | 说明 |
 |---|---|---|---|
+| 2.1.94 | 2026-10-21 | CmsPro | **用户桌面预设支持拖动排序（用户需求）**：① 前端 `webos.js` 新增 `bindPresetGridSort()`（在 `bindEvents()` 预设右键委托旁调用；`root` 级 `pointerdown` 委托，要求 `state.presetEditing` 且左键命中 `[data-preset-grid]` 内 `[data-desktop-id]`，并以 `grid.querySelector('.desktop-icon.is-dragging')` 做并发守卫）、`startPresetSort(grid, button, event)`（位移 > 5px 才进入拖动，复用 `.desktop-icon.is-dragging` 的 `pointer-events:none` + `document.elementFromPoint` 穿透命中落点图标，按指针落在目标的左右半区 `insertBefore` 实时重排；监听统一绑 `document`，拖出设置窗口或 `pointercancel` 均能正常收尾；顺序未变化时只重绘不保存）、`presetGridOrder(grid)`（DOM 顺序即用户可见顺序）与 `applyPresetOrder(order)`（把网格内顶层项按新顺序填回 `desktop_items` 原数组位置，文件夹子项与未分配入口位置保持不动，随后 `renderPresetGrid()` + `saveWorkspace(false)` 走预设静默保存链路）。② 样式 `webos.css`——`.preset-desktop .desktop-icon` 的 `cursor: pointer` → `cursor: grab`；新增 `.preset-desktop .desktop-icon.is-dragging { opacity: 0.5; }`（白底网格上比桌面壁纸更明显地淡化，覆盖全局 `.is-dragging` 的 0.86）。③ 文案——`userDesktopSectionMarkup()` 提示追加「按住图标拖动可调整预设顺序，用户端同步时按该顺序列优先依次落位。」。④ 测试——`WebosWorkspaceApiTest` 新增契约用例 `test_user_desktop_preset_grid_supports_drag_sort()`。**接口与数据结构零变更：排序即 `desktop_items` 数组顺序，服务端 `savePresetItems()` 保序存储，用户端同步按该顺序列优先落位。** |
 | 2.1.93 | 2026-10-21 | CmsPro | **备份管理列表列宽微调（用户需求：大小列再宽一些，操作列还有空间）**：① `webos.js` `renderBackupList()` 列宽 `<col width="200"><col width="110"><col width="100">` → `<col width="200"><col width="110"><col width="140">`，「大小」列加宽 40px，操作列（末列自适应）收窄后仍完整容纳「导出 / 恢复 / 删除」三按钮。② 测试——`WebosWorkspaceApiTest::test_backup_dialog_toolbar_matches_admin()` 列宽断言同步为 `width="140"`。纯前端调整，无接口与数据结构变更。 |
 | 2.1.92 | 2026-10-21 | CmsPro | **应用中心 → 已安装 → 备份管理弹层界面微调（用户需求）**：① `webos.js` `renderBackupDialog()` 弹层 `area` 由 `['90%', '90%']` 改为固定 `['660px', '520px']`。② `renderBackupList()` 列宽 `<col width="168"><col width="120"><col width="140">` → `<col width="200"><col width="110"><col width="100">`（「备份时间」列加宽，「版本」「大小」让位）。③ `backupRowMarkup()` 时间单元格加 `white-space:nowrap`（完整 `Y-m-d H:i:s` 不再换行），操作列「导出 / 恢复 / 删除」按钮移除 `fa-download` / `fa-undo` / `fa-trash` 图标、仅保留文字。④ 测试——`WebosWorkspaceApiTest::test_backup_dialog_toolbar_matches_admin()` 断言同步为 660×520、列宽、nowrap 与无图标按钮。纯前端调整，无接口与数据结构变更。 |
 | 2.1.91 | 2026-10-21 | CmsPro | **应用中心新增「已购应用」界面（用户需求：与传统后台 `resources/views/admin/app/market.blade.php` 的已购应用页使用相同接口）**：① 前端——`webos.js` 侧栏 Tab 列表 `APP_CENTER_SIDEBAR_TABS` 在 `records` 与 `entries` 之间插入 `{ id: 'purchased', title: '已购应用', icon: 'fa fa-shopping-cart' }`；`APP_CENTER_TABS` 增 `purchased: ['已购应用', '查看已购买的付费应用并安装']`；`appCenterSearchMarkup` 的占位文案补 `purchased: '搜索已购应用'`（复用既有 `[data-app-name]` 本地过滤，不新增事件绑定）；`loadAppCenterTab` 增 `purchased` 分支转 `loadPurchasedTab(content, status)`。② 新增 `loadPurchasedTab()`——`Promise.all` 并行 `api('/api/admin/market/purchase/list')`（`applyMarketPurchased` 写 `state.marketPurchased`）与 `api('/api/admin/market/apps?page=1&per_page=200')`（`extractCollection` 提取集合），以 `marketPurchased(app && app.app_id)` 过滤出已购应用，`setMarketApps(apps, 'market')` 写入市场缓存后 `appCardsMarkup(apps, 'market')` 渲染（卡片详情与「安装」操作沿用既有市场链路），空态 `emptyState('fa-shopping-cart', '暂无已购应用')`、失败态 `emptyState('fa-shopping-cart', '暂时无法读取已购应用')`。③ **复用优先：不新增任何接口、不新增事件委托、不新增 CSS**（复用 `.market-app-grid`/`emptyState` 与市场卡片链路）。④ 测试——`WebosWorkspaceApiTest` 新增契约用例 `test_app_center_purchased_tab_reuses_admin_market_purchase_flow()`。无需数据库变更。 |

@@ -3336,6 +3336,36 @@ class WebosWorkspaceApiTest extends WebosTestCase
         $this->assertStringContainsString('.preset-desktop-hint {', $css);
     }
 
+    public function test_user_desktop_preset_grid_supports_drag_sort(): void
+    {
+        $script = file_get_contents(dirname(__DIR__, 2) . '/Assets/js/webos.js');
+        $stylesheet = file_get_contents(dirname(__DIR__, 2) . '/Assets/css/webos.css');
+        $this->assertIsString($script);
+        $this->assertIsString($stylesheet);
+
+        // 拖动排序仅绑定在预设会话的网格图标上，且仅响应鼠标左键
+        $this->assertStringContainsString('function bindPresetGridSort() {', $script);
+        $this->assertStringContainsString('bindPresetGridSort();', $script);
+        $this->assertStringContainsString('if (!state.presetEditing || event.button !== 0) {', $script);
+        // 拖动主体：超过 5px 阈值才进入拖动（不干扰单击选中与双击打开文件夹），按指针落在目标的左右半区实时重排 DOM
+        $this->assertStringContainsString('function startPresetSort(grid, button, event) {', $script);
+        $this->assertStringContainsString('grid.insertBefore(button, target);', $script);
+        $this->assertStringContainsString('grid.insertBefore(button, target.nextSibling);', $script);
+        // 拖回原位（顺序未变）只重绘清理残留，不产生多余的保存请求
+        $this->assertStringContainsString('if (order.join() === initialOrder.join()) {', $script);
+        // 落盘：DOM 顺序回写预设 desktop_items 数组顺序，再走预设静默保存链路
+        $this->assertStringContainsString('function presetGridOrder(grid) {', $script);
+        $this->assertStringContainsString('function applyPresetOrder(order) {', $script);
+        $this->assertStringContainsString('state.workspace.desktop_items = state.workspace.desktop_items.map(function (item) {', $script);
+        // 操作说明向管理员交代拖动排序的作用与用户端落位规则
+        $this->assertStringContainsString('按住图标拖动可调整预设顺序，用户端同步时按该顺序列优先依次落位。', $script);
+
+        // 样式：预设图标为可拖动抓手光标，拖动中比桌面壁纸更明显地淡化
+        $this->assertStringContainsString("border-color: #e2edf4;\n    text-shadow: none;\n    cursor: grab;", $stylesheet);
+        $this->assertStringContainsString('.preset-desktop .desktop-icon.is-dragging {', $stylesheet);
+        $this->assertStringContainsString("is-dragging {\n    opacity: 0.5;", $stylesheet);
+    }
+
     public function test_market_paid_apps_reuse_admin_market_purchase_flow(): void
     {
         $script = file_get_contents(dirname(__DIR__, 2) . '/Assets/js/webos.js');

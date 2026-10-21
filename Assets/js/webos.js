@@ -939,7 +939,8 @@
     /**
      * 「用户桌面」预设网格渲染：复用桌面图标同款结构（图标/文字/文件夹浮层一致），
      * 但宿主是设置窗口内的 [data-preset-grid]，样式改为流式排布（不加坐标、不渲更新角标），
-     * 预设网格不在 #desktop-icons 内，桌面的拖拽/框选监听天然不触发（本 Tab 不做拖拽）。
+     * 预设网格不在 #desktop-icons 内，桌面的拖拽/框选监听天然不触发；预设内的拖动仅用于
+     * 调整图标先后顺序（见 bindPresetGridSort），不做坐标布局，也不收纳进文件夹。
      */
     function renderPresetGrid() {
         var host = root.querySelector('[data-preset-grid]');
@@ -959,6 +960,121 @@
                 + '<span class="desktop-icon-label">' + escapeHtml(item.title) + '</span>'
                 + '</button>';
         }).join('');
+    }
+
+    /**
+     * 「用户桌面」预设网格拖动排序：预设为流式排布、无坐标语义，拖动只调整图标先后顺序，
+     * 该顺序即写入预设 desktop_items 的数组顺序（用户端同步时按列优先依次落位）。
+     * 与桌面图标拖拽不同：不做坐标吸附、不收纳进文件夹，仅按指针落点实时重排 DOM 节点。
+     */
+    function bindPresetGridSort() {
+        root.addEventListener('pointerdown', function (event) {
+            if (!state.presetEditing || event.button !== 0) {
+                return;
+            }
+            var grid = event.target.closest('[data-preset-grid]');
+            var button = grid ? event.target.closest('[data-desktop-id]') : null;
+            // 已有图标处于拖动中（多指并发按下）时忽略新的按下，避免两套拖拽状态互相干扰
+            if (!grid || !button || grid.querySelector('.desktop-icon.is-dragging')) {
+                return;
+            }
+            startPresetSort(grid, button, event);
+        });
+    }
+
+    /** 预设拖动排序主体：位移超过阈值才进入拖动，避免干扰单击选中与双击打开文件夹 */
+    function startPresetSort(grid, button, event) {
+        var startX = event.clientX;
+        var startY = event.clientY;
+        var initialOrder = presetGridOrder(grid);
+        var moved = false;
+
+        function dropTarget(clientX, clientY) {
+            // 拖动中的图标 pointer-events:none（复用 .desktop-icon.is-dragging），elementFromPoint 穿透到下方图标
+            var over = document.elementFromPoint(clientX, clientY);
+            var target = over ? over.closest('[data-desktop-id]') : null;
+            return target && grid.contains(target) ? target : null;
+        }
+
+        function move(moveEvent) {
+            if (!moved) {
+                if (Math.abs(moveEvent.clientX - startX) + Math.abs(moveEvent.clientY - startY) <= 5) {
+                    return;
+                }
+                moved = true;
+                button.classList.add('is-dragging');
+                try {
+                    button.setPointerCapture(event.pointerId);
+                } catch (error) {
+                    // 指针捕获失败（指针已抬起等）不影响 document 上的收尾监听
+                }
+            }
+            var target = dropTarget(moveEvent.clientX, moveEvent.clientY);
+            if (!target || target === button) {
+                return;
+            }
+            // 指针落在目标左半 → 插到目标之前，右半 → 插到目标之后（图标实时让位，预览新顺序）
+            var rect = target.getBoundingClientRect();
+            if (moveEvent.clientX - rect.left < rect.width / 2) {
+                grid.insertBefore(button, target);
+            } else {
+                grid.insertBefore(button, target.nextSibling);
+            }
+        }
+
+        function end() {
+            // 监听统一绑在 document：指针拖出设置窗口或 pointercancel 中断都能正常收尾
+            document.removeEventListener('pointermove', move);
+            document.removeEventListener('pointerup', end);
+            document.removeEventListener('pointercancel', end);
+            try {
+                button.releasePointerCapture(event.pointerId);
+            } catch (error) {
+                // 指针捕获已随 pointercancel 释放，忽略
+            }
+            if (!moved) {
+                return;
+            }
+            var order = presetGridOrder(grid);
+            // 拖回原位（顺序未变化）时只重绘清理拖动残留，不产生多余的保存请求
+            if (order.join() === initialOrder.join()) {
+                renderPresetGrid();
+                return;
+            }
+            applyPresetOrder(order);
+        }
+
+        document.addEventListener('pointermove', move);
+        document.addEventListener('pointerup', end);
+        document.addEventListener('pointercancel', end);
+    }
+
+    /** 预设网格当前图标顺序：DOM 顺序即用户看到的顺序 */
+    function presetGridOrder(grid) {
+        return Array.prototype.map.call(grid.querySelectorAll('[data-desktop-id]'), function (node) {
+            return node.dataset.desktopId;
+        });
+    }
+
+    /**
+     * 落盘预设顺序：把网格内顶层项按新顺序填回原数组位置——文件夹子项与未分配入口不在网格中
+     * （子项在浮层内展示），保持各自原有位置不动，避免误改其展示顺序。
+     */
+    function applyPresetOrder(order) {
+        var itemsById = new Map();
+        state.workspace.desktop_items.forEach(function (item) { itemsById.set(item.id, item); });
+        var pending = order.map(function (id) { return itemsById.get(id); }).filter(Boolean);
+        var gridIds = new Set(order);
+        var cursor = 0;
+        state.workspace.desktop_items = state.workspace.desktop_items.map(function (item) {
+            if (!gridIds.has(item.id)) {
+                return item;
+            }
+            var next = pending[cursor++];
+            return next || item;
+        });
+        renderPresetGrid();
+        saveWorkspace(false);
     }
 
     /** 应用聚合键：同应用（或特殊入口）归并为一个任务栏图标 */
@@ -4106,6 +4222,7 @@
             + '<div class="preset-desktop-hint"><i class="fa fa-spinner fa-spin"></i>正在载入预设…</div></div>'
             + '<div class="preset-desktop-tips"><i class="fa fa-info-circle"></i>'
             + '在网格空白处右键可新建「文件夹 / 桌面入口 / URL 链接」；在图标上右键可重命名、设置图标、删除或管理文件夹内容。'
+            + '按住图标拖动可调整预设顺序，用户端同步时按该顺序列优先依次落位。'
             + '预设仅包含桌面图标，不含任务栏固定图标。新老用户进入用户端时均按差异化增量补齐，推送过的项不再重复下发。</div></section>';
     }
 
@@ -11485,6 +11602,9 @@
             event.stopPropagation();
             openStartItemContextMenu(card.dataset.menuId, event.clientX, event.clientY);
         });
+
+        // 「用户桌面」预设网格拖动排序：网格不在 #desktop-icons 内，桌面拖拽委托不命中，故单独绑定
+        bindPresetGridSort();
 
         // 「用户桌面」预设网格右键：网格内图标 → 预设单项菜单，网格空白处 → 预设新建菜单；
         // 预设网格位于设置窗口内、不在 #desktop-icons 内，桌面的空白/单项右键委托不会命中，故单独委托

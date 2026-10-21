@@ -2825,13 +2825,18 @@ textarea:focus-visible,
     background: #fff;
     border-color: #e2edf4;
     text-shadow: none;
-    cursor: pointer;
+    cursor: grab;
 }
 
 .preset-desktop .desktop-icon:hover,
 .preset-desktop .desktop-icon:focus-visible {
     border-color: var(--webos-primary);
     background: #f0f8ff;
+}
+
+/* 拖动排序中：白底网格上比桌面壁纸更需要明显的淡化，故覆盖全局 .is-dragging 的透明度 */
+.preset-desktop .desktop-icon.is-dragging {
+    opacity: 0.5;
 }
 
 /* 空态与错误态提示：占满网格宽度并垂直居中 */
