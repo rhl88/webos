@@ -71,6 +71,9 @@
         marketApps: new Map(),
         marketPager: { category: '', keyword: '', page: 0, lastPage: 1, total: 0, loading: false, failed: false, token: 0 },
         marketSubTab: 'home',
+        // 市场付费上下文：站点身份状态（是否已注册/域名是否匹配）与已购应用清单（小写 app_id）
+        marketSite: { loaded: false, registered: false, domain_match: true, domain: '', remote_domain: '' },
+        marketPurchased: new Set(),
         updateApps: [],
         updateChecked: false,
         updateCount: null,
@@ -5368,21 +5371,157 @@
         });
     }
 
-    /** 应用市场 Tab：顶部子Tab（首页/分类），首页为推荐区块，分类为原分类条+应用列表 */
+    /** 应用市场 Tab：顶部子Tab（首页/分类），首页为推荐区块，分类为原分类条+应用列表。
+     *  付费能力要求已购清单先于卡片到达，否则已购应用会先显示「¥xx 购买」再闪变为「安装」，
+     *  因此先并行读取站点身份与已购清单，再渲染主体。 */
     function loadMarketTab(content, status) {
         if (!state.marketSubTab) {
             state.marketSubTab = 'home';
         }
         status.hidden = true;
-        content.innerHTML = '<nav class="market-sub-tabs" data-market-sub-tabs>'
+        content.innerHTML = '<div class="market-site-notice" data-market-site-notice hidden></div>'
+            + '<nav class="market-sub-tabs" data-market-sub-tabs>'
             + MARKET_SUB_TABS.map(function (tab) {
                 return '<button class="market-sub-tab' + (tab.id === state.marketSubTab ? ' is-active' : '')
                     + '" type="button" data-market-sub-tab="' + tab.id + '">'
                     + '<i class="fa ' + safeIcon(tab.icon) + '"></i>' + tab.title + '</button>';
             }).join('')
             + '</nav>'
-            + '<div data-market-subbody></div>';
-        renderMarketSubTab(content, status);
+            + '<div data-market-subbody>' + emptyState('fa-circle-o-notch fa-spin', '正在加载…') + '</div>';
+        loadMarketContext(content, status);
+    }
+
+    /** 读取市场付费上下文（站点身份 + 已购清单）后渲染主体；单项失败仅记录为空，不阻断浏览 */
+    function loadMarketContext(content, status) {
+        return Promise.all([
+            api('/api/admin/market/site/status').catch(function () { return null; }),
+            api('/api/admin/market/purchase/list').catch(function () { return null; })
+        ]).then(function (results) {
+            applyMarketSiteStatus(results[0]);
+            applyMarketPurchased(results[1]);
+            // 面板已随 Tab 切换销毁：静默跳过，避免写入已脱离文档的 DOM
+            if (!content.querySelector('[data-market-subbody]')) {
+                return;
+            }
+            renderMarketSiteNotice(content);
+            renderMarketSubTab(content, status);
+        });
+    }
+
+    /** 站点身份状态写入 state：接口不可用时保持既有值（首次失败则不显示提示条） */
+    function applyMarketSiteStatus(data) {
+        if (!data || typeof data !== 'object') {
+            return;
+        }
+        var site = state.marketSite;
+        site.loaded = true;
+        site.registered = data.registered === true;
+        site.domain = data.domain || '';
+        site.remote_domain = data.remote_domain || '';
+        site.domain_match = data.domain_match !== false;
+    }
+
+    /** 已购应用清单写入 state（小写 app_id）：接口不可用时保持既有清单 */
+    function applyMarketPurchased(data) {
+        if (data === null || data === undefined) {
+            return;
+        }
+        var purchased = new Set();
+        extractCollection(data).forEach(function (item) {
+            var appId = String((item && item.app_id) || '').toLowerCase();
+            if (appId) {
+                purchased.add(appId);
+            }
+        });
+        state.marketPurchased = purchased;
+    }
+
+    /** 站点身份提示条：未注册 → 「立即注册」；域名不一致 → 「同步到服务端」「重新注册」 */
+    function renderMarketSiteNotice(content) {
+        var notice = content.querySelector('[data-market-site-notice]');
+        if (!notice) {
+            return;
+        }
+        var site = state.marketSite;
+        if (!site.loaded || (site.registered && site.domain_match)) {
+            notice.hidden = true;
+            notice.innerHTML = '';
+            return;
+        }
+        notice.hidden = false;
+        if (!site.registered) {
+            notice.innerHTML = '<i class="fa fa-exclamation-triangle"></i>'
+                + '<div class="market-site-notice-text"><strong>站点未注册</strong>'
+                + '<span>购买付费应用前需先注册站点身份到 v5.cmspro.cn</span></div>'
+                + '<button class="webos-button primary compact" type="button" data-market-site-register>立即注册</button>';
+            return;
+        }
+        notice.innerHTML = '<i class="fa fa-exclamation-triangle"></i>'
+            + '<div class="market-site-notice-text"><strong>域名不一致</strong>'
+            + '<span>本地域名 ' + escapeHtml(site.domain || '-') + ' 与服务端记录 '
+            + escapeHtml(site.remote_domain || '-') + ' 不一致，可能是域名变更或重装系统导致。</span></div>'
+            + '<button class="webos-button secondary compact" type="button" data-market-site-sync>同步到服务端</button>'
+            + '<button class="webos-button primary compact" type="button" data-market-site-reregister>重新注册</button>';
+    }
+
+    /** 注册站点身份：verify_failed 时确认跳过验证（force）重试一次；成功后按 .env 变更语义整页刷新 */
+    function registerMarketSite(force) {
+        api('/api/admin/market/site/register', { method: 'POST', body: force ? { force: true } : {} })
+            .then(function (data) {
+                var result = data || {};
+                if (result.verify_failed) {
+                    promptMarketSiteForceRegister(result);
+                    return;
+                }
+                var layer = layuiLayer();
+                if (result.auto_written) {
+                    layer.open({
+                        type: 1,
+                        title: '站点注册成功',
+                        area: ['520px', 'auto'],
+                        btn: ['重启后刷新页面'],
+                        content: '<div style="padding:20px;font-size:13px;line-height:1.9;color:#333;">'
+                            + '站点密钥已自动写入 <code>.env</code> 文件：<br><code>CMSPRO_SITE_KEY=' + escapeHtml(result.site_key || '') + '</code>'
+                            + '<br><span style="color:#ff9800;">需重启服务使配置生效，重启后刷新此页面即可购买付费应用。</span></div>',
+                        yes: function (index) { layer.close(index); window.location.reload(); }
+                    });
+                    return;
+                }
+                layer.msg('注册成功，请重启服务使配置生效', { icon: 1 });
+                window.setTimeout(function () { window.location.reload(); }, 2000);
+            })
+            .catch(function (error) {
+                showErrorDialog(error.message || '站点注册失败');
+            });
+    }
+
+    /** 域名验证失败确认框：确认后带 force 重新注册（服务端将更新为当前域名） */
+    function promptMarketSiteForceRegister(result) {
+        var layer = layuiLayer();
+        layer.open({
+            type: 1,
+            title: '域名验证失败',
+            area: ['560px', 'auto'],
+            btn: ['跳过验证，直接注册', '取消'],
+            content: '<div style="padding:20px;font-size:13px;line-height:1.9;color:#333;">'
+                + '服务端记录的域名为 <b>' + escapeHtml(result.old_domain || '-') + '</b>，当前域名为 <b>'
+                + escapeHtml(result.new_domain || '-') + '</b>。<br>'
+                + '<span style="color:#ff9800;">若确为本站点域名变更，可跳过验证直接注册。</span></div>',
+            yes: function (index) { layer.close(index); registerMarketSite(true); }
+        });
+    }
+
+    /** 同步站点身份到服务端：成功后原地刷新提示条（不整页刷新，保留桌面窗口状态） */
+    function syncMarketSite(content) {
+        api('/api/admin/market/site/sync', { method: 'POST' }).then(function () {
+            toast('站点身份已同步到服务端');
+            return api('/api/admin/market/site/status').then(function (data) {
+                applyMarketSiteStatus(data);
+                renderMarketSiteNotice(content);
+            });
+        }).catch(function (error) {
+            showErrorDialog(error.message || '站点身份同步失败');
+        });
     }
 
     /** 市场内部子Tab 定义 */
@@ -5622,7 +5761,8 @@
         return '<article class="market-home-card" data-market-detail="' + escapeHtml(id)
             + '" data-app-name="' + escapeHtml((app.name || id).toLowerCase()) + '">'
             + cardIconMarkup(app, 'market-home-icon')
-            + '<span class="market-home-name">' + escapeHtml(app.name || id) + '</span></article>';
+            + '<span class="market-home-name">' + escapeHtml(app.name || id) + '</span>'
+            + marketPriceMarkup(app, 'market-home-price', true) + '</article>';
     }
 
     /** 首页推荐位竖列区块：每个推荐位一列，列表形式分页展示（每列每页5个） */
@@ -5644,7 +5784,8 @@
         return '<article class="market-home-list-item" data-market-detail="' + escapeHtml(id)
             + '" data-app-name="' + escapeHtml((app.name || id).toLowerCase()) + '">'
             + cardIconMarkup(app, 'market-home-list-icon')
-            + '<div class="market-home-list-info"><strong>' + escapeHtml(app.name || id) + '</strong>'
+            + '<div class="market-home-list-info"><strong>' + escapeHtml(app.name || id)
+            + marketPriceMarkup(app, 'market-home-price', true) + '</strong>'
             + '<span>' + escapeHtml(app.description || '暂无应用说明') + '</span></div></article>';
     }
 
@@ -5858,16 +5999,42 @@
         return applicationIconMarkup(app, className);
     }
 
+    /** 市场应用价格：接口未返回或为 0 一律视为免费 */
+    function marketPrice(app) {
+        var price = Number(app && app.price);
+        return price > 0 ? price : 0;
+    }
+
+    /** 应用是否已购买：市场已购清单统一以小写 app_id 比对 */
+    function marketPurchased(appId) {
+        return state.marketPurchased.has(String(appId || '').toLowerCase());
+    }
+
+    /** 价格标签：付费显示 ¥xx；免费仅在非紧凑场景显示「免费」占位 */
+    function marketPriceMarkup(app, className, compact) {
+        var price = marketPrice(app);
+        if (!price) {
+            return compact ? '' : '<span class="' + className + ' is-free">免费</span>';
+        }
+        return '<span class="' + className + ' is-paid">¥' + price.toFixed(2) + '</span>';
+    }
+
     function marketState(app) {
         var currentVersion = installedVersions()[String(app.app_id || '').toLowerCase()];
         var latestVersion = app.latest_version || app.version || '';
         var installed = typeof currentVersion === 'string' && currentVersion !== '';
+        var price = marketPrice(app);
+        var purchased = marketPurchased(app.app_id);
 
         return {
             installed: installed,
             current_version: currentVersion || '',
             latest_version: latestVersion,
-            has_update: installed && compareVersions(currentVersion, latestVersion) < 0
+            has_update: installed && compareVersions(currentVersion, latestVersion) < 0,
+            price: price,
+            purchased: purchased,
+            // 付费且未购买：未安装状态下的主操作由「安装」改为「¥xx 购买」
+            needs_purchase: price > 0 && !purchased
         };
     }
 
@@ -5946,7 +6113,9 @@
                 + escapeHtml(id) + '" data-local-source="' + (mode === 'updates' ? 'updates' : 'local') + '"';
             return '<article class="app-card' + (mode === 'local' ? ' has-remove' : '') + '"' + detail + ' data-app-name="' + escapeHtml((app.name || id).toLowerCase()) + '">'
                 + remove + cardIconMarkup(app, 'app-icon') + '<div class="app-card-info"><strong' + title + '>' + escapeHtml(app.name || id) + '</strong><span>'
-                + escapeHtml(description) + '</span><small>版本 ' + escapeHtml(version) + (app.author ? ' · ' + escapeHtml(app.author) : '') + '</small></div>'
+                + escapeHtml(description) + '</span><small>'
+                + (mode === 'market' ? marketPriceMarkup(app, 'app-card-price', false) + ' · ' : '')
+                + '版本 ' + escapeHtml(version) + (app.author ? ' · ' + escapeHtml(app.author) : '') + '</small></div>'
                 + '<div class="app-card-actions">' + actions + '</div></article>';
         }).join('');
     }
@@ -5957,6 +6126,10 @@
         }
         if (market.installed) {
             return '<button class="small-action" type="button" disabled>已安装</button>';
+        }
+        if (market.needs_purchase) {
+            return '<button class="small-action primary" type="button" data-purchase-id="' + escapeHtml(app.app_id)
+                + '" data-purchase-price="' + market.price.toFixed(2) + '">¥' + market.price.toFixed(2) + ' 购买</button>';
         }
 
         return '<button class="small-action primary" type="button" data-install-id="' + escapeHtml(app.app_id) + '" data-install-source="market">安装</button>';
@@ -6278,7 +6451,7 @@
             }).join('') + '</tbody></table>');
     }
 
-    /** 详情操作按钮：沿用列表卡片的 data-upgrade-id / data-install-id 点击委托 */
+    /** 详情操作按钮：沿用列表卡片的 data-upgrade-id / data-install-id / data-purchase-id 点击委托 */
     function marketDetailActionsMarkup(app, market) {
         var id = escapeHtml(app.app_id || '');
         if (market.has_update) {
@@ -6286,6 +6459,10 @@
         }
         if (market.installed) {
             return '<button class="webos-button secondary" type="button" disabled>已安装</button>';
+        }
+        if (market.needs_purchase) {
+            return '<button class="webos-button primary" type="button" data-purchase-id="' + id
+                + '" data-purchase-price="' + market.price.toFixed(2) + '">¥' + market.price.toFixed(2) + ' 购买</button>';
         }
         return '<button class="webos-button primary" type="button" data-install-id="' + id
             + '" data-install-source="market">安装</button>';
@@ -7589,6 +7766,231 @@
             content: '<div style="padding:20px;max-height:400px;overflow-y:auto;font-size:13px;color:#333;'
                 + 'line-height:1.9;word-break:break-all;">' + content + '</div>'
         });
+    }
+
+    /* ======================================================================
+     * 应用市场付费：购买弹窗（通道选择 → 二维码 + 300s 倒计时 → 3s 轮询支付状态），
+     * 照抄传统后台 resources/views/admin/app/market.blade.php 的购买链路。
+     * ==================================================================== */
+    /** 购买弹窗状态：当前订单与轮询/倒计时定时器，dialogIndex 为 layui 弹层句柄 */
+    var marketPurchase = {
+        appId: '', appName: '', price: 0, dialogIndex: null,
+        creating: false, polling: false, pollTimer: null, countdownTimer: null
+    };
+
+    /** 打开购买弹窗：默认展示微信/支付宝通道选择 */
+    function openMarketPurchaseDialog(appId, appName, price) {
+        var layer = layuiLayer();
+        if (!layer || !appId) {
+            return;
+        }
+        var amount = Number(price) > 0 ? Number(price) : 0;
+        marketPurchase.appId = appId;
+        marketPurchase.appName = appName || appId;
+        marketPurchase.price = amount;
+        marketPurchase.dialogIndex = layer.open({
+            type: 1,
+            title: '购买应用 - ¥' + amount.toFixed(2),
+            area: ['420px', 'auto'],
+            content: '<div class="market-purchase" data-purchase-panel>'
+                + '<p class="market-purchase-app">' + escapeHtml(marketPurchase.appName) + '</p>'
+                + '<div class="market-purchase-methods" data-purchase-methods>'
+                + '<button class="webos-button primary" type="button" data-purchase-channel="wechat"><i class="fa fa-weixin"></i> 微信支付</button>'
+                + '<button class="webos-button secondary" type="button" data-purchase-channel="alipay"><i class="fa fa-credit-card"></i> 支付宝</button>'
+                + '</div>'
+                + '<div class="market-purchase-qr" data-purchase-qr hidden>'
+                + '<div class="market-purchase-qrbox" data-purchase-qrbox></div>'
+                + '<p class="market-purchase-price" data-purchase-price></p>'
+                + '<p class="market-purchase-hint">请使用 <span data-purchase-channel-name>手机</span> 扫描二维码完成支付</p>'
+                + '<p class="market-purchase-countdown" data-purchase-countdown></p>'
+                + '</div>'
+                + '<p class="market-purchase-tip">支付完成后将自动确认并刷新列表，请勿关闭窗口。</p>'
+                + '</div>',
+            end: function () { teardownMarketPurchase(); }
+        });
+    }
+
+    /** 创建支付订单：拿到二维码渲染扫码支付，或返回收银台链接直接跳转，随后开始轮询 */
+    function doMarketPurchase(channel) {
+        if (marketPurchase.creating) {
+            return;
+        }
+        marketPurchase.creating = true;
+        api('/api/admin/market/purchase/create', {
+            method: 'POST',
+            body: { app_id: marketPurchase.appId, channel: channel }
+        }).then(function (data) {
+            marketPurchase.creating = false;
+            var order = data || {};
+            var panel = document.querySelector('[data-purchase-panel]');
+            if (!panel) {
+                return;
+            }
+            if (order.qr_code) {
+                renderMarketPurchaseQr(panel, order, channel);
+                pollMarketPurchase(order.out_trade_no);
+                return;
+            }
+            if (order.pay_url) {
+                window.open(order.pay_url, '_blank');
+                pollMarketPurchase(order.out_trade_no);
+                return;
+            }
+            layuiLayer().msg('未获取到支付信息，请稍后重试', { icon: 2 });
+        }).catch(function (error) {
+            marketPurchase.creating = false;
+            showErrorDialog(error.message || '订单创建失败');
+        });
+    }
+
+    /** 渲染支付二维码与倒计时；二维码库不可用时降级为明文支付串 */
+    function renderMarketPurchaseQr(panel, order, channel) {
+        var methods = panel.querySelector('[data-purchase-methods]');
+        var qrBlock = panel.querySelector('[data-purchase-qr]');
+        var qrBox = panel.querySelector('[data-purchase-qrbox]');
+        if (!methods || !qrBlock || !qrBox) {
+            return;
+        }
+        methods.hidden = true;
+        qrBlock.hidden = false;
+        var channelName = panel.querySelector('[data-purchase-channel-name]');
+        if (channelName) {
+            channelName.textContent = channel === 'alipay' ? '支付宝' : '微信';
+        }
+        var priceNode = panel.querySelector('[data-purchase-price]');
+        if (priceNode) {
+            priceNode.textContent = '¥' + marketPurchase.price.toFixed(2);
+        }
+        qrBox.innerHTML = '';
+        if (typeof window.QRCode === 'function') {
+            new window.QRCode(qrBox, {
+                text: String(order.qr_code),
+                width: 200,
+                height: 200,
+                colorDark: '#000000',
+                colorLight: '#ffffff',
+                correctLevel: window.QRCode.CorrectLevel.M
+            });
+        } else {
+            qrBox.innerHTML = '<code class="market-purchase-code">' + escapeHtml(String(order.qr_code)) + '</code>';
+        }
+        startMarketPurchaseCountdown(panel);
+    }
+
+    /** 二维码有效期倒计时（300s）：超时停止轮询并回到通道选择 */
+    function startMarketPurchaseCountdown(panel) {
+        var remain = 300;
+        var node = panel.querySelector('[data-purchase-countdown]');
+        var paint = function () {
+            if (node) {
+                var seconds = remain % 60;
+                node.textContent = '有效期剩余 ' + Math.floor(remain / 60) + ':' + (seconds < 10 ? '0' : '') + seconds;
+            }
+        };
+        paint();
+        stopMarketPurchaseCountdown();
+        marketPurchase.countdownTimer = window.setInterval(function () {
+            remain -= 1;
+            if (remain > 0) {
+                paint();
+                return;
+            }
+            stopMarketPurchaseCountdown();
+            stopMarketPurchasePoll();
+            if (node) {
+                node.textContent = '订单已超时，请重新下单';
+            }
+            var qrBlock = panel.querySelector('[data-purchase-qr]');
+            var methods = panel.querySelector('[data-purchase-methods]');
+            if (qrBlock && methods) {
+                qrBlock.hidden = true;
+                methods.hidden = false;
+            }
+        }, 1000);
+    }
+
+    /** 每 3s 查询一次支付状态，最多 60 次（约 3 分钟），命中已支付即完成 */
+    function pollMarketPurchase(outTradeNo) {
+        if (!outTradeNo || marketPurchase.polling) {
+            return;
+        }
+        marketPurchase.polling = true;
+        var count = 0;
+        marketPurchase.pollTimer = window.setInterval(function () {
+            count += 1;
+            if (count > 60) {
+                stopMarketPurchasePoll();
+                return;
+            }
+            api('/api/admin/market/purchase/status?out_trade_no=' + encodeURIComponent(outTradeNo))
+                .then(function (data) {
+                    if (data && data.paid) {
+                        finishMarketPurchase();
+                    }
+                }).catch(function () {
+                    // 单次查询失败（网络抖动等）不中断轮询，等待下一次
+                });
+        }, 3000);
+    }
+
+    /** 支付成功：关闭弹窗、标记已购并刷新市场视图 */
+    function finishMarketPurchase() {
+        var appId = marketPurchase.appId;
+        stopMarketPurchasePoll();
+        stopMarketPurchaseCountdown();
+        if (appId) {
+            state.marketPurchased.add(String(appId).toLowerCase());
+        }
+        var layer = layuiLayer();
+        if (layer && marketPurchase.dialogIndex !== null) {
+            layer.close(marketPurchase.dialogIndex);
+            marketPurchase.dialogIndex = null;
+        }
+        toast('购买成功，可前往应用列表安装');
+        refreshMarketAfterPurchase(appId);
+    }
+
+    /** 购买成功后刷新市场视图：详情层打开时重开同应用详情，否则原地重渲染当前子Tab */
+    function refreshMarketAfterPurchase(appId) {
+        var appWindow = state.windows.get(windowKey(applicationCenterEntry()));
+        var shell = appWindow ? appWindow.element.querySelector('[data-app-center]') : null;
+        if (!shell) {
+            return;
+        }
+        if (shell.querySelector('.market-detail')) {
+            openMarketDetail(shell, appId);
+            return;
+        }
+        var content = shell.querySelector('[data-app-content]');
+        if (content && content.querySelector('[data-market-subbody]')) {
+            renderMarketSubTab(content, shell.querySelector('[data-app-status]'));
+        }
+    }
+
+    /** 弹窗关闭：清理定时器与订单状态，避免残留轮询 */
+    function teardownMarketPurchase() {
+        stopMarketPurchasePoll();
+        stopMarketPurchaseCountdown();
+        marketPurchase.appId = '';
+        marketPurchase.appName = '';
+        marketPurchase.price = 0;
+        marketPurchase.dialogIndex = null;
+        marketPurchase.creating = false;
+    }
+
+    function stopMarketPurchasePoll() {
+        if (marketPurchase.pollTimer) {
+            window.clearInterval(marketPurchase.pollTimer);
+            marketPurchase.pollTimer = null;
+        }
+        marketPurchase.polling = false;
+    }
+
+    function stopMarketPurchaseCountdown() {
+        if (marketPurchase.countdownTimer) {
+            window.clearInterval(marketPurchase.countdownTimer);
+            marketPurchase.countdownTimer = null;
+        }
     }
 
     /** 应用安装/升级成功后，询问是否现在启用当前应用（点击「是」则启用，否则不做任何操作）；
@@ -11595,6 +11997,25 @@
 
             var upgrade = event.target.closest('[data-upgrade-id]');
             if (upgrade) { upgradeApp(upgrade.dataset.upgradeId); }
+
+            // 付费应用购买：卡片/详情的「¥xx 购买」按钮打开购买弹窗
+            var purchase = event.target.closest('[data-purchase-id]');
+            if (purchase) {
+                var purchaseApp = state.marketApps.get(purchase.dataset.purchaseId) || {};
+                openMarketPurchaseDialog(purchase.dataset.purchaseId, purchaseApp.name,
+                    Number(purchase.dataset.purchasePrice));
+            }
+
+            // 购买弹窗内的支付通道选择（layui 弹层挂在 body，同样命中本委托）
+            var purchaseChannel = event.target.closest('[data-purchase-channel]');
+            if (purchaseChannel) { doMarketPurchase(purchaseChannel.dataset.purchaseChannel); }
+
+            // 站点身份：未注册（或重新注册）→ 注册站点；域名不一致 → 同步到服务端
+            var siteRegister = event.target.closest('[data-market-site-register], [data-market-site-reregister]');
+            if (siteRegister) { registerMarketSite(false); }
+
+            var siteSync = event.target.closest('[data-market-site-sync]');
+            if (siteSync) { syncMarketSite(siteSync.closest('[data-app-center]')); }
 
             var openApp = event.target.closest('[data-open-app-id]');
             if (openApp) {

@@ -1,7 +1,7 @@
 # CmsPro WebOS 管理桌面 · 特性清单
 
-> 文档版本：2.1.89 | 更新日期：2026-10-21
-> 应用版本：2.1.89 | 应用 ID：`cmspro.webos`
+> 文档版本：2.1.90 | 更新日期：2026-10-21
+> 应用版本：2.1.90 | 应用 ID：`cmspro.webos`
 
 ## 一、应用定位
 
@@ -19,8 +19,8 @@ WebOS 管理桌面是 CmsPro 后台的可选交互层，不替换系统后台框
 | 系统菜单文件夹 | 点击文件夹后打开独立窗口，左侧按层级树形显示该文件夹子菜单（下级分组可展开收起）并默认打开第一项可由窗口内容区承载的菜单 | 当前管理员菜单 |
 | 应用独立窗口 | 每个应用只创建一个窗口；普通应用显示自身图标，系统应用显示 CMSPRO Logo；左侧菜单按声明层级树形显示、分组可展开收起，整栏支持收起；菜单按后台声明的四种打开方式（嵌套网页、路由模式、新建窗口、弹窗网页）分别承载；应用有前台（home）菜单时标题栏「收起左侧菜单」左侧显示「前台」下拉按钮（文字按钮，下拉项仅菜单名，点击新标签页打开）；可开启应用窗口多选项卡（同路径复用、切换不重载、溢出导航、右键关闭菜单） | 浏览器运行时 + 应用目录 |
 | 任务栏 | 紧凑展示固定入口、运行窗口、通知、账号和时钟，可设为上、下、左、右；运行与固定图标支持右键菜单（打开、还原、最大化、最小化、关闭、固定/解除固定、卸载）；已固定应用运行时复用固定图标（按应用聚合，显示运行指示，点击聚焦/最小化切换），不在运行区重复显示 | 工作区 + 系统接口 |
-| 应用市场 | 内容区顶部提供「首页 / 分类」子 Tab（默认首页）：首页聚合展示「不可错过的应用」（随机 2 行图标+名称网格）、「官方精选」（精选应用优先、不足 2 行按下载量补全）、「装机必备/官方精选/运营推荐」推荐位列表区（每列 5 个，图标+名称+两行描述，读取市场服务端推荐位）与「辅助推荐」网格区（推荐位 aux，2 行）；分类子 Tab 为原有分类浏览：分类以 Tab 形式展示（Ajax 加载分类接口），列表滚动到底自动分页加载，状态行显示连接与总数，失败时降级到本地可安装应用；图标读取市场远程地址，并按本机版本显示安装 / 已安装 / 更新；点击应用卡片打开应用详情页（首页卡片同样可点击） | 系统应用市场 API + 市场首页聚合接口 `/api/admin/market/home` + `apps` 表 |
-| 应用详情 | 覆盖在应用中心面板上展示市场应用详情：头部（图标、名称、推荐标记、应用文档与作者链接、安装/更新按钮）、基本信息、应用介绍、应用截图与版本记录 | 系统应用市场详情 API `/api/admin/market/apps/{appId}` |
+| 应用市场 | 内容区顶部提供「首页 / 分类」子 Tab（默认首页）：首页聚合展示「不可错过的应用」（随机 2 行图标+名称网格）、「官方精选」（精选应用优先、不足 2 行按下载量补全）、「装机必备/官方精选/运营推荐」推荐位列表区（每列 5 个，图标+名称+两行描述，读取市场服务端推荐位）与「辅助推荐」网格区（推荐位 aux，2 行）；分类子 Tab 为原有分类浏览：分类以 Tab 形式展示（Ajax 加载分类接口），列表滚动到底自动分页加载，状态行显示连接与总数，失败时降级到本地可安装应用；图标读取市场远程地址，并按本机版本显示安装 / 已安装 / 更新；付费应用显示价格并支持购买，未安装的付费应用主操作显示「¥金额 购买」，打开购买弹窗（微信/支付宝 → 支付二维码 + 300s 倒计时 → 每 3s 轮询支付状态），支付成功后即时切换为「安装」；页面顶部按需显示站点身份提示条（未注册「立即注册」、域名不一致「同步到服务端」「重新注册」）；点击应用卡片打开应用详情页（首页卡片同样可点击） | 系统应用市场 API + 市场首页聚合接口 `/api/admin/market/home` + 市场站点身份与购买接口 `site/status`/`site/register`/`site/sync`/`purchase/create`/`purchase/status`/`purchase/list` + `apps` 表 |
+| 应用详情 | 覆盖在应用中心面板上展示市场应用详情：头部（图标、名称、推荐标记、应用文档与作者链接、安装/更新/购买按钮，付费且未购买时头部操作显示「¥金额 购买」）、基本信息、应用介绍、应用截图与版本记录 | 系统应用市场详情 API `/api/admin/market/apps/{appId}` |
 | 安装应用 | 自动识别 `admin`、`user`、`home` 菜单声明，按实际终端分别选择顶级菜单挂载位置，安装后可创建后台桌面入口；各终端挂载位置下拉隐藏 WebOS 自身菜单（`app_id=cmspro.webos` 或内置路径），避免把应用挂到管理桌面入口下（常规安装与上传安装共用同一渲染函数，行为一致） | 系统安装 API |
 | 已安装应用 | 以列表展示应用信息、状态开关与操作；支持状态筛选、搜索和上传安装；图标按 icon_url（服务端 SVG/PNG）→ 应用 icon 字段 → 通用占位回退，SVG/PNG 图片图标以白色为底、字体图标保持彩色底；数据直接来自系统应用管理接口 `GET /api/admin/apps`，与传统后台“应用管理”同一数据源与排序 | 系统应用管理 API + 应用根目录 |
 | 应用操作 | 操作列直接提供打开、手动升级和导出；更多菜单复用系统应用管理接口提供管理入口、备份、文档、设置和卸载。四项操作的交互与传统后台“应用管理”页面一致：导出走 XHR blob 下载、手动升级与上传安装共用拖拽/点选弹层、备份为三步分卷并支持三步恢复、删除与导入恢复（弹窗顶部工具栏照抄后台：左「共 N 条备份记录 + 导入恢复」/ 右「立即备份」）、文档为文件树 + 正文 + 目录三栏预览 | 系统应用管理 API |
@@ -182,6 +182,7 @@ CmsproWebos/
 
 | 版本 | 日期 | 说明 |
 |---|---|---|
+| 2.1.90 | 2026-10-21 | 应用中心 → 应用市场支持**付费应用**（用户需求，参考传统后台 `resources/views/admin/app/market.blade.php`）：`webos.js` 新增 `marketPrice()`/`marketPurchased()`/`marketPriceMarkup()`，`marketState()` 补充 `price`/`purchased`/`needs_purchase`（付费且未购）；`marketCardActions()` 与 `marketDetailActionsMarkup()` 增加「¥金额 购买」分支（`data-purchase-id`/`data-purchase-price`），卡片元信息行与首页推荐卡片/列表项接入价格标签。市场 Tab 改由 `loadMarketContext()` 先并行读取 `site/status` 与 `purchase/list`（`applyMarketSiteStatus()`/`applyMarketPurchased()` 写 state）再渲染主体，避免已购应用闪现「购买」；新增站点提示条 `renderMarketSiteNotice()` 与注册（`registerMarketSite()`，含域名验证失败 `promptMarketSiteForceRegister()` 跳过验证重试、成功后重启刷新）/身份同步（`syncMarketSite()`，原地刷新提示条）。新增购买弹窗 `openMarketPurchaseDialog()`/`doMarketPurchase()`（`purchase/create`）/`renderMarketPurchaseQr()`（`window.QRCode`，库不可用降级明文）/`startMarketPurchaseCountdown()`（300s）/`pollMarketPurchase()`（3s×60，`purchase/status`）/`finishMarketPurchase()` 与定时器清理；点击委托接入 document（`data-purchase-id`/`data-purchase-channel`/`data-market-site-register` 等）。Blade 引入 `CmsProUi/component/qrcodejs/qrcode.min.js`；CSS 新增价格标签、站点提示条与购买弹窗样式。新增契约用例 `test_market_paid_apps_reuse_admin_market_purchase_flow`。纯功能新增，无数据库结构变更。 |
 | 2.1.89 | 2026-10-21 | 用户桌面预设改为**差异化增量同步**（用户需求，取代 2.1.88 的「仅新用户播种」）：新增迁移 `add_preset_sync_ids_to_app_cmspro_webos_workspaces_table` 为工作区表增加 `preset_sync_ids`（JSON，per-user 已推送预设项 ID 台账），模型加 `fillable`/`casts`/`$hidden`（台账不外泄）；`WorkspaceService::getFor('user', …)` 改调 `syncPresetDesktop()`，新增 `presetItemId()`/`presetItemSignature()`：每次加载按「预设项 − 已推送集合」计算增量，逐项补齐到用户桌面（后台新增且用户桌面缺失的项自动补齐、用户桌面已存在等价项按内容指纹不重复添加，两遍遍历让预设文件夹子项挂靠到用户已有等价文件夹），以预设项 `id` 作推送 key 记入 `preset_sync_ids`，已推送项此后用户删除/修改乃至后台改内容均不再下发；admin 端不受影响。新增/改写 5 个单元用例（首次播种、老用户差异化补齐、删除不回推与修改不覆盖、文件夹子项挂靠、admin 端不受影响）。165 测试 1863 断言通过。 |
 | 2.1.88 | 2026-10-21 | 后台新增**用户桌面预设**（用户需求）：后台端「用户首页直达 WebOS」开启后，OS 设置 → 系统设置右侧追加「用户桌面」Tab（`renderWebosSettings()` 内 `!isUserTerminal && preferences.override_user_home` 判定），以预览网格 + 右键新建预设前台用户首次进入用户端 WebOS 的默认桌面——空白处右键「新建 文件夹 / 桌面入口 / URL 链接」，单个项右键「重命名 / 图标设置 / 删除 / 管理文件夹内容」（不做拖拽），编辑逻辑复用桌面项函数。服务端 `WorkspaceService` 新增 `getPreset()`/`savePresetItems()`（存 `terminal='preset'`、`admin_user_id=0` 独立行）与 `getFor('user', …)` 内 `wasRecentlyCreated` 播种；Admin 控制器新增 `GET/PUT /admin/cmspro/webos/api/user-desktop-preset`（校验沿用 `desktopItemsRules()`，文件夹 path 置空、URL 外链放行）。纯功能新增、零数据库迁移。162 测试 1839 断言通过。**注：2.1.89 已将该「仅新用户首次播种」策略调整为差异化增量同步。** |
 | 2.1.87 | 2026-10-20 | 用户端账号菜单与个人设置窗口对齐（用户需求）：任务栏账号菜单面板的「修改密码」按钮由后台端专属（`@if ($webosTerminal === 'admin')`）改为双端共享，用户端点按后打开 WebOS 内置修改密码弹窗（按端分流接口 admin `/api/admin/auth/password`、user `/api/user/password`，字段自动映射），「清除缓存」仍仅后台端可见；`openEntry` 窗口尺寸覆盖由仅 `/admin/account` 改为 `'/admin/account' || '/user/account'`，用户端个人设置窗口宽度固定 680px、高度沿用同一 `windowKey` 计算，与后台端尺寸一致。156 测试 1787 断言通过。 |

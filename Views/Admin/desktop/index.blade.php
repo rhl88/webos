@@ -300,6 +300,8 @@ layui.use(['element', 'form', 'jquery', 'layer', 'toast', 'button', 'popup'], fu
 <script src="{{ asset('CmsProUi/component/highlight.js/languages/php.min.js') }}"></script>
 <script src="{{ asset('CmsProUi/component/highlight.js/languages/sql.min.js') }}"></script>
 <script src="{{ asset('CmsProUi/component/highlight.js/languages/xml.min.js') }}"></script>
+{{-- 付费应用购买弹窗所需的二维码渲染库，与传统后台应用市场 admin/app/market.blade.php 保持同一依赖 --}}
+<script src="{{ asset('CmsProUi/component/qrcodejs/qrcode.min.js') }}"></script>
 <script src="{{ asset('apps/cmspro.webos/js/webos-icon-catalog.js') }}?v={{ $webosAssetVersion }}"></script>
 <script src="{{ asset('apps/cmspro.webos/js/webos.js') }}?v={{ $webosAssetVersion }}"></script>
 </body>

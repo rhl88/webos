@@ -3326,4 +3326,84 @@ class WebosWorkspaceApiTest extends WebosTestCase
         $this->assertStringContainsString('.preset-desktop .desktop-icon {', $css);
         $this->assertStringContainsString('.preset-desktop-hint {', $css);
     }
+
+    public function test_market_paid_apps_reuse_admin_market_purchase_flow(): void
+    {
+        $script = file_get_contents(dirname(__DIR__, 2) . '/Assets/js/webos.js');
+        $stylesheet = file_get_contents(dirname(__DIR__, 2) . '/Assets/css/webos.css');
+        $view = file_get_contents(dirname(__DIR__, 2) . '/Views/Admin/desktop/index.blade.php');
+
+        $this->assertIsString($script);
+        $this->assertIsString($stylesheet);
+        $this->assertIsString($view);
+
+        // 价格与已购判定：价格为 0 视为免费；已购清单统一小写 app_id 比对（照抄后台 market 逻辑）
+        $this->assertStringContainsString('function marketPrice(app) {', $script);
+        $this->assertStringContainsString('function marketPurchased(appId) {', $script);
+        $this->assertStringContainsString("state.marketPurchased.has(String(appId || '').toLowerCase())", $script);
+        $this->assertStringContainsString('function marketPriceMarkup(app, className, compact) {', $script);
+        // marketState 补充付费上下文：付费且未购买时主操作由「安装」改为「¥xx 购买」
+        $this->assertStringContainsString('purchased: purchased,', $script);
+        $this->assertStringContainsString('needs_purchase: price > 0 && !purchased', $script);
+        // 卡片与详情按钮三分支：更新 / 已安装 / ¥xx 购买（沿用 data-upgrade-id 点击委托链路）
+        $this->assertStringContainsString("data-purchase-id=", $script);
+        $this->assertStringContainsString("data-purchase-price=", $script);
+        // 价格标签接入市场卡片元信息行与首页推荐卡片/列表项
+        $this->assertStringContainsString("marketPriceMarkup(app, 'app-card-price', false)", $script);
+        $this->assertStringContainsString("marketPriceMarkup(app, 'market-home-price', true)", $script);
+        $this->assertStringContainsString('.app-card-price', $stylesheet);
+        $this->assertStringContainsString('.market-home-price', $stylesheet);
+
+        // 站点身份：市场 Tab 先并行读取站点状态与已购清单，再渲染主体（避免已购应用闪现「¥xx 购买」）
+        $this->assertStringContainsString('function loadMarketContext(content, status) {', $script);
+        $this->assertStringContainsString("api('/api/admin/market/site/status')", $script);
+        $this->assertStringContainsString("api('/api/admin/market/purchase/list')", $script);
+        $this->assertStringContainsString('function applyMarketSiteStatus(data) {', $script);
+        $this->assertStringContainsString('function applyMarketPurchased(data) {', $script);
+        // 站点提示条：未注册「立即注册」、域名不一致「同步到服务端」「重新注册」
+        $this->assertStringContainsString('function renderMarketSiteNotice(content) {', $script);
+        $this->assertStringContainsString('data-market-site-notice', $script);
+        $this->assertStringContainsString('data-market-site-register>立即注册', $script);
+        $this->assertStringContainsString('data-market-site-sync>同步到服务端', $script);
+        $this->assertStringContainsString('data-market-site-reregister>重新注册', $script);
+        // 注册（含域名验证失败后 force 重试）与身份同步接口
+        $this->assertStringContainsString('function registerMarketSite(force) {', $script);
+        $this->assertStringContainsString("api('/api/admin/market/site/register', { method: 'POST', body: force ? { force: true } : {} })", $script);
+        $this->assertStringContainsString('function promptMarketSiteForceRegister(result) {', $script);
+        $this->assertStringContainsString('function syncMarketSite(content) {', $script);
+        $this->assertStringContainsString("api('/api/admin/market/site/sync', { method: 'POST' })", $script);
+        $this->assertStringContainsString('.market-site-notice', $stylesheet);
+
+        // 购买弹窗：微信/支付宝通道选择 → 二维码 + 300s 倒计时 → 3s×60 轮询支付状态
+        $this->assertStringContainsString('function openMarketPurchaseDialog(appId, appName, price) {', $script);
+        $this->assertStringContainsString('data-purchase-channel="wechat"', $script);
+        $this->assertStringContainsString('data-purchase-channel="alipay"', $script);
+        $this->assertStringContainsString('function doMarketPurchase(channel) {', $script);
+        $this->assertStringContainsString("api('/api/admin/market/purchase/create', {", $script);
+        $this->assertStringContainsString('function renderMarketPurchaseQr(panel, order, channel) {', $script);
+        $this->assertStringContainsString('new window.QRCode(qrBox, {', $script);
+        $this->assertStringContainsString('window.QRCode.CorrectLevel.M', $script);
+        $this->assertStringContainsString('function startMarketPurchaseCountdown(panel) {', $script);
+        $this->assertStringContainsString('var remain = 300;', $script);
+        $this->assertStringContainsString('function pollMarketPurchase(outTradeNo) {', $script);
+        $this->assertStringContainsString("api('/api/admin/market/purchase/status?out_trade_no='", $script);
+        $this->assertStringContainsString('if (count > 60) {', $script);
+        $this->assertStringContainsString('}, 3000);', $script);
+        $this->assertStringContainsString('function finishMarketPurchase() {', $script);
+        $this->assertStringContainsString("state.marketPurchased.add(String(appId).toLowerCase());", $script);
+        $this->assertStringContainsString('function teardownMarketPurchase() {', $script);
+        // 弹窗关闭必须清理轮询与倒计时定时器，避免残留请求
+        $this->assertStringContainsString('function stopMarketPurchasePoll() {', $script);
+        $this->assertStringContainsString('function stopMarketPurchaseCountdown() {', $script);
+        $this->assertStringContainsString('.market-purchase', $stylesheet);
+
+        // 点击委托：按钮挂在 document 上，layui 弹层内通道按钮同样命中
+        $this->assertStringContainsString("event.target.closest('[data-purchase-id]')", $script);
+        $this->assertStringContainsString("event.target.closest('[data-purchase-channel]')", $script);
+        $this->assertStringContainsString("event.target.closest('[data-market-site-register], [data-market-site-reregister]')", $script);
+        $this->assertStringContainsString("event.target.closest('[data-market-site-sync]')", $script);
+
+        // Blade：付费购买弹窗依赖的二维码库，与后台应用市场 market.blade.php 保持同一依赖
+        $this->assertStringContainsString("CmsProUi/component/qrcodejs/qrcode.min.js", $view);
+    }
 }

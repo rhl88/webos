@@ -3629,6 +3629,117 @@ textarea:focus-visible,
     color: #f0a020;
 }
 
+/* 站点身份提示条：未注册 / 域名不一致时位于市场子Tab 之上 */
+.market-site-notice {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 12px;
+    padding: 12px 16px;
+    border: 1px solid #ffd591;
+    border-radius: 8px;
+    background: #fff7e6;
+}
+
+.market-site-notice[hidden] {
+    display: none;
+}
+
+.market-site-notice > i {
+    flex: 0 0 auto;
+    color: #d18b23;
+    font-size: 20px;
+}
+
+.market-site-notice-text {
+    flex: 1;
+    min-width: 0;
+}
+
+.market-site-notice-text strong {
+    display: block;
+    color: #ad6800;
+    font-size: 13px;
+}
+
+.market-site-notice-text span {
+    display: block;
+    margin-top: 2px;
+    color: #8c6d1f;
+    font-size: 12px;
+    line-height: 1.6;
+}
+
+/* 购买弹窗：通道选择 / 二维码 / 倒计时 */
+.market-purchase {
+    padding: 18px 20px 14px;
+    text-align: center;
+}
+
+.market-purchase-app {
+    margin: 0 0 14px;
+    color: #2f4358;
+    font-size: 14px;
+    font-weight: 600;
+}
+
+.market-purchase-methods {
+    display: flex;
+    justify-content: center;
+    gap: 12px;
+}
+
+.market-purchase-methods[hidden],
+.market-purchase-qr[hidden] {
+    display: none;
+}
+
+.market-purchase-qrbox {
+    display: inline-block;
+    padding: 10px;
+    border: 1px solid #e6e6e6;
+    border-radius: 8px;
+    background: #fff;
+}
+
+.market-purchase-qrbox img,
+.market-purchase-qrbox canvas {
+    display: block;
+}
+
+.market-purchase-code {
+    display: block;
+    max-width: 200px;
+    padding: 8px;
+    font-size: 11px;
+    word-break: break-all;
+}
+
+.market-purchase-price {
+    margin: 12px 0 0;
+    color: #d18b23;
+    font-size: 18px;
+    font-weight: 700;
+}
+
+.market-purchase-hint {
+    margin: 6px 0 0;
+    color: #697a91;
+    font-size: 12px;
+}
+
+.market-purchase-countdown {
+    margin: 6px 0 0;
+    color: #e06c6c;
+    font-size: 12px;
+}
+
+.market-purchase-tip {
+    margin: 12px 0 0;
+    color: #94a0af;
+    font-size: 11px;
+}
+
 .market-detail-desc {
     color: #4d5f74;
     font-size: 13px;
@@ -3943,6 +4054,27 @@ textarea:focus-visible,
 .app-card-info small {
     margin-top: 5px;
     color: #94a0af;
+    font-size: 11px;
+}
+
+/* 市场卡片/首页价格标签：付费橙色、免费绿色（与详情「基本信息」价格口径一致） */
+.app-card-price,
+.market-home-price {
+    margin-left: 4px;
+    font-weight: 600;
+}
+
+.app-card-price.is-paid,
+.market-home-price.is-paid {
+    color: #d18b23;
+}
+
+.app-card-price.is-free,
+.market-home-price.is-free {
+    color: #2f9e6e;
+}
+
+.market-home-price {
     font-size: 11px;
 }
 
