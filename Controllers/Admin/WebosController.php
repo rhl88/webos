@@ -154,6 +154,96 @@ class WebosController extends Controller
     }
 
     /**
+     * 用户端开始菜单数据源（前台用户菜单树）：与框架 admin 端 /api/admin/menus/user 输出同构的树形结构
+     * （AdminMenu 全字段 + children），前端 flattenMenus 无需感知终端差异。
+     * 与框架用户端菜单接口（User\ConfigController::menus）口径一致：
+     * terminal_type=user、status/visible 开启即全员可见（用户端菜单不做角色授权过滤）。
+     * 定义于 admin 控制器：后台「用户桌面」预设编辑器需要前台用户端目录，
+     * 子类 User\WebosController 直接复用（避免后台会话跨端调用用户端接口触发前台认证）。
+     */
+    protected function userTerminalMenus(): JsonResponse
+    {
+        return response()->json(ApiResponse::success($this->userTerminalMenuTree()));
+    }
+
+    /** @return array<int,array<string,mixed>> 前台用户端菜单树 */
+    protected function userTerminalMenuTree(): array
+    {
+        $menus = AdminMenu::query()
+            ->where('status', 1)
+            ->where('visible', 1)
+            ->where('terminal_type', 'user')
+            ->orderBy('sort')
+            ->get()
+            ->toArray();
+
+        return $this->buildMenuTree($menus);
+    }
+
+    /** 按 parent_id 组树（AdminMenu 全字段直传，与前端 flattenMenus 契约一致） */
+    protected function buildMenuTree(array $items, int $parentId = 0): array
+    {
+        $tree = [];
+
+        foreach ($items as $item) {
+            if ((int) ($item['parent_id'] ?? 0) !== $parentId) {
+                continue;
+            }
+
+            $children = $this->buildMenuTree($items, (int) $item['id']);
+            if ($children) {
+                $item['children'] = $children;
+            }
+
+            $tree[] = $item;
+        }
+
+        return $tree;
+    }
+
+    /**
+     * 用户端可见应用清单：开始菜单、桌面入口选择树、桌面/任务栏图标、窗口标题与品牌图标等渲染点
+     * 统一依赖应用的名称与图标（前端 findApplication 数据源），缺少该清单会退化为显示 app_id 与文件夹图标。
+     * 数据源与 admin 端 /api/admin/apps 同构（apps 表 name/icon + 公开图标路由 icon_url），
+     * 但仅返回当前用户菜单中出现过 app_id 的应用，不暴露未在用户端分配的应用。
+     */
+    protected function userTerminalApplications(): JsonResponse
+    {
+        return response()->json(ApiResponse::success($this->userTerminalApplicationList()));
+    }
+
+    /** @return array<int,array<string,mixed>> 前台用户端可见应用清单 */
+    protected function userTerminalApplicationList(): array
+    {
+        $appIds = AdminMenu::query()
+            ->where('terminal_type', 'user')
+            ->where('status', 1)
+            ->where('visible', 1)
+            ->whereNotNull('app_id')
+            ->where('app_id', '!=', '')
+            ->distinct()
+            ->pluck('app_id')
+            ->all();
+
+        if (! $appIds) {
+            return [];
+        }
+
+        return AppModel::query()
+            ->whereIn('app_id', $appIds)
+            ->orderBy('id', 'asc')
+            ->get()
+            ->map(function (AppModel $app) {
+                $data = $app->only(['app_id', 'name', 'icon', 'version', 'status', 'is_system']);
+                // 应用图标公开路由（无需认证），与 admin 端 getInstalledApps 同一口径
+                $data['icon_url'] = url('/api/app/' . $app->app_id . '/icon');
+                return $data;
+            })
+            ->values()
+            ->all();
+    }
+
+    /**
      * 前台菜单 URL 兼容转换：按 app_id 返回其 home 终端菜单的「原始路径 → 访问地址」映射。
      *
      * WebOS 前台菜单从系统菜单树接口拿到的是原始存储路径（如论坛 /forum），当应用设置为
@@ -236,16 +326,10 @@ class WebosController extends Controller
         return rtrim((string) preg_replace('#^https?:#i', '', $url), '/');
     }
 
-    public function workspace(Request $request): JsonResponse
+    /** 桌面项字段校验规则（工作区保存与「用户桌面」预设保存共用同一口径） */
+    protected function desktopItemsRules(): array
     {
-        $workspace = $this->workspaces->getFor($this->terminalOf($request), $this->userIdOf($request));
-
-        return response()->json(ApiResponse::success($workspace));
-    }
-
-    public function saveWorkspace(Request $request): JsonResponse
-    {
-        $validated = $request->validate([
+        return [
             'desktop_items' => ['sometimes', 'array', 'max:48'],
             'desktop_items.*.id' => ['required', 'string', 'max:80'],
             'desktop_items.*.menu_id' => ['nullable', 'integer', 'min:0'],
@@ -286,6 +370,51 @@ class WebosController extends Controller
             'desktop_items.*.group_title' => ['nullable', 'string', 'max:60'],
             'desktop_items.*.x' => ['required', 'integer', 'between:0,99'],
             'desktop_items.*.y' => ['required', 'integer', 'between:0,99'],
+        ];
+    }
+
+    /**
+     * 「用户桌面」预设读取（OS 设置 → 用户桌面 Tab）：返回后台预设的用户端桌面图标
+     * 与前台用户端目录（菜单树/应用清单）。预设面向前台用户，编辑器必须按用户端目录
+     * 渲染与校验（与后台目录不同），因此目录随预设一并下发。
+     */
+    public function userDesktopPreset(Request $request): JsonResponse
+    {
+        return response()->json(ApiResponse::success([
+            'desktop_items' => $this->workspaces->getPreset()->desktop_items ?? [],
+            'catalog' => [
+                'menus' => $this->userTerminalMenuTree(),
+                'applications' => $this->userTerminalApplicationList(),
+            ],
+        ]));
+    }
+
+    /**
+     * 「用户桌面」预设保存：前台新用户首次进入用户端 WebOS 时按该预设初始化桌面图标
+     * （仅新用户首次生效，已有自定义桌面的老用户不受影响）。
+     * 校验与净化口径与用户工作区保存完全一致，保证播种数据必然通过前台保存校验。
+     */
+    public function saveUserDesktopPreset(Request $request): JsonResponse
+    {
+        $validated = $request->validate($this->desktopItemsRules());
+        $preset = $this->workspaces->savePresetItems($validated['desktop_items'] ?? []);
+
+        return response()->json(ApiResponse::success(
+            ['desktop_items' => $preset->desktop_items ?? []],
+            '用户桌面预设已保存'
+        ));
+    }
+
+    public function workspace(Request $request): JsonResponse
+    {
+        $workspace = $this->workspaces->getFor($this->terminalOf($request), $this->userIdOf($request));
+
+        return response()->json(ApiResponse::success($workspace));
+    }
+
+    public function saveWorkspace(Request $request): JsonResponse
+    {
+        $validated = $request->validate(array_merge($this->desktopItemsRules(), [
             'taskbar_items' => ['sometimes', 'array', 'max:12'],
             'taskbar_items.*.id' => ['required', 'string', 'max:80'],
             'taskbar_items.*.menu_id' => ['nullable', 'integer', 'min:0'],
@@ -332,7 +461,7 @@ class WebosController extends Controller
             // 被忽略的可用更新（应用中心「忽略」按钮，app_id@版本号）：无规则声明时 $validated 会丢弃该键
             'preferences.ignored_updates' => ['sometimes', 'array', 'max:200'],
             'preferences.ignored_updates.*' => ['string', 'max:180'],
-        ]);
+        ]));
 
         $workspace = $this->workspaces->saveFor(
             $this->terminalOf($request),

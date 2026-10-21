@@ -265,4 +265,105 @@ class WorkspaceServiceTest extends WebosTestCase
             ]],
         ]);
     }
+
+    /** 「用户桌面」预设（2.1.88）：以 terminal=preset + 用户 ID 0 单独一行存储，与真实账号工作区隔离 */
+    public function test_it_stores_the_user_desktop_preset_in_an_isolated_row(): void
+    {
+        $admin = $this->actingAdmin();
+        app(WorkspaceService::class)->getForAdmin($admin->id);
+
+        $preset = app(WorkspaceService::class)->savePresetItems([
+            [
+                'id' => 'preset-folder',
+                'title' => '常用工具',
+                'path' => '',
+                'icon' => 'fa fa-folder',
+                'kind' => 'folder',
+                'x' => 0,
+                'y' => 0,
+            ],
+            [
+                'id' => 'preset-url',
+                'title' => '官网',
+                'path' => 'https://www.cmspro.cn',
+                'icon' => 'fa fa-globe',
+                'kind' => 'url',
+                'x' => 1,
+                'y' => 0,
+            ],
+        ]);
+
+        $this->assertSame('preset', $preset->terminal);
+        $this->assertSame(0, $preset->admin_user_id);
+        // 净化口径与工作区一致：文件夹 path 强制置空、URL 外链原样保留
+        $this->assertSame('folder', $preset->desktop_items[0]['kind']);
+        $this->assertSame('', $preset->desktop_items[0]['path']);
+        $this->assertSame('https://www.cmspro.cn', $preset->desktop_items[1]['path']);
+
+        // 读回一致，且不污染管理员工作区（表中仅两行：管理员工作区 + 预设）
+        $this->assertSame($preset->desktop_items, app(WorkspaceService::class)->getPreset()->desktop_items);
+        $this->assertSame([], app(WorkspaceService::class)->getForAdmin($admin->id)->desktop_items);
+        $this->assertSame(2, WebosWorkspace::query()->count());
+    }
+
+    /** 预设净化口径与工作区完全一致：非法站外路径同样被拒绝，保证播种数据必然通过前台保存校验 */
+    public function test_it_rejects_external_paths_in_the_user_desktop_preset(): void
+    {
+        $this->expectException(InvalidArgumentException::class);
+        $this->expectExceptionMessage('桌面入口路径必须是站内路径');
+
+        app(WorkspaceService::class)->savePresetItems([[
+            'id' => 'preset-unsafe',
+            'title' => '外部站点',
+            'path' => 'https://example.com',
+            'icon' => 'fa fa-link',
+            'x' => 0,
+            'y' => 0,
+        ]]);
+    }
+
+    /** 播种（2.1.88）：新用户首次进入用户端 WebOS 时按后台预设初始化桌面图标 */
+    public function test_it_seeds_the_preset_into_a_new_user_workspace(): void
+    {
+        app(WorkspaceService::class)->savePresetItems([[
+            'id' => 'preset-menu',
+            'menu_id' => 12,
+            'title' => '我的订单',
+            'path' => '/user/order',
+            'icon' => 'fa fa-list',
+            'x' => 0,
+            'y' => 0,
+        ]]);
+
+        $workspace = app(WorkspaceService::class)->getFor('user', 1001);
+
+        $this->assertSame('user', $workspace->terminal);
+        $this->assertCount(1, $workspace->desktop_items);
+        $this->assertSame('/user/order', $workspace->desktop_items[0]['path']);
+        // 播种结果已落库（重新查库仍是预设内容，而非仅内存态）
+        $stored = WebosWorkspace::query()->where('terminal', 'user')->where('admin_user_id', 1001)->first();
+        $this->assertSame('/user/order', $stored->desktop_items[0]['path']);
+    }
+
+    /** 仅新用户首次生效：工作区已存在的老用户与后台管理员终端都不被预设播种覆盖 */
+    public function test_it_does_not_seed_the_preset_into_an_existing_workspace(): void
+    {
+        // 老用户先进入过用户端（工作区已创建、桌面为空）
+        app(WorkspaceService::class)->getFor('user', 1002);
+
+        app(WorkspaceService::class)->savePresetItems([[
+            'id' => 'preset-menu',
+            'title' => '我的订单',
+            'path' => '/user/order',
+            'icon' => 'fa fa-list',
+            'x' => 0,
+            'y' => 0,
+        ]]);
+
+        $this->assertSame([], app(WorkspaceService::class)->getFor('user', 1002)->desktop_items);
+
+        // 预设不作用于后台管理员终端
+        $admin = $this->actingAdmin();
+        $this->assertSame([], app(WorkspaceService::class)->getForAdmin($admin->id)->desktop_items);
+    }
 }

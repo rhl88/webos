@@ -2805,6 +2805,60 @@ textarea:focus-visible,
     grid-column: 1 / -1;
 }
 
+/* 「用户桌面」预设编辑网格（OS 设置 → 用户桌面 Tab）：复用桌面图标结构，改为流式排布；
+   宿主在设置卡片白底上，需覆盖 .desktop-icon 的绝对定位与壁纸用的浅色文字/阴影样式 */
+.preset-desktop {
+    display: flex;
+    flex-wrap: wrap;
+    align-content: flex-start;
+    gap: 8px;
+    min-height: 200px;
+    padding: 12px;
+    border: 1px dashed #cfe0ea;
+    border-radius: 10px;
+    background: #f7fbfd;
+}
+
+.preset-desktop .desktop-icon {
+    position: static;
+    color: var(--webos-text);
+    background: #fff;
+    border-color: #e2edf4;
+    text-shadow: none;
+    cursor: pointer;
+}
+
+.preset-desktop .desktop-icon:hover,
+.preset-desktop .desktop-icon:focus-visible {
+    border-color: var(--webos-primary);
+    background: #f0f8ff;
+}
+
+/* 空态与错误态提示：占满网格宽度并垂直居中 */
+.preset-desktop-hint {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    width: 100%;
+    min-height: 176px;
+    color: var(--webos-muted);
+    font-size: 13px;
+    line-height: 20px;
+    text-align: center;
+}
+
+.preset-desktop-hint.is-error {
+    color: #d9534f;
+}
+
+.preset-desktop-tips {
+    margin-top: 12px;
+    color: var(--webos-muted);
+    font-size: 12px;
+    line-height: 20px;
+}
+
 .settings-card-title {
     display: flex;
     align-items: center;

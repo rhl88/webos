@@ -82,6 +82,10 @@
         calendarMonths: new Map(),
         calendarPending: new Set(),
         desktopSnapshot: [],
+        // 「用户桌面」预设编辑会话（后台 OS 设置 → 用户桌面 Tab）：为真时桌面数据源被临时接管为
+        // 预设内容，网格渲染到设置窗口内的 [data-preset-grid]，退出时按 presetSnapshot 还原
+        presetEditing: false,
+        presetSnapshot: null,
         wallpapers: null
     };
 
@@ -784,14 +788,14 @@
      * 「拖出第一个成功、第二个起不成功，右键刷新 state 重建后才又能拖出一个」的循环）。
      * 响应中没有而旧对象存在的字段（如已拖出的 parent_folder）需删除，保证与纯替换语义一致。
      */
-    function applyWorkspaceData(workspace) {
+    function mergeDesktopItems(items) {
         var prevById = new Map();
         (state.workspace.desktop_items || []).forEach(function (item) {
             if (item && item.id) {
                 prevById.set(item.id, item);
             }
         });
-        workspace.desktop_items = (workspace.desktop_items || []).map(function (item) {
+        return (items || []).map(function (item) {
             var existing = item && item.id ? prevById.get(item.id) : null;
             if (!existing) {
                 return item;
@@ -806,29 +810,64 @@
             });
             return existing;
         });
+    }
+    function applyWorkspaceData(workspace) {
+        workspace.desktop_items = mergeDesktopItems(workspace.desktop_items);
         state.workspace = workspace;
     }
+
+    /** 桌面项提交载荷：工作区保存与「用户桌面」预设保存共用同一字段口径 */
+    function desktopItemsPayload() {
+        return state.workspace.desktop_items.map(function (item) {
+            return {
+                id: item.id,
+                menu_id: item.menu_id || null,
+                app_id: item.app_id || '',
+                title: item.title,
+                path: item.path,
+                icon: safeIcon(item.icon),
+                group_title: item.group_title || '应用',
+                // 桌面原生项：folder=桌面文件夹、url=URL 链接；parent_folder 为所属文件夹 id（文件夹子项）
+                kind: item.kind || '',
+                parent_folder: item.parent_folder || '',
+                x: Math.max(0, Math.min(99, Number(item.x) || 0)),
+                y: Math.max(0, Math.min(99, Number(item.y) || 0))
+            };
+        });
+    }
+
+    /** 「用户桌面」预设保存：仅提交 desktop_items（预设不含任务栏与偏好），响应回填方式与工作区一致 */
+    function savePresetWorkspace() {
+        var url = root.dataset.presetUrl;
+        if (!url) {
+            return Promise.resolve(null);
+        }
+        var saveSeq = ++workspaceSaveSeq;
+        return api(url, {
+            method: 'PUT',
+            body: { desktop_items: desktopItemsPayload() }
+        }).then(function (response) {
+            if (saveSeq !== workspaceSaveSeq) {
+                return response;
+            }
+            state.workspace.desktop_items = mergeDesktopItems(response.desktop_items);
+            return response;
+        }).catch(function (error) {
+            toast(error.message, 'error');
+            throw error;
+        });
+    }
+
     function saveWorkspace(showMessage) {
+        // 预设编辑会话中：编辑的是后台预设而非当前管理员工作区，改走预设保存接口
+        if (state.presetEditing) {
+            return savePresetWorkspace();
+        }
         var saveSeq = ++workspaceSaveSeq;
         return api(root.dataset.workspaceUrl, {
             method: 'PUT',
             body: {
-                desktop_items: state.workspace.desktop_items.map(function (item) {
-                    return {
-                        id: item.id,
-                        menu_id: item.menu_id || null,
-                        app_id: item.app_id || '',
-                        title: item.title,
-                        path: item.path,
-                        icon: safeIcon(item.icon),
-                        group_title: item.group_title || '应用',
-                        // 桌面原生项：folder=桌面文件夹、url=URL 链接；parent_folder 为所属文件夹 id（文件夹子项）
-                        kind: item.kind || '',
-                        parent_folder: item.parent_folder || '',
-                        x: Math.max(0, Math.min(99, Number(item.x) || 0)),
-                        y: Math.max(0, Math.min(99, Number(item.y) || 0))
-                    };
-                }),
+                desktop_items: desktopItemsPayload(),
                 taskbar_items: taskbarItems().map(function (item) {
                     return {
                         id: item.id,
@@ -864,6 +903,11 @@
     }
 
     function renderDesktop() {
+        // 「用户桌面」预设编辑会话：网格渲染到设置窗口内的独立宿主，真实桌面保持不动
+        if (state.presetEditing) {
+            renderPresetGrid();
+            return;
+        }
         // 图标尺寸档位：格子尺寸驱动布局，data-icon-size 驱动 CSS 视觉（badge/字号/按钮盒）
         var size = desktopIconSize();
         root.dataset.iconSize = state.workspace.preferences.icon_size === 'large' || state.workspace.preferences.icon_size === 'small'
@@ -887,6 +931,31 @@
                 + '</button>';
         }).join('');
         renderTaskbarWindows();
+    }
+
+    /**
+     * 「用户桌面」预设网格渲染：复用桌面图标同款结构（图标/文字/文件夹浮层一致），
+     * 但宿主是设置窗口内的 [data-preset-grid]，样式改为流式排布（不加坐标、不渲更新角标），
+     * 预设网格不在 #desktop-icons 内，桌面的拖拽/框选监听天然不触发（本 Tab 不做拖拽）。
+     */
+    function renderPresetGrid() {
+        var host = root.querySelector('[data-preset-grid]');
+        if (!host) {
+            return;
+        }
+        var items = assignedDesktopItems();
+        if (!items.length) {
+            host.innerHTML = '<div class="preset-desktop-hint"><i class="fa fa-hand-o-right"></i>'
+                + '暂无预设图标，在空白处右键「新建」即可为用户预设文件夹、桌面入口或 URL 链接</div>';
+            return;
+        }
+        host.innerHTML = items.map(function (item) {
+            return '<button class="desktop-icon" type="button" data-desktop-id="' + escapeHtml(item.id) + '"'
+                + ' title="' + escapeHtml(item.title) + '">'
+                + entryIconMarkup(findEntry(item.id) || item, 'desktop-icon-badge')
+                + '<span class="desktop-icon-label">' + escapeHtml(item.title) + '</span>'
+                + '</button>';
+        }).join('');
     }
 
     /** 应用聚合键：同应用（或特殊入口）归并为一个任务栏图标 */
@@ -1058,6 +1127,8 @@
     }
 
     function renderStartMenu() {
+        // 预设编辑会话中目录已被临时接管为预设目录，不渲染真实开始菜单
+        if (state.presetEditing) { return; }
         var groups = groupsFromMenus();
         var query = elements.startSearch.value.trim().toLowerCase();
         if (!groups.some(function (group) { return group.id === state.activeGroup; })) {
@@ -1586,6 +1657,9 @@
      * 返回 null 表示可视格子全部占满（cols 为 0 表示容器不可测量，降级为不限制），调用方需提示整理。
      */
     function findFreeDesktopSlot() {
+        // 预设网格为流式排布、不使用坐标：返回固定非空槽，避免因「无空位」拦截新增
+        // （坐标在预设中无意义，播种到新用户桌面后由前台 normalizeDesktopLayout 归位）
+        if (state.presetEditing) { return { x: 0, y: 0 }; }
         var capacity = desktopGridCapacity();
         var rows = capacity.rows || 1;
         // 找空位时仅统计可见图标：停用应用不再占位，新图标可以落在其格子
@@ -2078,6 +2152,45 @@
         positionDesktopMenu(clientX, clientY);
     }
 
+    /** 「用户桌面」预设网格空白处右键：仅提供新建（文件夹/桌面入口/URL 链接），不含刷新/排列/显示桌面等本机桌面动作 */
+    function openPresetBlankContextMenu(clientX, clientY) {
+        closeDesktopContextMenu();
+        var items = [
+            ['新建文件夹', 'fa-folder-o', 'new-folder'],
+            ['新建桌面入口', 'fa-plus-square-o', 'new-entry'],
+            ['新建 URL 链接', 'fa-globe', 'new-url']
+        ];
+        menuMarkupInto('#desktop-context-menu', 'desktop-context-menu', items, '');
+        positionDesktopMenu(clientX, clientY);
+    }
+
+    /**
+     * 「用户桌面」预设网格单项右键：重命名、文件夹「管理文件夹内容/释放文件夹」、原生项「图标设置」、删除；
+     * 预设中「打开」「卸载应用」无意义，不提供；应用中心与浏览器为内置入口，不允许删除。
+     */
+    function openPresetItemContextMenu(iconId, clientX, clientY) {
+        closeDesktopContextMenu();
+        var item = findDesktopItem(iconId);
+        if (!item) {
+            return;
+        }
+        var items = [['重命名', 'fa-pencil', 'rename']];
+        if (item.kind === 'folder') {
+            items.push(['管理文件夹内容', 'fa-folder-open-o', 'preset-folder-manage']);
+            if (folderChildren(item.id).length) {
+                items.push(['释放文件夹', 'fa-th-large', 'folder-release']);
+            }
+        }
+        if (item.kind === 'folder' || item.kind === 'url') {
+            items.push(['图标设置', 'fa-picture-o', 'folder-icon']);
+        }
+        if (item.id !== 'webos-app-center' && item.id !== 'webos-browser') {
+            items.push(['删除图标', 'fa-thumb-tack', 'remove', 'danger']);
+        }
+        menuMarkupInto('#desktop-context-menu', 'desktop-context-menu', items, iconId);
+        positionDesktopMenu(clientX, clientY);
+    }
+
     function menuMarkupInto(selector, className, items, iconId) {
         var menu = document.querySelector(selector) || document.createElement('div');
         menu.id = selector.replace('#', '');
@@ -2193,6 +2306,14 @@
         // 文件夹浮层内子项右键「从文件夹移除」：清 parent_folder 回到桌面
         if (action === 'folder-remove') {
             removeItemFromFolder(iconId);
+            return;
+        }
+        // 「用户桌面」预设：文件夹右键「管理文件夹内容」= 打开该文件夹浮层（浮层内可「+」添加应用或右键移除子项）
+        if (action === 'preset-folder-manage') {
+            var managedFolder = findDesktopItem(iconId);
+            if (managedFolder) {
+                openFolderOverlay(managedFolder);
+            }
             return;
         }
         // 文件夹右键「图标设置」：内置图标目录弹窗点选替换文件夹图标
@@ -2762,24 +2883,28 @@
                 finishRename(false);
             });
         });
-        // 子项拖拽：拖出到桌面空格或其它文件夹（refreshFolderOverlay 重渲染后重新绑定）
-        overlay.querySelectorAll('.webos-folder-item').forEach(function (itemButton) {
-            var child = findDesktopItem(itemButton.dataset.desktopId);
-            if (child) {
-                dragFolderItem(folder, child, itemButton);
-            }
-        });
-        // 子项右键：打开 / 从文件夹移除（复用桌面右键菜单容器与 data-desktop-action 委托链路）
+        // 子项拖拽：拖出到桌面空格或其它文件夹（refreshFolderOverlay 重渲染后重新绑定）；
+        // 「用户桌面」预设编辑器为流式网格、无坐标语义，不做拖拽，跳过绑定
+        if (!state.presetEditing) {
+            overlay.querySelectorAll('.webos-folder-item').forEach(function (itemButton) {
+                var child = findDesktopItem(itemButton.dataset.desktopId);
+                if (child) {
+                    dragFolderItem(folder, child, itemButton);
+                }
+            });
+        }
+        // 子项右键：打开 / 从文件夹移除（复用桌面右键菜单容器与 data-desktop-action 委托链路）；
+        // 预设编辑器中「打开」无意义，仅保留「从文件夹移除」
         overlay.addEventListener('contextmenu', function (event) {
             var item = event.target.closest('[data-desktop-id]');
             if (!item) {
                 return;
             }
             event.preventDefault();
-            menuMarkupInto('#desktop-context-menu', 'desktop-context-menu', [
-                ['打开', 'fa-external-link', 'open'],
-                ['从文件夹移除', 'fa-external-link-square', 'folder-remove']
-            ], item.dataset.desktopId);
+            var items = state.presetEditing
+                ? [['从文件夹移除', 'fa-external-link-square', 'folder-remove']]
+                : [['打开', 'fa-external-link', 'open'], ['从文件夹移除', 'fa-external-link-square', 'folder-remove']];
+            menuMarkupInto('#desktop-context-menu', 'desktop-context-menu', items, item.dataset.desktopId);
             positionDesktopMenu(event.clientX, event.clientY);
         });
         // 定位：锚定文件夹图标向右展开，右侧越界翻转到图标左侧，整体夹在桌面可视区内
@@ -3809,7 +3934,7 @@
             + ' data-set-window-size="' + name + '" aria-label="' + title + '"></label>';
     }
 
-    /** 当前 OS 设置窗口激活的 Tab：general=基本设置，wallpaper=背景设置，system=系统设置 */
+    /** 当前 OS 设置窗口激活的 Tab：general=基本设置，wallpaper=背景设置，system=系统设置，user-desktop=用户桌面预设 */
     var osSettingsTab = 'general';
 
     /** 自定义壁纸库最近一次读取是否失败，用于展示重试入口 */
@@ -3821,6 +3946,10 @@
             ['wallpaper', 'fa-picture-o', '背景设置'],
             ['system', 'fa-cogs', '系统设置']
         ];
+        // 「用户桌面」预设 Tab：仅后台端、且「用户首页直达 WebOS」开启时追加（用户端不渲染）
+        if (!isUserTerminal && state.workspace.preferences.override_user_home) {
+            tabs.push(['user-desktop', 'fa-desktop', '用户桌面']);
+        }
         return '<nav class="settings-tabs" role="tablist">' + tabs.map(function (tab) {
             return '<button class="settings-tab ' + (osSettingsTab === tab[0] ? 'is-active' : '') + '" type="button" role="tab"'
                 + ' aria-selected="' + (osSettingsTab === tab[0] ? 'true' : 'false') + '" data-settings-tab="' + tab[0] + '">'
@@ -3965,6 +4094,17 @@
             + '</span></div></section>';
     }
 
+    /** 「用户桌面」预设：预览网格宿主（进入 Tab 后由 renderPresetGrid 填充）+ 操作说明 */
+    function userDesktopSectionMarkup() {
+        return '<section class="settings-card is-wide"><div class="settings-card-title"><i class="fa fa-desktop"></i><div>'
+            + '<strong>用户桌面预设</strong><small>预设仅对首次进入用户端 WebOS 的新用户生效，已有自定义桌面的老用户不受影响</small></div></div>'
+            + '<div class="preset-desktop" data-preset-grid>'
+            + '<div class="preset-desktop-hint"><i class="fa fa-spinner fa-spin"></i>正在载入预设…</div></div>'
+            + '<div class="preset-desktop-tips"><i class="fa fa-info-circle"></i>'
+            + '在网格空白处右键可新建「文件夹 / 桌面入口 / URL 链接」；在图标上右键可重命名、设置图标、删除或管理文件夹内容。'
+            + '预设仅包含桌面图标，不含任务栏固定图标。</div></section>';
+    }
+
     /** 重置工作区：恢复默认布局后同步本地状态并重渲染桌面/任务栏 */
     function resetWorkspace() {
         var resetUrl = root.dataset.workspaceUrl.replace(/\/workspace$/, '/workspace/reset');
@@ -3987,6 +4127,10 @@
             return;
         }
         var preferences = state.workspace.preferences;
+        // 「用户桌面」Tab 仅在后台端且「用户首页直达 WebOS」开启时可用：配置被关闭时回退到基本设置
+        if (osSettingsTab === 'user-desktop' && (isUserTerminal || !preferences.override_user_home)) {
+            osSettingsTab = 'general';
+        }
         var positions = [
             ['top', 'fa-arrow-up', '顶部'], ['bottom', 'fa-arrow-down', '底部'],
             ['left', 'fa-arrow-left', '左侧'], ['right', 'fa-arrow-right', '右侧']
@@ -3996,6 +4140,8 @@
             content = '<div class="settings-grid">' + wallpaperSectionMarkup(preferences) + '</div>';
         } else if (osSettingsTab === 'system') {
             content = '<div class="settings-grid">' + systemSectionMarkup(preferences) + '</div>';
+        } else if (osSettingsTab === 'user-desktop') {
+            content = '<div class="settings-grid">' + userDesktopSectionMarkup() + '</div>';
         } else {
             content = '<div class="settings-grid">'
             + '<section class="settings-card"><div class="settings-card-title"><i class="fa fa-window-maximize"></i><div>'
@@ -4048,6 +4194,87 @@
         if (osSettingsTab === 'wallpaper' && state.wallpapers === null) {
             loadWallpapers();
         }
+        // 「用户桌面」Tab：首次进入拉取预设并开启预设编辑会话；已在会话中则重绘网格
+        if (osSettingsTab === 'user-desktop') {
+            if (state.presetEditing) {
+                renderDesktop();
+            } else {
+                enterPresetSession();
+            }
+        } else if (state.presetEditing) {
+            // 切离「用户桌面」Tab（设置窗口内切换其它 Tab）时结束会话，还原真实桌面数据
+            leavePresetSession();
+        }
+    }
+
+    /**
+     * 进入「用户桌面」预设编辑会话（幂等）：拉取预设与用户端菜单目录后，
+     * 把桌面数据源临时接管为「预设 desktop_items + 用户端目录」，
+     * 使既有桌面编辑链路（新建/重命名/删除/文件夹浮层/图标设置）无需改造即可编辑预设；
+     * 原 4 个 state 字段备份在 presetSnapshot，退出会话（leavePresetSession）时还原。
+     */
+    function enterPresetSession() {
+        var host = root.querySelector('[data-preset-grid]');
+        var presetUrl = root.dataset.presetUrl;
+        if (!presetUrl) {
+            if (host) {
+                host.innerHTML = '<div class="preset-desktop-hint is-error">预设接口地址缺失，无法编辑用户桌面</div>';
+            }
+            return;
+        }
+        api(presetUrl).then(function (preset) {
+            var data = preset || {};
+            state.presetSnapshot = {
+                desktopItems: state.workspace.desktop_items,
+                catalog: state.catalog,
+                flatMenus: state.flatMenus,
+                startFlatMenus: state.startFlatMenus
+            };
+            // 接管桌面数据源：桌面项换成预设内容（深拷贝，避免编辑过程中污染快照引用）
+            state.workspace.desktop_items = (data.desktop_items || []).map(function (item) {
+                return Object.assign({}, item);
+            });
+            // 接管目录：预设中的入口树按用户端菜单解析，应用图标取用户端应用清单
+            state.catalog = {
+                applications: (data.catalog && data.catalog.applications) || [],
+                menus: filterAdminMenus((data.catalog && data.catalog.menus) || [], 'user'),
+                operation_logs: []
+            };
+            state.flatMenus = flattenMenus(state.catalog.menus);
+            state.startFlatMenus = state.flatMenus;
+            state.presetEditing = true;
+            renderDesktop();
+        }).catch(function (error) {
+            state.presetEditing = false;
+            state.presetSnapshot = null;
+            var errorHost = root.querySelector('[data-preset-grid]');
+            if (errorHost) {
+                errorHost.innerHTML = '<div class="preset-desktop-hint is-error"><i class="fa fa-exclamation-circle"></i>'
+                    + escapeHtml(error.message || '预设读取失败') + '</div>';
+            }
+            toast(error.message || '用户桌面预设读取失败', 'error');
+        });
+    }
+
+    /** 退出「用户桌面」预设编辑会话（幂等）：关闭预设遗留的右键菜单/文件夹浮层，还原被接管的 state 字段并重绘 */
+    function leavePresetSession() {
+        if (!state.presetEditing) {
+            return;
+        }
+        closeDesktopContextMenu();
+        closeFolderOverlay();
+        var snapshot = state.presetSnapshot;
+        if (snapshot) {
+            state.workspace.desktop_items = snapshot.desktopItems;
+            state.catalog = snapshot.catalog;
+            state.flatMenus = snapshot.flatMenus;
+            state.startFlatMenus = snapshot.startFlatMenus;
+        }
+        state.presetEditing = false;
+        state.presetSnapshot = null;
+        state.desktopSelection.clear();
+        renderDesktop();
+        renderStartMenu();
     }
 
     var MIN_WINDOW_WIDTH = 420;
@@ -4738,6 +4965,10 @@
         // （2.1.73 覆盖 admin 端 /admin/account；2.1.86 补齐用户端 /user/account，两端共用同一刷新逻辑）
         if (target.entry.path === '/admin/account' || target.entry.path === '/user/account') {
             refreshAdminIdentity();
+        }
+        // 关闭 OS 设置窗口时结束「用户桌面」预设编辑会话，还原真实桌面数据与目录
+        if (key === 'webos-settings') {
+            leavePresetSession();
         }
     }
 
@@ -9438,6 +9669,8 @@
      * 隐藏（未分配）项不参与网格占用，原始坐标保留不动；容器不可测量时降级为仅做冲突下移。
      */
     function normalizeDesktopLayout() {
+        // 预设网格为流式排布、不使用坐标，不做越界/冲突归一化（避免无谓的保存请求）
+        if (state.presetEditing) { return; }
         var items = assignedDesktopItems().slice().sort(function (a, b) {
             return (Number(a.y) || 0) - (Number(b.y) || 0) || (Number(a.x) || 0) - (Number(b.x) || 0);
         });
@@ -10300,7 +10533,12 @@
     /** 按 id 查找桌面图标按钮（id 含特殊字符，避开 querySelector 转义） */
     function desktopButtonById(id) {
         var found = null;
-        elements.desktopIcons.querySelectorAll('[data-desktop-id]').forEach(function (button) {
+        // 预设会话中图标渲染在设置窗口内的 [data-preset-grid]，文件夹浮层锚点需查该宿主
+        var scope = state.presetEditing ? root.querySelector('[data-preset-grid]') : elements.desktopIcons;
+        if (!scope) {
+            return null;
+        }
+        scope.querySelectorAll('[data-desktop-id]').forEach(function (button) {
             if (!found && button.dataset.desktopId === id) {
                 found = button;
             }
@@ -10809,6 +11047,38 @@
             event.preventDefault();
             event.stopPropagation();
             openStartItemContextMenu(card.dataset.menuId, event.clientX, event.clientY);
+        });
+
+        // 「用户桌面」预设网格右键：网格内图标 → 预设单项菜单，网格空白处 → 预设新建菜单；
+        // 预设网格位于设置窗口内、不在 #desktop-icons 内，桌面的空白/单项右键委托不会命中，故单独委托
+        root.addEventListener('contextmenu', function (event) {
+            if (!state.presetEditing) {
+                return;
+            }
+            var grid = event.target.closest('[data-preset-grid]');
+            if (!grid) {
+                return;
+            }
+            event.preventDefault();
+            var presetButton = event.target.closest('[data-desktop-id]');
+            if (presetButton) {
+                openPresetItemContextMenu(presetButton.dataset.desktopId, event.clientX, event.clientY);
+            } else {
+                openPresetBlankContextMenu(event.clientX, event.clientY);
+            }
+        });
+
+        // 「用户桌面」预设网格双击：仅文件夹打开内容浮层（预设中双击菜单/应用入口不打开应用窗口）
+        root.addEventListener('dblclick', function (event) {
+            if (!state.presetEditing) {
+                return;
+            }
+            var grid = event.target.closest('[data-preset-grid]');
+            var presetButton = grid ? event.target.closest('[data-desktop-id]') : null;
+            var presetItem = presetButton ? findDesktopItem(presetButton.dataset.desktopId) : null;
+            if (presetItem && presetItem.kind === 'folder') {
+                openFolderOverlay(presetItem);
+            }
         });
 
         // 桌面空白区域右键：仅在桌面本身生效，窗口、任务栏、面板、弹窗内右键不触发

@@ -27,6 +27,10 @@
     id="webos-desktop"
     class="webos-desktop is-loading"
     data-workspace-url="{{ $webosApiBase }}/workspace"
+    {{-- 用户桌面预设接口仅后台端提供（用户端不渲染「用户桌面」Tab，无需该地址） --}}
+    @if ($webosTerminal === 'admin')
+    data-preset-url="{{ $webosApiBase }}/user-desktop-preset"
+    @endif
     data-calendar-url="{{ $webosApiBase }}/calendar"
     data-wallpaper-url="{{ asset('apps/cmspro.webos/images/webos-wallpaper.png') }}"
     data-wallpapers-url="{{ $webosApiBase }}/wallpapers"

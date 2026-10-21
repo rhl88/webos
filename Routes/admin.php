@@ -23,4 +23,7 @@ Route::prefix('api')->name('api.')->group(function () {
     Route::get('/page-meta', [WebosController::class, 'pageMeta'])->name('page-meta');
     // 当前管理员标识（姓名/账号/头像）：个人设置窗口关闭后刷新状态栏展示
     Route::get('/admin-identity', [WebosController::class, 'adminIdentity'])->name('admin-identity');
+    // 「用户桌面」预设（OS 设置 → 用户桌面 Tab）：新用户首次进入用户端 WebOS 的初始桌面图标
+    Route::get('/user-desktop-preset', [WebosController::class, 'userDesktopPreset'])->name('user-desktop-preset.show');
+    Route::put('/user-desktop-preset', [WebosController::class, 'saveUserDesktopPreset'])->name('user-desktop-preset.update');
 });

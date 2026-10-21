@@ -33,6 +33,11 @@ class WorkspaceService
         'ignored_updates' => [],
     ];
 
+    /** 后台预设的用户端桌面在 workspaces 表中的占位归属（terminal=preset + 用户 ID 0） */
+    protected const PRESET_TERMINAL = 'preset';
+
+    protected const PRESET_USER_ID = 0;
+
     public function getForAdmin(int $adminUserId): WebosWorkspace
     {
         return $this->getFor('admin', $adminUserId);
@@ -65,7 +70,55 @@ class WorkspaceService
             $workspace->taskbar_items = array_slice($workspace->desktop_items ?? [], 0, 4);
         }
 
+        // 新用户首次进入用户端 WebOS：按后台预设播种桌面图标（「仅新用户首次生效」，
+        // 已有自定义桌面的老用户工作区早已创建，wasRecentlyCreated 为假，不受影响）
+        if ($terminal === 'user' && $workspace->wasRecentlyCreated) {
+            $presetItems = $this->getPreset()->desktop_items ?? [];
+            if ($presetItems !== []) {
+                $workspace->desktop_items = $presetItems;
+                $workspace->save();
+            }
+        }
+
         return $workspace;
+    }
+
+    /**
+     * 读取后台预设的用户端桌面（terminal='preset' + admin_user_id=0 单独一行，
+     * 与真实账号的工作区以联合唯一约束隔离，无需新增数据表/字段）。
+     */
+    public function getPreset(): WebosWorkspace
+    {
+        $workspace = WebosWorkspace::query()->firstOrCreate(
+            ['terminal' => self::PRESET_TERMINAL, 'admin_user_id' => self::PRESET_USER_ID],
+            [
+                'desktop_items' => [],
+                'taskbar_items' => [],
+                'preferences' => self::DEFAULT_PREFERENCES,
+                'status' => 1,
+            ]
+        );
+
+        if (! is_array($workspace->desktop_items)) {
+            $workspace->desktop_items = [];
+        }
+
+        return $workspace;
+    }
+
+    /**
+     * 保存后台预设的用户端桌面项：预设仅作用于桌面图标（不预设任务栏与偏好），
+     * 净化规则与用户工作区完全一致，保证播种到前台的数据一定能通过保存校验。
+     *
+     * @param array<int,array<string,mixed>> $items
+     */
+    public function savePresetItems(array $items): WebosWorkspace
+    {
+        $workspace = $this->getPreset();
+        $workspace->desktop_items = $this->sanitizeDesktopItems($items);
+        $workspace->save();
+
+        return $workspace->refresh();
     }
 
     /**

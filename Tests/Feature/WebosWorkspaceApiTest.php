@@ -3228,4 +3228,102 @@ class WebosWorkspaceApiTest extends WebosTestCase
         $this->assertStringContainsString('data-identity-url="{{ $webosApiBase }}/admin-identity"', $view);
         $this->assertStringContainsString('data-avatar-fallback="{{ asset(\'Admin/images/avatar.png\') }}"', $view);
     }
+
+    /** 「用户桌面」预设接口（2.1.88）：后台读写闭环，随预设下发前台用户端目录（菜单树 + 应用清单） */
+    public function test_user_desktop_preset_api_roundtrip(): void
+    {
+        $this->actingAdmin();
+
+        $this->getJson('/admin/cmspro/webos/api/user-desktop-preset')
+            ->assertOk()
+            ->assertJsonPath('code', 0)
+            ->assertJsonPath('data.desktop_items', [])
+            ->assertJsonStructure(['data' => ['desktop_items', 'catalog' => ['menus', 'applications']]]);
+
+        $this->putJson('/admin/cmspro/webos/api/user-desktop-preset', ['desktop_items' => [
+            [
+                'id' => 'preset-folder',
+                'title' => '常用工具',
+                'path' => '',
+                'icon' => 'fa fa-folder',
+                'kind' => 'folder',
+                'x' => 0,
+                'y' => 0,
+            ],
+            [
+                'id' => 'preset-entry',
+                'menu_id' => 12,
+                'title' => '我的订单',
+                'path' => '/user/order',
+                'icon' => 'fa fa-list',
+                'x' => 1,
+                'y' => 0,
+            ],
+            [
+                'id' => 'preset-url',
+                'title' => '官网',
+                'path' => 'https://www.cmspro.cn',
+                'icon' => 'fa fa-globe',
+                'kind' => 'url',
+                'x' => 2,
+                'y' => 0,
+            ],
+        ]])->assertOk()
+            ->assertJsonPath('message', '用户桌面预设已保存')
+            ->assertJsonPath('data.desktop_items.0.kind', 'folder')
+            ->assertJsonPath('data.desktop_items.2.path', 'https://www.cmspro.cn');
+
+        // 落库后可读回（净化口径与工作区保存完全一致）
+        $this->assertCount(3, app(WorkspaceService::class)->getPreset()->desktop_items);
+
+        // 非法站外路径被同一套校验拒绝，保证播种数据必然通过前台保存校验
+        $this->putJson('/admin/cmspro/webos/api/user-desktop-preset', ['desktop_items' => [[
+            'id' => 'preset-unsafe',
+            'title' => '外部站点',
+            'path' => 'https://evil.example.com',
+            'icon' => 'fa fa-link',
+            'x' => 0,
+            'y' => 0,
+        ]]])->assertStatus(422);
+    }
+
+    /** 「用户桌面」Tab 仅后台端渲染：用户端不注册预设接口，前端接线（Tab/会话/右键/CSS）齐备（2.1.88） */
+    public function test_user_desktop_preset_tab_binds_admin_frontend_only(): void
+    {
+        // 用户端不提供预设接口（该 Tab 只在后台 OS 设置出现）
+        $this->actingUser();
+        $this->getJson('/user/cmspro/webos/api/user-desktop-preset')->assertNotFound();
+
+        $script = file_get_contents(dirname(__DIR__, 2) . '/Assets/js/webos.js');
+        $this->assertIsString($script);
+        // Tab 追加条件：仅后台端且「用户首页直达 WebOS」开启；配置关闭时内容回退基本设置
+        $this->assertStringContainsString('if (!isUserTerminal && state.workspace.preferences.override_user_home) {', $script);
+        $this->assertStringContainsString("tabs.push(['user-desktop', 'fa-desktop', '用户桌面']);", $script);
+        $this->assertStringContainsString("if (osSettingsTab === 'user-desktop' && (isUserTerminal || !preferences.override_user_home)) {", $script);
+        // 预设编辑会话：临时接管桌面数据源、网格渲染到独立宿主 [data-preset-grid]，退出还原真实桌面
+        $this->assertStringContainsString('function enterPresetSession() {', $script);
+        $this->assertStringContainsString('function leavePresetSession() {', $script);
+        $this->assertStringContainsString('state.presetEditing = true;', $script);
+        $this->assertStringContainsString('function renderPresetGrid() {', $script);
+        $this->assertStringContainsString("var host = root.querySelector('[data-preset-grid]');", $script);
+        $this->assertStringContainsString('leavePresetSession();', $script);
+        // 预设右键：空白处仅新建（文件夹/桌面入口/URL 链接），单项含重命名/图标设置/删除/管理文件夹内容
+        $this->assertStringContainsString('function openPresetBlankContextMenu(clientX, clientY) {', $script);
+        $this->assertStringContainsString('function openPresetItemContextMenu(iconId, clientX, clientY) {', $script);
+        $this->assertStringContainsString("['新建文件夹', 'fa-folder-o', 'new-folder']", $script);
+        $this->assertStringContainsString("['管理文件夹内容', 'fa-folder-open-o', 'preset-folder-manage']", $script);
+
+        // Blade：预设接口地址仅后台端注入
+        $view = file_get_contents(dirname(__DIR__, 2) . '/Views/Admin/desktop/index.blade.php');
+        $this->assertIsString($view);
+        $this->assertStringContainsString('data-preset-url="{{ $webosApiBase }}/user-desktop-preset"', $view);
+        $this->assertStringContainsString("@if (\$webosTerminal === 'admin')", $view);
+
+        // CSS：预设网格覆盖桌面图标的绝对定位与壁纸用浅色文字（设置卡片白底）
+        $css = file_get_contents(dirname(__DIR__, 2) . '/Assets/css/webos.css');
+        $this->assertIsString($css);
+        $this->assertStringContainsString('.preset-desktop {', $css);
+        $this->assertStringContainsString('.preset-desktop .desktop-icon {', $css);
+        $this->assertStringContainsString('.preset-desktop-hint {', $css);
+    }
 }
