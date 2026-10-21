@@ -8588,7 +8588,7 @@
         pushBackupLayer(layer.open({
             type: 1,
             title: '「' + appDisplayName(app) + '」备份管理',
-            area: ['90%', '90%'],
+            area: ['660px', '520px'],
             content: '<div style="padding:15px;">' + backupToolbarMarkup(backups.length, app.app_id, appDisplayName(app))
                 + '<div style="overflow-y:auto;max-height:390px;">' + renderBackupList(backups) + '</div></div>',
             success: function (layero) {
@@ -8605,7 +8605,7 @@
         }
 
         return '<table class="layui-table" style="margin:0;"><colgroup>'
-            + '<col width="168"><col width="120"><col width="140"><col></colgroup>'
+            + '<col width="200"><col width="110"><col width="100"><col></colgroup>'
             + '<thead><tr><th>备份时间</th><th>版本</th><th>大小</th>'
             + '<th style="text-align:right;">操作</th></tr></thead><tbody>'
             + backups.map(function (backup) {
@@ -8613,20 +8613,20 @@
             }).join('') + '</tbody></table>';
     }
 
-    /** 备份失败的记录不提供「导出」「恢复」，只能删除 */
+    /** 备份失败的记录不提供「导出」「恢复」，只能删除；操作列按钮仅保留文字，不显示图标 */
     function backupRowMarkup(backup) {
         var id = escapeHtml(String(backup.id));
         var buttons = '';
         if (Number(backup.status) === 1) {
             buttons += '<button type="button" class="layui-btn layui-btn-xs layui-btn-warm" data-backup-download="'
-                + id + '"><i class="fa fa-download"></i> 导出</button>';
+                + id + '">导出</button>';
             buttons += '<button type="button" class="layui-btn layui-btn-xs" data-backup-restore="' + id
-                + '"><i class="fa fa-undo"></i> 恢复</button>';
+                + '">恢复</button>';
         }
         buttons += '<button type="button" class="layui-btn layui-btn-xs layui-btn-danger" data-backup-delete="'
-            + id + '"><i class="fa fa-trash"></i> 删除</button>';
+            + id + '">删除</button>';
 
-        return '<tr><td>' + escapeHtml(backup.create_time || '-') + '</td>'
+        return '<tr><td style="white-space:nowrap;">' + escapeHtml(backup.create_time || '-') + '</td>'
             + '<td>v' + escapeHtml(backup.app_version || '-') + '</td>'
             + '<td>' + formatSize(backup.file_size || 0) + '</td>'
             + '<td style="text-align:right;white-space:nowrap;">' + buttons + '</td></tr>';

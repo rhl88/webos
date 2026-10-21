@@ -2340,8 +2340,17 @@ class WebosWorkspaceApiTest extends WebosTestCase
         $this->assertStringContainsString('local_file_name: res.data.file_name', $script);
         // 从服务器本地文件恢复入口
         $this->assertStringContainsString('function doLocalRestore(', $script);
-        // 备份管理弹层宽高 90%
-        $this->assertStringContainsString("title: '「' + appDisplayName(app) + '」备份管理',\n            area: ['90%', '90%']", $script);
+        // 备份管理弹层宽高 660 × 520
+        $this->assertStringContainsString("title: '「' + appDisplayName(app) + '」备份管理',\n            area: ['660px', '520px']", $script);
+        // 备份时间列加宽且不换行（列宽 200，单元格 nowrap）
+        $this->assertStringContainsString('<col width="200"><col width="110"><col width="100"><col></colgroup>', $script);
+        $this->assertStringContainsString('\'<tr><td style="white-space:nowrap;">\' + escapeHtml(backup.create_time', $script);
+        // 操作列按钮去掉图标，只保留文字
+        $this->assertStringContainsString('\'">导出</button>\'', $script);
+        $this->assertStringContainsString('\'">恢复</button>\'', $script);
+        $this->assertStringContainsString('\'">删除</button>\'', $script);
+        $this->assertStringNotContainsString('fa fa-download"></i> 导出</button>', $script);
+        $this->assertStringNotContainsString('fa fa-trash"></i> 删除</button>', $script);
     }
 
     /** 文档：照抄后台三栏预览（文件树 + 正文 + TOC），含 hljs 高亮与滚动联动 */

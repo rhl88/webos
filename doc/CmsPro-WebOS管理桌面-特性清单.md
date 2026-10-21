@@ -1,7 +1,7 @@
 # CmsPro WebOS 管理桌面 · 特性清单
 
-> 文档版本：2.1.91 | 更新日期：2026-10-21
-> 应用版本：2.1.91 | 应用 ID：`cmspro.webos`
+> 文档版本：2.1.92 | 更新日期：2026-10-21
+> 应用版本：2.1.92 | 应用 ID：`cmspro.webos`
 
 ## 一、应用定位
 
@@ -23,7 +23,7 @@ WebOS 管理桌面是 CmsPro 后台的可选交互层，不替换系统后台框
 | 应用详情 | 覆盖在应用中心面板上展示市场应用详情：头部（图标、名称、推荐标记、应用文档与作者链接、安装/更新/购买按钮，付费且未购买时头部操作显示「购买」）、基本信息、应用介绍、应用截图与版本记录 | 系统应用市场详情 API `/api/admin/market/apps/{appId}` |
 | 安装应用 | 自动识别 `admin`、`user`、`home` 菜单声明，按实际终端分别选择顶级菜单挂载位置，安装后可创建后台桌面入口；各终端挂载位置下拉隐藏 WebOS 自身菜单（`app_id=cmspro.webos` 或内置路径），避免把应用挂到管理桌面入口下（常规安装与上传安装共用同一渲染函数，行为一致） | 系统安装 API |
 | 已安装应用 | 以列表展示应用信息、状态开关与操作；支持状态筛选、搜索和上传安装；图标按 icon_url（服务端 SVG/PNG）→ 应用 icon 字段 → 通用占位回退，SVG/PNG 图片图标以白色为底、字体图标保持彩色底；数据直接来自系统应用管理接口 `GET /api/admin/apps`，与传统后台“应用管理”同一数据源与排序 | 系统应用管理 API + 应用根目录 |
-| 应用操作 | 操作列直接提供打开、手动升级和导出；更多菜单复用系统应用管理接口提供管理入口、备份、文档、设置和卸载。四项操作的交互与传统后台“应用管理”页面一致：导出走 XHR blob 下载、手动升级与上传安装共用拖拽/点选弹层、备份为三步分卷并支持三步恢复、删除与导入恢复（弹窗顶部工具栏照抄后台：左「共 N 条备份记录 + 导入恢复」/ 右「立即备份」）、文档为文件树 + 正文 + 目录三栏预览 | 系统应用管理 API |
+| 应用操作 | 操作列直接提供打开、手动升级和导出；更多菜单复用系统应用管理接口提供管理入口、备份、文档、设置和卸载。四项操作的交互与传统后台“应用管理”页面一致：导出走 XHR blob 下载、手动升级与上传安装共用拖拽/点选弹层、备份为三步分卷并支持三步恢复、删除与导入恢复（弹窗顶部工具栏照抄后台：左「共 N 条备份记录 + 导入恢复」/ 右「立即备份」）、文档为文件树 + 正文 + 目录三栏预览；备份管理弹层固定 660 × 520px（备份时间列完整显示不换行，操作列按钮仅保留文字） | 系统应用管理 API |
 | 未安装应用 | 重新列出本地未安装应用并提供安装入口；图标回退规则与已安装列表一致 | 系统本地应用 API + 应用根目录 |
 | 应用更新 | 检查并执行应用更新；打开应用中心窗口时静默检查一次，左侧菜单「应用更新」右上角按可用更新数量显示红色角标（超过 99 折叠为 `99+`，无更新或检查失败不显示）；更新卡片「更新」按钮下方提供「忽略」按钮——忽略该应用本次版本更新（偏好 `ignored_updates` 以 `app_id@版本号` 记录并随工作区持久化），被忽略项不计入角标与状态栏数量、不再出现在更新列表与 WebOS 自身升级提醒，应用发布更新版本后重新提示 | 系统更新 API + 工作区偏好 |
 | 安装记录 | 展示最近 30 条应用操作记录，切换到该界面时按需读取系统操作日志接口 | 系统操作日志 API `/api/admin/app-logs` |
@@ -183,6 +183,7 @@ CmsproWebos/
 
 | 版本 | 日期 | 说明 |
 |---|---|---|
+| 2.1.92 | 2026-10-21 | 应用中心 → 已安装 → 备份管理弹层界面微调（用户需求）：`webos.js` 的 `renderBackupDialog()` 弹层 `area` 由 `['90%', '90%']` 改为固定 `['660px', '520px']`；`renderBackupList()` 列宽由 `<col width="168"><col width="120"><col width="140">` 改为 `<col width="200"><col width="110"><col width="100">`，「备份时间」列加宽；`backupRowMarkup()` 时间单元格加 `white-space:nowrap`（完整日期时间不再换行），操作列「导出 / 恢复 / 删除」三个按钮移除 `fa-download` / `fa-undo` / `fa-trash` 图标、仅保留文字。纯前端调整，无接口与数据结构变更。 |
 | 2.1.91 | 2026-10-21 | 应用中心侧栏在「安装记录」与「入口管理」之间新增**已购应用**界面（用户需求：与传统后台 `resources/views/admin/app/market.blade.php` 的已购应用页使用相同接口）：`webos.js` 侧栏 Tab 列表（`APP_CENTER_SIDEBAR_TABS`）新增 `{ id: 'purchased', title: '已购应用', icon: 'fa fa-shopping-cart' }`，`APP_CENTER_TABS` 补标题映射，`appCenterSearchMarkup` 补搜索占位文案 `purchased: '搜索已购应用'`，`loadAppCenterTab` 增加 `purchased` 分支，新增 `loadPurchasedTab(content, status)`：并行请求 `GET /api/admin/market/purchase/list`（`applyMarketPurchased` 写 state）与 `GET /api/admin/market/apps?page=1&per_page=200`（`extractCollection` 提取集合），按 `marketPurchased(app.app_id)` 过滤出已购应用，`setMarketApps(apps, 'market')` 写入市场缓存后以 `appCardsMarkup(apps, 'market')` 渲染（复用市场卡片链路，卡片可进详情、可直接安装），无已购应用时 `emptyState('fa-shopping-cart', '暂无已购应用')`、接口失败时显示「暂时无法读取已购应用」。不新增任何接口、不新增事件委托、不新增 CSS。新增契约用例 `test_app_center_purchased_tab_reuses_admin_market_purchase_flow`。纯功能新增，无数据库结构变更。 |
 | 2.1.90 | 2026-10-21 | 应用中心 → 应用市场支持**付费应用**（用户需求，参考传统后台 `resources/views/admin/app/market.blade.php`）：`webos.js` 新增 `marketPrice()`/`marketPurchased()`/`marketPriceMarkup()`，`marketState()` 补充 `price`/`purchased`/`needs_purchase`（付费且未购）；`marketCardActions()` 与 `marketDetailActionsMarkup()` 增加「购买」分支（`data-purchase-id`/`data-purchase-price`），卡片元信息行与首页推荐卡片/列表项接入价格标签。市场 Tab 改由 `loadMarketContext()` 先并行读取 `site/status` 与 `purchase/list`（`applyMarketSiteStatus()`/`applyMarketPurchased()` 写 state）再渲染主体，避免已购应用闪现「购买」；新增站点提示条 `renderMarketSiteNotice()` 与注册（`registerMarketSite()`，含域名验证失败 `promptMarketSiteForceRegister()` 跳过验证重试、成功后重启刷新）/身份同步（`syncMarketSite()`，原地刷新提示条）。新增购买弹窗 `openMarketPurchaseDialog()`/`doMarketPurchase()`（`purchase/create`）/`renderMarketPurchaseQr()`（`window.QRCode`，库不可用降级明文）/`startMarketPurchaseCountdown()`（300s）/`pollMarketPurchase()`（3s×60，`purchase/status`）/`finishMarketPurchase()` 与定时器清理；点击委托接入 document（`data-purchase-id`/`data-purchase-channel`/`data-market-site-register` 等）。Blade 引入 `CmsProUi/component/qrcodejs/qrcode.min.js`；CSS 新增价格标签、站点提示条与购买弹窗样式。新增契约用例 `test_market_paid_apps_reuse_admin_market_purchase_flow`。纯功能新增，无数据库结构变更。 |
 | 2.1.89 | 2026-10-21 | 用户桌面预设改为**差异化增量同步**（用户需求，取代 2.1.88 的「仅新用户播种」）：新增迁移 `add_preset_sync_ids_to_app_cmspro_webos_workspaces_table` 为工作区表增加 `preset_sync_ids`（JSON，per-user 已推送预设项 ID 台账），模型加 `fillable`/`casts`/`$hidden`（台账不外泄）；`WorkspaceService::getFor('user', …)` 改调 `syncPresetDesktop()`，新增 `presetItemId()`/`presetItemSignature()`：每次加载按「预设项 − 已推送集合」计算增量，逐项补齐到用户桌面（后台新增且用户桌面缺失的项自动补齐、用户桌面已存在等价项按内容指纹不重复添加，两遍遍历让预设文件夹子项挂靠到用户已有等价文件夹），以预设项 `id` 作推送 key 记入 `preset_sync_ids`，已推送项此后用户删除/修改乃至后台改内容均不再下发；admin 端不受影响。新增/改写 5 个单元用例（首次播种、老用户差异化补齐、删除不回推与修改不覆盖、文件夹子项挂靠、admin 端不受影响）。165 测试 1863 断言通过。 |
