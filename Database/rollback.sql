@@ -20,3 +20,12 @@ DROP TABLE IF EXISTS `app_cmspro_webos_workspaces`;
 -- 3) 删除 terminal 字段
 -- ALTER TABLE `app_cmspro_webos_workspaces` DROP COLUMN `terminal`;
 
+-- ============================================================================
+-- 2.1.89 回滚：用户桌面预设差异化同步（preset_sync_ids 字段）
+-- 回滚即放弃差异化同步台账：删列后无法判定「已推送」，
+-- 前台将按预设重新补齐（老用户桌面可能出现重复图标，可人工清理）。
+-- 执行前请备份；确认 preset_sync_ids 字段存在后取消注释执行。
+-- ============================================================================
+
+-- ALTER TABLE `app_cmspro_webos_workspaces` DROP COLUMN `preset_sync_ids`;
+

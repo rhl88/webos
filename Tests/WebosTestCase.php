@@ -34,6 +34,8 @@ abstract class WebosTestCase extends TestCase
             $table->unique(['terminal', 'admin_user_id']);
             $table->text('desktop_items')->nullable();
             $table->text('taskbar_items')->nullable();
+            // 已推送的后台预设桌面项 ID 列表（差异化同步台账，2.1.89，与生产迁移一致）
+            $table->text('preset_sync_ids')->nullable();
             $table->text('preferences')->nullable();
             $table->unsignedTinyInteger('status')->default(1);
             $table->timestamp('create_time')->nullable();

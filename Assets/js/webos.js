@@ -4097,12 +4097,12 @@
     /** 「用户桌面」预设：预览网格宿主（进入 Tab 后由 renderPresetGrid 填充）+ 操作说明 */
     function userDesktopSectionMarkup() {
         return '<section class="settings-card is-wide"><div class="settings-card-title"><i class="fa fa-desktop"></i><div>'
-            + '<strong>用户桌面预设</strong><small>预设仅对首次进入用户端 WebOS 的新用户生效，已有自定义桌面的老用户不受影响</small></div></div>'
+            + '<strong>用户桌面预设</strong><small>预设按差异化增量同步到用户端桌面：后台新增且用户桌面缺失的项会自动补齐，已存在等价项不重复添加；已推送过的项（用户删除或修改后）不再重复下发</small></div></div>'
             + '<div class="preset-desktop" data-preset-grid>'
             + '<div class="preset-desktop-hint"><i class="fa fa-spinner fa-spin"></i>正在载入预设…</div></div>'
             + '<div class="preset-desktop-tips"><i class="fa fa-info-circle"></i>'
             + '在网格空白处右键可新建「文件夹 / 桌面入口 / URL 链接」；在图标上右键可重命名、设置图标、删除或管理文件夹内容。'
-            + '预设仅包含桌面图标，不含任务栏固定图标。</div></section>';
+            + '预设仅包含桌面图标，不含任务栏固定图标。新老用户进入用户端时均按差异化增量补齐，推送过的项不再重复下发。</div></section>';
     }
 
     /** 重置工作区：恢复默认布局后同步本地状态并重渲染桌面/任务栏 */

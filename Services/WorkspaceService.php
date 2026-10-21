@@ -70,14 +70,10 @@ class WorkspaceService
             $workspace->taskbar_items = array_slice($workspace->desktop_items ?? [], 0, 4);
         }
 
-        // 新用户首次进入用户端 WebOS：按后台预设播种桌面图标（「仅新用户首次生效」，
-        // 已有自定义桌面的老用户工作区早已创建，wasRecentlyCreated 为假，不受影响）
-        if ($terminal === 'user' && $workspace->wasRecentlyCreated) {
-            $presetItems = $this->getPreset()->desktop_items ?? [];
-            if ($presetItems !== []) {
-                $workspace->desktop_items = $presetItems;
-                $workspace->save();
-            }
+        // 前台用户端：按后台预设差异化补齐桌面图标（2.1.89）。
+        // 已推送过的预设项不再下发（用户删除/修改后也不回推）；后台管理员端不受影响。
+        if ($terminal === 'user') {
+            $this->syncPresetDesktop($workspace);
         }
 
         return $workspace;
@@ -119,6 +115,117 @@ class WorkspaceService
         $workspace->save();
 
         return $workspace->refresh();
+    }
+
+    /**
+     * 前台用户端桌面与后台预设的差异化增量同步（2.1.89）：
+     * - 以「预设项 id」为推送标识：已推送过（记录在 preset_sync_ids）的预设项不再下发，
+     *   用户此后删除或修改该项也不回推——「已经推送过了，就不需要再推送了」。
+     * - 未推送过的项，若用户桌面已存在内容等价的项（内容指纹一致），仅登记为已推送、不重复添加；
+     *   否则追加到桌面（补齐后台新增且用户桌面缺失的项）。
+     * - 预设文件夹命中用户已有等价文件夹时，其子项挂靠到已有文件夹下（避免产生孤立子项）。
+     */
+    protected function syncPresetDesktop(WebosWorkspace $workspace): void
+    {
+        $presetItems = $this->getPreset()->desktop_items ?? [];
+        if ($presetItems === []) {
+            return;
+        }
+
+        $desktopItems = is_array($workspace->desktop_items) ? $workspace->desktop_items : [];
+
+        $pushedMap = [];
+        foreach (is_array($workspace->preset_sync_ids) ? $workspace->preset_sync_ids : [] as $pushedId) {
+            if (is_string($pushedId)) {
+                $pushedMap[$pushedId] = true;
+            }
+        }
+
+        // 用户桌面内容指纹 → 项 id：预设项内容与已有项一致时视为「已存在」，不重复添加
+        $signatures = [];
+        foreach ($desktopItems as $item) {
+            if (is_array($item)) {
+                $signatures[$this->presetItemSignature($item)] = (string) ($item['id'] ?? '');
+            }
+        }
+
+        // 第一遍：预设文件夹命中用户已有等价文件夹时记录 id 映射，供其子项挂靠
+        // （先建映射再逐项处理，消除预设项数组顺序对挂靠结果的影响）
+        $folderMap = [];
+        foreach ($presetItems as $presetItem) {
+            if (! is_array($presetItem) || ($presetItem['kind'] ?? '') !== 'folder') {
+                continue;
+            }
+            $presetId = $this->presetItemId($presetItem);
+            $existingId = $signatures[$this->presetItemSignature($presetItem)] ?? '';
+            if (! isset($pushedMap[$presetId]) && $existingId !== '') {
+                $folderMap[$presetId] = $existingId;
+            }
+        }
+
+        $changed = false;
+        foreach ($presetItems as $presetItem) {
+            if (! is_array($presetItem)) {
+                continue;
+            }
+            $presetId = $this->presetItemId($presetItem);
+            if (isset($pushedMap[$presetId])) {
+                continue;
+            }
+
+            $signature = $this->presetItemSignature($presetItem);
+            if (isset($signatures[$signature])) {
+                // 桌面已存在等价项：仅登记为已推送，不重复添加（此后该项的新增/删除/修改都不再下发）
+                $pushedMap[$presetId] = true;
+                $changed = true;
+                continue;
+            }
+            if (count($desktopItems) >= self::DESKTOP_ITEM_LIMIT) {
+                // 桌面已满：本项留待下次补齐（不登记已推送）
+                break;
+            }
+
+            $item = $this->sanitizeDesktopItem($presetItem);
+            if (isset($folderMap[$item['parent_folder']])) {
+                $item['parent_folder'] = $folderMap[$item['parent_folder']];
+            }
+            $desktopItems[] = $item;
+            $signatures[$signature] = $item['id'];
+            $pushedMap[$presetId] = true;
+            $changed = true;
+        }
+
+        if (! $changed) {
+            return;
+        }
+
+        $workspace->desktop_items = $desktopItems;
+        $workspace->preset_sync_ids = array_keys($pushedMap);
+        $workspace->save();
+    }
+
+    /**
+     * 预设项推送标识：优先用项自身 id（管理员改内容不改 id → 不重复下发；删后重建新 id → 视为新项）。
+     * 预设项均经 sanitizeDesktopItem 落库，id 恒为非空 [A-Za-z0-9_-] 字符串。
+     */
+    protected function presetItemId(array $item): string
+    {
+        $id = preg_replace('/[^A-Za-z0-9_-]/', '', (string) ($item['id'] ?? ''));
+
+        return Str::limit($id, 80, '');
+    }
+
+    /** 预设项内容指纹：判定用户桌面是否已存在等价项（文件夹子项按所属文件夹归属） */
+    protected function presetItemSignature(array $item): string
+    {
+        return implode('|', [
+            (string) ($item['kind'] ?? ''),
+            (string) ($item['app_id'] ?? ''),
+            (string) ($item['menu_id'] ?? ''),
+            (string) ($item['path'] ?? ''),
+            (string) ($item['title'] ?? ''),
+            (string) ($item['parent_folder'] ?? ''),
+        ]);
     }
 
     /**

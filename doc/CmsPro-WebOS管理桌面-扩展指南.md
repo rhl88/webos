@@ -1,7 +1,7 @@
 # CmsPro WebOS 管理桌面 · 扩展指南
 
-> 文档版本：2.1.88 | 更新日期：2026-10-21
-> 应用版本：2.1.88 | 应用 ID：`cmspro.webos`
+> 文档版本：2.1.89 | 更新日期：2026-10-21
+> 应用版本：2.1.89 | 应用 ID：`cmspro.webos`
 
 ## 一、概述
 
@@ -152,13 +152,16 @@ $workspace = app(WorkspaceService::class)->getForAdmin($adminUserId);
 
 扩展应用不应直接修改其他管理员的工作区。需要固定入口时，先确认管理员授权和菜单存在，再调用服务保存完整的 `desktop_items` 数组。
 
-2.1.88 起新增**用户桌面预设**相关方法（全局单份，与个人工作区隔离）：
+2.1.88 起新增**用户桌面预设**相关方法（全局单份，与个人工作区隔离）；2.1.89 起预设按差异化增量同步下发：
 
 | 方法 | 说明 |
 |---|---|
 | `getPreset(): array` | 读取全局用户桌面预设的 `desktop_items`（空时返回 `[]`），记录行为 `terminal='preset'`、`admin_user_id=0` |
 | `savePresetItems(array $items): array` | 保存全局用户桌面预设 `desktop_items` |
-| `getFor(string $terminal, int $userId): WebosWorkspace` | 按终端读取或创建工作区；`terminal='user'` 且工作区为新建（`wasRecentlyCreated`）且预设非空时，自动把预设播种为该用户初始桌面 |
+| `getFor(string $terminal, int $userId): WebosWorkspace` | 按终端读取或创建工作区；`terminal='user'` 时调用 `syncPresetDesktop()` 做差异化增量同步（后台管理员端不参与） |
+| `syncPresetDesktop(WebosWorkspace $workspace): void`（protected，2.1.89） | 差异化增量同步核心：以预设项 `id` 为推送标识、以记录在 `preset_sync_ids` 的已推送台账判定「是否推送过」（推送过则不再下发）；以内容指纹（`kind|app_id|menu_id|path|title|parent_folder`）判定用户桌面是否已存在等价项（存在则仅登记、不重复添加）；预设文件夹命中用户已有等价文件夹时，其子项 `parent_folder` 重写为已有文件夹 id |
+| `presetItemId(array $item): string`（protected，2.1.89） | 预设项推送标识：取项自身 `id`（管理员改内容 id 不变 → 不重复下发；删后重建新 id → 视为新项） |
+| `presetItemSignature(array $item): string`（protected，2.1.89） | 预设项内容指纹，用于判定用户桌面是否已存在等价项 |
 
 ### `WallpaperService`
 
@@ -196,7 +199,7 @@ $wallpapers = app(WallpaperService::class)->listFor($adminUserId);
 | DELETE | `/admin/cmspro/webos/api/wallpaper` | JSON 字段 `url`（≤200） | 删除自定义壁纸；非本人或非法路径返回业务码 `40302` |
 | GET | `/admin/cmspro/webos/api/calendar` | 查询参数 `month`（`YYYY-MM` 格式，正则 `^\d{4}-(0[1-9]|1[0-2])$`） | 返回当月日历数据（含农历与二十四节气换算） |
 | GET | `/admin/cmspro/webos/api/all-todos` | — | 全量待办（含已读）：聚合系统待办 hook（含权限过滤/去重/归零过滤），附加 `seen` 与 `is_read`（`seen_count ≥ count` 视为已读）；数据源见第七章 |
-| GET | `/admin/cmspro/webos/api/user-desktop-preset` | — | 读取全局用户桌面预设（`data.desktop_items`）及用户端可选菜单/应用目录（`data.catalog.menus`、`data.catalog.applications`）；仅后台端可用（用户端路由不存在）。2.1.88 新增 |
+| GET | `/admin/cmspro/webos/api/user-desktop-preset` | — | 读取全局用户桌面预设（`data.desktop_items`）及用户端可选菜单/应用目录（`data.catalog.menus`、`data.catalog.applications`）；仅后台端可用（用户端路由不存在）。2.1.88 新增；2.1.89 起该预设按差异化增量同步下发到前台用户桌面 |
 | PUT | `/admin/cmspro/webos/api/user-desktop-preset` | JSON：`desktop_items`（≤48，校验同工作区 `desktopItemsRules()`） | 保存全局用户桌面预设，成功返回 `message='用户桌面预设已保存'`；仅后台端可用。2.1.88 新增 |
 
 工作区数据是**当前管理员的个人数据**，接口强制绑定当前管理员 ID；其它应用没有跨管理员读写他人工作区的合法途径，也不应依赖工作区接口传递业务数据。
@@ -413,6 +416,7 @@ app(HookManager::class)->registerFilter(
 
 | 版本 | 日期 | 更新人 | 说明 |
 |---|---|---|---|
+| 2.1.89 | 2026-10-21 | CmsPro | **用户桌面预设改为差异化增量同步（用户需求）**：① 数据库——`app_cmspro_webos_workspaces` 新增 `preset_sync_ids` JSON 列（per 用户记录已推送的预设项 ID）；新增迁移 `2026_10_21_000001_add_preset_sync_ids_to_app_cmspro_webos_workspaces_table.php`（`hasTable`/`hasColumn` 守卫），`Database/upgrade.sql`/`rollback.sql` 追加 2.1.89 幂等段；`WebosWorkspace` 模型 fillable/casts 加 `preset_sync_ids`，并加 `$hidden=['preset_sync_ids']`（`workspace()` 接口直接序列化模型，避免同步台账外泄）。② 服务端——`WorkspaceService::getFor` 由「`wasRecentlyCreated` 首次播种」改为 `terminal==='user'` 时调用 `syncPresetDesktop()`；新增 `syncPresetDesktop()`（两遍遍历：先建预设文件夹→用户已有等价文件夹的 id 映射、再逐项补齐；以「预设项 id」为推送 key、以内容指纹判定用户桌面是否已存在等价项，推送过或已存在的仅登记不重复下发；桌面达 `DESKTOP_ITEM_LIMIT` 则留待下次补齐）与 `presetItemId()`/`presetItemSignature()`。③ 前端——`webos.js` 用户桌面预设 Tab 标题与提示文案改为差异化同步语义；`saveUserDesktopPreset()` docblock 同步更新。④ 测试——`WorkspaceServiceTest` 改写 2 条旧播种用例（新用户补齐、老用户差异化增量）并新增 3 条（删除/修改后不回推、预设文件夹子项挂靠已有文件夹、admin 终端不参与同步），`WebosTestCase` 建表补 `preset_sync_ids` 列。测试：165 测试 1863 断言通过。 |
 | 2.1.88 | 2026-10-21 | CmsPro | **后台新增用户桌面预设（用户需求）**：① 服务端 `WorkspaceService` 新增 `getPreset()`/`savePresetItems()`（全局单份，行 `terminal='preset'`、`admin_user_id=0`，复用工作区表零迁移）；`getFor('user',$id)` 内 `firstOrCreate` 命中 `wasRecentlyCreated` 且预设非空时把预设 `desktop_items` 播种为新用户初始桌面（老用户已存在工作区不播种）。② Admin 控制器新增 `userTerminalMenus()/userTerminalMenuTree()/userTerminalApplications()`（复用系统 `GET /api/admin/menus/tree?terminal_type=user` 与 apps 表，仅返回 user 终端涉及的 app_id）与 `userDesktopPreset()`/`saveUserDesktopPreset()`；路由新增 `GET/PUT /admin/cmspro/webos/api/user-desktop-preset`（校验沿用 `desktopItemsRules()`）。③ 后台端 OS 设置 → 系统设置右侧按 `!isUserTerminal && preferences.override_user_home` 追加「用户桌面」Tab，预览网格 + 右键新建（文件夹/桌面入口/URL 链接）、单项右键（重命名/图标设置/删除/管理文件夹内容），编辑期临时接管前端 state 并在退出时恢复，不做拖拽。测试：新增 6 条（Unit 4 + Feature 2）；162 测试 1839 断言通过。 |
 | 2.0.1 | 2026-10-05 | CmsPro | **账号菜单新增「清除缓存」（用户需求：修改密码下面增加清除缓存，点击后触发 /api/admin/cache/clear）**：① index.blade.php 账号菜单「修改密码」（L129）下新增 `<button data-action="clear-cache"><i class="fa fa-eraser"></i>清除缓存</button>`（锁定桌面之前）；② webos.js 面板点击分发（L7982-7988）新增 clear-cache 分支——`closePanels()` 后 `api('/api/admin/cache/clear')`（GET，路由取证：routes/web.php L226 `Route::get('cache/clear', [ConfigController::class, 'clearCache'])`，位于 api/admin 认证组），成功 `toast('缓存已清除', 'success')`，失败 toast 错误信息。**复用优先：未新建任何接口，直接复用系统后台既有缓存清理端点（与 webos 一贯原则一致）**。测试：账号菜单测试补 3 条断言（菜单项 + 分发分支 + 接口调用）；115 测试 1118 断言通过。文档同步：版本记录更新 |
 | 2.0.0 | 2026-10-05 | CmsPro | **① 账号菜单新增「清除缓存」**：见前述记录（复用 GET /api/admin/cache/clear）。**② 系统菜单拖拽应用换顶级分类（用户需求：拖拽应用到顶级分类更新分类；超管专属；用户二次纠正：移动的是整个应用含应用文件夹，而非只移应用菜单）**：数据基础——flattenMenus 为叶子输出所属**应用文件夹节点 id**（`app_node_id`：walk 传递 `inheritedAppNodeId`，自带 app_id 的节点即应用文件夹节点、其 id 由后代叶子继承）；startItemsForGroup 卡片收集 `move_ids`——优先收应用文件夹节点 id（`moveIds.indexOf(entry.app_node_id)` 去重后 `push(Number(...))`，服务端只改父节点、子树随行整体移动），无节点的散叶子补自身 menu_id，目录卡片收 `moveIds.push(Number(representative.folder_id))`；渲染——renderStartMenu 按条件输出 `draggable="true" data-move-ids`（`isSuperAdmin && !item.special && move_ids.length`，搜索结果不启用）；交互——bindEvents 新增 document 级 dragstart/dragover/drop/dragend 委托（闭包变量 draggingMoveIds/dragOverCategory，dragover 高亮 `.is-drop-target`，「常用」groupId==='common' 排除）；提交——drop 后 `api('/api/admin/menus/move', { method:'PUT', body:{ ids, parent_id } })`，成功 toast + `refreshCatalog()`。**复用优先：移动接口直接复用系统 MenuController::batchMove（routes/web.php L276 `Route::put('move','batchMove')`），服务端已防环形引用（isDescendantOf）并按顶层节点移动防子树拍平，未新建任何接口**。**教训：① 编辑 bindEvents 大段代码时 old_string/new_string 截断过宽导致误删 action 处理块头部，node --check 通过但逻辑缺失——大块编辑必须逐段小编辑；② walk 签名加参时 old_string 末行参数数与实际不符导致编辑失败——多参数函数修改前后必须核对调用点参数个数；③ 断言字符串随实现细节联动（数组字面量改 push 调用后旧断言 MISS）——改实现后用临时 php -r/脚本批量 strpos 校验所有新断言再跑测试**。测试：11 条断言（app_node_id 输出/传递 + 节点优先收集 + draggable 条件 + move 接口 + refreshCatalog + CSS 高亮）；115 测试 1129 断言通过。**③ 修复线上 all-todos 接口 500**：见前述记录（子类 + method_exists 降级兜底）。**④ 移动后数据实时性（用户反馈：移动完菜单后需要刷新使数据最新）**：前端 refreshCatalog 已重拉 menus/user + apps 并重绘开始菜单/桌面/任务栏，服务端 batchMove 事务直改库无缓存——剩余风险是浏览器对同 URL GET 的 HTTP 缓存复用；loadCatalog 的两个 GET 统一附加 `?_t=Date.now()` 时间戳破坏缓存（顺带覆盖应用安装后的 refreshCatalog）。**教训：断言字符串与实现细节强联动（api('url') 改拼接后 2 条旧断言 MISS）——改实现后先批量 strpos 校验相关断言再跑全量测试**。测试：补 cacheBust 断言、更新 2 条 GET 断言；115 测试 1130 断言通过。**⑤ 标题栏刷新按钮支持特殊窗口（用户反馈：非应用窗口点击刷新无响应）**：根因——refresh 分支只处理有 tabs 的窗口（`refreshTarget.tabs && refreshTarget.tabs.length`），特殊窗口（应用中心/OS 设置/通知中心/官网动态，windowState.tabs = null）不命中任何分支静默返回。修复：补 else-if 分支——清 `host.dataset.pageToken` 后 `renderWindowPage(refreshTarget, refreshTarget.entry)` 强制重建整页（页面令牌相同会被 renderWindowPage 的 token 判定直接 return 跳过，必须先清），并重新触发各 special 窗口的数据渲染（renderAppCenter+loadUpdateCount / renderWebosSettings / renderNotificationCenter+loadNotifications / renderOfficialNews，保留当前 tab 状态）。**教训：新增「窗口级动作」时要枚举窗口形态（多选项卡/单页/无页面 special）逐一覆盖，条件分支的 else 路径不能静默——静默 return 是「按钮无响应」类反馈的最常见根因**。测试：补 3 条断言（else-if 分支 + pageToken 清空 + settings 重渲染）；115 测试 1133 断言通过。文档同步：版本记录更新 |

@@ -322,7 +322,7 @@ class WorkspaceServiceTest extends WebosTestCase
         ]]);
     }
 
-    /** 播种（2.1.88）：新用户首次进入用户端 WebOS 时按后台预设初始化桌面图标 */
+    /** 差异化同步（2.1.89）：新用户首次进入用户端 WebOS 时按后台预设补齐桌面图标并登记已推送 */
     public function test_it_seeds_the_preset_into_a_new_user_workspace(): void
     {
         app(WorkspaceService::class)->savePresetItems([[
@@ -340,19 +340,105 @@ class WorkspaceServiceTest extends WebosTestCase
         $this->assertSame('user', $workspace->terminal);
         $this->assertCount(1, $workspace->desktop_items);
         $this->assertSame('/user/order', $workspace->desktop_items[0]['path']);
-        // 播种结果已落库（重新查库仍是预设内容，而非仅内存态）
+        $this->assertSame(['preset-menu'], $workspace->preset_sync_ids);
+        // 同步结果已落库（重新查库仍是预设内容与推送台账，而非仅内存态）
         $stored = WebosWorkspace::query()->where('terminal', 'user')->where('admin_user_id', 1001)->first();
         $this->assertSame('/user/order', $stored->desktop_items[0]['path']);
+        $this->assertSame(['preset-menu'], $stored->preset_sync_ids);
     }
 
-    /** 仅新用户首次生效：工作区已存在的老用户与后台管理员终端都不被预设播种覆盖 */
-    public function test_it_does_not_seed_the_preset_into_an_existing_workspace(): void
+    /** 差异化同步（2.1.89）：老用户桌面缺失的预设项补齐、已存在等价项不重复添加 */
+    public function test_it_differential_syncs_the_preset_into_an_existing_workspace(): void
     {
-        // 老用户先进入过用户端（工作区已创建、桌面为空）
-        app(WorkspaceService::class)->getFor('user', 1002);
+        // 老用户先进入过用户端：桌面已有「我的订单」（与后台预设 A 等价）
+        app(WorkspaceService::class)->saveFor('user', 1002, [
+            'desktop_items' => [[
+                'id' => 'user-order-1',
+                'menu_id' => 12,
+                'title' => '我的订单',
+                'path' => '/user/order',
+                'icon' => 'fa fa-list',
+                'x' => 3,
+                'y' => 4,
+            ]],
+        ]);
 
+        // 后台预设新增 A（我的订单，用户已有）与 B（我的钱包，用户缺失）
+        app(WorkspaceService::class)->savePresetItems([
+            [
+                'id' => 'preset-order',
+                'menu_id' => 12,
+                'title' => '我的订单',
+                'path' => '/user/order',
+                'icon' => 'fa fa-list',
+                'x' => 0,
+                'y' => 0,
+            ],
+            [
+                'id' => 'preset-wallet',
+                'menu_id' => 13,
+                'title' => '我的钱包',
+                'path' => '/user/wallet',
+                'icon' => 'fa fa-credit-card',
+                'x' => 0,
+                'y' => 1,
+            ],
+        ]);
+
+        $workspace = app(WorkspaceService::class)->getFor('user', 1002);
+
+        // 仅补齐缺失的 B；A 与用户已有项等价，不重复添加
+        $this->assertCount(2, $workspace->desktop_items);
+        $this->assertSame('/user/order', $workspace->desktop_items[0]['path']);
+        $this->assertSame('user-order-1', $workspace->desktop_items[0]['id']);
+        $this->assertSame('/user/wallet', $workspace->desktop_items[1]['path']);
+        $this->assertSame('preset-wallet', $workspace->desktop_items[1]['id']);
+        // 两项均登记为已推送（A 因已存在仅登记，B 因补齐而登记）
+        $this->assertSame(['preset-order', 'preset-wallet'], $workspace->preset_sync_ids);
+
+        // 后台再追加 C（发票管理）→ 下次进入继续补齐 C，已有项不受影响
+        app(WorkspaceService::class)->savePresetItems([
+            [
+                'id' => 'preset-order',
+                'menu_id' => 12,
+                'title' => '我的订单',
+                'path' => '/user/order',
+                'icon' => 'fa fa-list',
+                'x' => 0,
+                'y' => 0,
+            ],
+            [
+                'id' => 'preset-wallet',
+                'menu_id' => 13,
+                'title' => '我的钱包',
+                'path' => '/user/wallet',
+                'icon' => 'fa fa-credit-card',
+                'x' => 0,
+                'y' => 1,
+            ],
+            [
+                'id' => 'preset-invoice',
+                'menu_id' => 14,
+                'title' => '发票管理',
+                'path' => '/user/invoice',
+                'icon' => 'fa fa-file-text',
+                'x' => 0,
+                'y' => 2,
+            ],
+        ]);
+
+        $workspace = app(WorkspaceService::class)->getFor('user', 1002);
+        $this->assertCount(3, $workspace->desktop_items);
+        $this->assertSame('preset-invoice', $workspace->desktop_items[2]['id']);
+        $this->assertSame(['preset-order', 'preset-wallet', 'preset-invoice'], $workspace->preset_sync_ids);
+    }
+
+    /** 已推送语义（2.1.89）：预设项推送过之后，用户删除或修改它都不再回推，后台改预设内容也不覆盖 */
+    public function test_it_does_not_re_push_a_preset_item_after_the_user_removes_or_changes_it(): void
+    {
         app(WorkspaceService::class)->savePresetItems([[
-            'id' => 'preset-menu',
+            'id' => 'preset-a',
+            'menu_id' => 21,
             'title' => '我的订单',
             'path' => '/user/order',
             'icon' => 'fa fa-list',
@@ -360,10 +446,112 @@ class WorkspaceServiceTest extends WebosTestCase
             'y' => 0,
         ]]);
 
-        $this->assertSame([], app(WorkspaceService::class)->getFor('user', 1002)->desktop_items);
+        // 首次进入：推送 preset-a
+        $workspace = app(WorkspaceService::class)->getFor('user', 1003);
+        $this->assertSame(['preset-a'], $workspace->preset_sync_ids);
 
-        // 预设不作用于后台管理员终端
+        // 用户删除该项：已推送过 → 不回推
+        app(WorkspaceService::class)->saveFor('user', 1003, ['desktop_items' => []]);
+        $this->assertSame([], app(WorkspaceService::class)->getFor('user', 1003)->desktop_items);
+
+        // 用户改为自定义项（内容与预设不同）：已推送过 → 不回推、不覆盖用户修改
+        app(WorkspaceService::class)->saveFor('user', 1003, [
+            'desktop_items' => [[
+                'id' => 'preset-a',
+                'menu_id' => 21,
+                'title' => '我的订单（自定义）',
+                'path' => '/user/order',
+                'icon' => 'fa fa-star',
+                'x' => 5,
+                'y' => 5,
+            ]],
+        ]);
+        $workspace = app(WorkspaceService::class)->getFor('user', 1003);
+        $this->assertCount(1, $workspace->desktop_items);
+        $this->assertSame('我的订单（自定义）', $workspace->desktop_items[0]['title']);
+
+        // 后台修改同一预设项（id 不变、内容变了）：已推送过 → 不覆盖用户桌面
+        app(WorkspaceService::class)->savePresetItems([[
+            'id' => 'preset-a',
+            'menu_id' => 21,
+            'title' => '我的订单（新版）',
+            'path' => '/user/orders',
+            'icon' => 'fa fa-list',
+            'x' => 0,
+            'y' => 0,
+        ]]);
+        $workspace = app(WorkspaceService::class)->getFor('user', 1003);
+        $this->assertCount(1, $workspace->desktop_items);
+        $this->assertSame('我的订单（自定义）', $workspace->desktop_items[0]['title']);
+        $this->assertSame('/user/order', $workspace->desktop_items[0]['path']);
+        $this->assertSame(['preset-a'], $workspace->preset_sync_ids);
+    }
+
+    /** 文件夹挂靠（2.1.89）：预设文件夹命中用户已有等价文件夹时，其子项挂靠到已有文件夹下，避免孤立子项 */
+    public function test_it_attaches_preset_folder_children_to_the_existing_equivalent_folder(): void
+    {
+        // 用户桌面已有同名文件夹
+        app(WorkspaceService::class)->saveFor('user', 1004, [
+            'desktop_items' => [[
+                'id' => 'user-folder-1',
+                'title' => '常用工具',
+                'path' => '',
+                'icon' => 'fa fa-folder',
+                'kind' => 'folder',
+                'x' => 0,
+                'y' => 0,
+            ]],
+        ]);
+
+        app(WorkspaceService::class)->savePresetItems([
+            [
+                'id' => 'preset-folder',
+                'title' => '常用工具',
+                'path' => '',
+                'icon' => 'fa fa-folder',
+                'kind' => 'folder',
+                'x' => 0,
+                'y' => 0,
+            ],
+            [
+                'id' => 'preset-sub',
+                'menu_id' => 31,
+                'title' => '账号设置',
+                'path' => '/user/setting',
+                'icon' => 'fa fa-cog',
+                'parent_folder' => 'preset-folder',
+                'x' => 0,
+                'y' => 0,
+            ],
+        ]);
+
+        $workspace = app(WorkspaceService::class)->getFor('user', 1004);
+
+        // 文件夹命中已有等价项不新增；子项挂靠到用户已有文件夹下
+        $this->assertCount(2, $workspace->desktop_items);
+        $this->assertSame('user-folder-1', $workspace->desktop_items[0]['id']);
+        $this->assertSame('preset-sub', $workspace->desktop_items[1]['id']);
+        $this->assertSame('user-folder-1', $workspace->desktop_items[1]['parent_folder']);
+        $this->assertSame(['preset-folder', 'preset-sub'], $workspace->preset_sync_ids);
+    }
+
+    /** 差异化同步仅作用于前台用户端：后台管理员工作区不参与预设同步 */
+    public function test_it_does_not_sync_the_preset_for_the_admin_terminal(): void
+    {
+        app(WorkspaceService::class)->savePresetItems([[
+            'id' => 'preset-menu',
+            'menu_id' => 12,
+            'title' => '我的订单',
+            'path' => '/user/order',
+            'icon' => 'fa fa-list',
+            'x' => 0,
+            'y' => 0,
+        ]]);
+
         $admin = $this->actingAdmin();
-        $this->assertSame([], app(WorkspaceService::class)->getForAdmin($admin->id)->desktop_items);
+        $workspace = app(WorkspaceService::class)->getForAdmin($admin->id);
+
+        $this->assertSame([], $workspace->desktop_items);
+        $this->assertNull($workspace->preset_sync_ids);
     }
 }

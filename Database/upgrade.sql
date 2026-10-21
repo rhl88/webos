@@ -86,3 +86,39 @@ GROUP BY index_name;
 -- ---------- 回滚方案 ----------
 -- 见同目录 rollback.sql「2.1.80 回滚」段
 
+-- ============================================================================
+-- 2.1.89 用户桌面预设差异化同步：新增 preset_sync_ids 字段
+-- 影响表: app_cmspro_webos_workspaces
+-- 变更类型: DDL (新增字段)
+-- 创建日期: 2026-10-21
+-- 风险等级: 低
+-- 说明: 记录每个用户已推送过的后台预设桌面项 ID（同一行内 per 用户），
+--       用于差异化增量同步——已推送过的预设项不再重复下发（用户删除或修改后也不回推）。
+--       Laravel 应用升级流程会自动执行对应迁移（Install::upgrade），
+--       本段脚本用于人工核验或应急升级，可重复执行（幂等）。
+-- ============================================================================
+
+-- ---------- 前置检查 + 正向变更：新增 preset_sync_ids 字段（已存在则跳过） ----------
+SET @add_preset_sync_ids_sql := (
+    SELECT IF(
+        COUNT(*) = 0,
+        'ALTER TABLE `app_cmspro_webos_workspaces` ADD COLUMN `preset_sync_ids` JSON NULL COMMENT ''已推送的后台预设桌面项ID列表（已推送不再重复下发）''',
+        'SELECT ''preset_sync_ids 字段已存在，跳过'' AS notice'
+    )
+    FROM information_schema.columns
+    WHERE table_schema = DATABASE()
+      AND table_name = 'app_cmspro_webos_workspaces'
+      AND column_name = 'preset_sync_ids'
+);
+PREPARE stmt FROM @add_preset_sync_ids_sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
+
+-- ---------- 数据验证 ----------
+SELECT column_name, column_type, is_nullable, column_default
+FROM information_schema.columns
+WHERE table_schema = DATABASE() AND table_name = 'app_cmspro_webos_workspaces' AND column_name = 'preset_sync_ids';
+
+-- ---------- 回滚方案 ----------
+-- 见同目录 rollback.sql「2.1.89 回滚」段
+

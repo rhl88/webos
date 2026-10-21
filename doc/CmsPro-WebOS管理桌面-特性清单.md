@@ -1,7 +1,7 @@
 # CmsPro WebOS 管理桌面 · 特性清单
 
-> 文档版本：2.1.88 | 更新日期：2026-10-21
-> 应用版本：2.1.88 | 应用 ID：`cmspro.webos`
+> 文档版本：2.1.89 | 更新日期：2026-10-21
+> 应用版本：2.1.89 | 应用 ID：`cmspro.webos`
 
 ## 一、应用定位
 
@@ -34,7 +34,7 @@ WebOS 管理桌面是 CmsPro 后台的可选交互层，不替换系统后台框
 | 通知中心 | 显示系统推送与待办，支持全部已读 | 系统通知 API |
 | 系统操作 | 开始菜单底部提供锁定、退出登录、OS 设置，三者均仅显示图标（悬停 title 提示「锁定桌面/退出登录/OS 设置」，aria-label 无障碍支持）；锁定与退出登录之间显示版权信息条（CMSPRO 链接 + 系统版本号 + © 2015-当年动态年份 + Holley 链接，与框架后台页脚一致）；桌面页面标题动态显示「CMSPRO v{系统版本} · WebOS v{应用版本}」 | 系统认证 API + 工作区 |
 | 账号菜单 | 头像显示当前管理员头像，未上传时显示系统默认头像；个人设置在独立窗口打开后台个人中心页；修改密码通过弹窗修改；提供锁定桌面与退出登录 | 系统后台页面 + 系统认证 API |
-| OS 设置 | 分“基本设置”（任务栏位置、时钟格式、秒数、界面动效、窗口默认宽高比例）、“背景设置”（壁纸风格、自定义壁纸上传/恢复默认、当前壁纸预览 + 右侧自定义壁纸库：缩略图点击切换、内联二次确认删除）与“系统设置”（应用窗口多选项卡开关、覆盖传统后台、重置工作区）三个 Tab；后台端开启「用户首页直达 WebOS」后，系统设置右侧追加**用户桌面** Tab（仅后台端可见），以预览网格 + 右键新建预设前台用户首次进入用户端 WebOS 的默认桌面（新建 文件夹/桌面入口/URL 链接；单项 重命名/图标设置/删除/管理文件夹内容；不做拖拽），仅新用户首次播种、仅桌面图标 | 工作区偏好 + 壁纸目录 + 工作区预设记录行（`terminal='preset'`） |
+| OS 设置 | 分“基本设置”（任务栏位置、时钟格式、秒数、界面动效、窗口默认宽高比例）、“背景设置”（壁纸风格、自定义壁纸上传/恢复默认、当前壁纸预览 + 右侧自定义壁纸库：缩略图点击切换、内联二次确认删除）与“系统设置”（应用窗口多选项卡开关、覆盖传统后台、重置工作区）三个 Tab；后台端开启「用户首页直达 WebOS」后，系统设置右侧追加**用户桌面** Tab（仅后台端可见），以预览网格 + 右键新建预设前台用户桌面的默认图标（新建 文件夹/桌面入口/URL 链接；单项 重命名/图标设置/删除/管理文件夹内容；不做拖拽）；新老用户进入用户端时按差异化增量同步：后台新增且用户桌面缺失的项自动补齐、已存在等价项不重复添加，已推送过的项（用户删除或修改后）不再重复下发，仅桌面图标 | 工作区偏好 + 壁纸目录 + 工作区预设记录行（`terminal='preset'`） |
 
 ## 三、交互规则
 
@@ -141,12 +141,13 @@ WebOS 管理桌面是 CmsPro 后台的可选交互层，不替换系统后台框
 | `admin_user_id` | BIGINT | 管理员 ID，唯一 |
 | `desktop_items` | JSON | 桌面快捷方式、所属应用 `app_id`、路径和网格位置；2.1.28 起含类型 `kind`（空=菜单入口 / `folder`=文件夹 / `url`=URL 链接）与所属文件夹 `parent_folder` |
 | `taskbar_items` | JSON | 任务栏固定项（结构同桌面项但无坐标，最多 12 个），与桌面快捷方式相互独立 |
+| `preset_sync_ids` | JSON | 2.1.89 起新增，已下发的后台预设桌面项 ID 列表（差异化同步台账，仅服务端内部使用，接口不返回） |
 | `preferences` | JSON | 壁纸、图标尺寸、多选项卡、任务栏、时钟、动效、窗口默认宽高、覆盖传统后台、常用入口统计和被忽略的可用更新（`ignored_updates`，`app_id@版本号` 列表） |
 | `status` | TINYINT | 0 禁用，1 启用 |
 | `create_time` | TIMESTAMP | 创建时间 |
 | `update_time` | TIMESTAMP | 更新时间 |
 
-> 2.1.80 起新增 `terminal` 字段（`admin` 后台 / `user` 前台用户），唯一约束升级为 `(terminal, admin_user_id)` 联合唯一，实现双端工作区隔离。2.1.88 起新增**用户桌面预设**复用同表：固定以 `terminal='preset'`、`admin_user_id=0` 存一行全局预设（`desktop_items` 存预设图标），前台用户首次进入用户端 WebOS（`WorkspaceService::getFor('user', …)` 内 `firstOrCreate` 返回 `wasRecentlyCreated`）时把该预设播种到其新建工作区；已有工作区不播种。
+> 2.1.80 起新增 `terminal` 字段（`admin` 后台 / `user` 前台用户），唯一约束升级为 `(terminal, admin_user_id)` 联合唯一，实现双端工作区隔离。2.1.88 起新增**用户桌面预设**复用同表：固定以 `terminal='preset'`、`admin_user_id=0` 存一行全局预设（`desktop_items` 存预设图标）。2.1.89 起该预设改为**差异化增量同步**（用户需求）：前台用户进入用户端 WebOS（`WorkspaceService::getFor('user', …)` 内 `syncPresetDesktop()`）时，将「预设项 − 已推送集合」的增量逐项补齐到其工作区——后台新增且用户桌面缺失的项自动补齐，用户桌面已存在等价项（按内容指纹 `kind|app_id|menu_id|path|title|parent_folder` 判定）不重复添加；每项以预设项 `id` 作为推送 key 记入 `preset_sync_ids`，**已推送过的项此后无论用户删除或修改都不再下发**（后台改预设内容因 id 不变同样不重推，删后重建新 id 视为新项推送）。
 
 ## 五、安全边界
 
@@ -181,7 +182,8 @@ CmsproWebos/
 
 | 版本 | 日期 | 说明 |
 |---|---|---|
-| 2.1.88 | 2026-10-21 | 后台新增**用户桌面预设**（用户需求）：后台端「用户首页直达 WebOS」开启后，OS 设置 → 系统设置右侧追加「用户桌面」Tab（`renderWebosSettings()` 内 `!isUserTerminal && preferences.override_user_home` 判定），以预览网格 + 右键新建预设前台用户首次进入用户端 WebOS 的默认桌面——空白处右键「新建 文件夹 / 桌面入口 / URL 链接」，单个项右键「重命名 / 图标设置 / 删除 / 管理文件夹内容」（不做拖拽），编辑逻辑复用桌面项函数。服务端 `WorkspaceService` 新增 `getPreset()`/`savePresetItems()`（存 `terminal='preset'`、`admin_user_id=0` 独立行）与 `getFor('user', …)` 内 `wasRecentlyCreated` 播种；Admin 控制器新增 `GET/PUT /admin/cmspro/webos/api/user-desktop-preset`（校验沿用 `desktopItemsRules()`，文件夹 path 置空、URL 外链放行）。纯功能新增、零数据库迁移。162 测试 1839 断言通过。 |
+| 2.1.89 | 2026-10-21 | 用户桌面预设改为**差异化增量同步**（用户需求，取代 2.1.88 的「仅新用户播种」）：新增迁移 `add_preset_sync_ids_to_app_cmspro_webos_workspaces_table` 为工作区表增加 `preset_sync_ids`（JSON，per-user 已推送预设项 ID 台账），模型加 `fillable`/`casts`/`$hidden`（台账不外泄）；`WorkspaceService::getFor('user', …)` 改调 `syncPresetDesktop()`，新增 `presetItemId()`/`presetItemSignature()`：每次加载按「预设项 − 已推送集合」计算增量，逐项补齐到用户桌面（后台新增且用户桌面缺失的项自动补齐、用户桌面已存在等价项按内容指纹不重复添加，两遍遍历让预设文件夹子项挂靠到用户已有等价文件夹），以预设项 `id` 作推送 key 记入 `preset_sync_ids`，已推送项此后用户删除/修改乃至后台改内容均不再下发；admin 端不受影响。新增/改写 5 个单元用例（首次播种、老用户差异化补齐、删除不回推与修改不覆盖、文件夹子项挂靠、admin 端不受影响）。165 测试 1863 断言通过。 |
+| 2.1.88 | 2026-10-21 | 后台新增**用户桌面预设**（用户需求）：后台端「用户首页直达 WebOS」开启后，OS 设置 → 系统设置右侧追加「用户桌面」Tab（`renderWebosSettings()` 内 `!isUserTerminal && preferences.override_user_home` 判定），以预览网格 + 右键新建预设前台用户首次进入用户端 WebOS 的默认桌面——空白处右键「新建 文件夹 / 桌面入口 / URL 链接」，单个项右键「重命名 / 图标设置 / 删除 / 管理文件夹内容」（不做拖拽），编辑逻辑复用桌面项函数。服务端 `WorkspaceService` 新增 `getPreset()`/`savePresetItems()`（存 `terminal='preset'`、`admin_user_id=0` 独立行）与 `getFor('user', …)` 内 `wasRecentlyCreated` 播种；Admin 控制器新增 `GET/PUT /admin/cmspro/webos/api/user-desktop-preset`（校验沿用 `desktopItemsRules()`，文件夹 path 置空、URL 外链放行）。纯功能新增、零数据库迁移。162 测试 1839 断言通过。**注：2.1.89 已将该「仅新用户首次播种」策略调整为差异化增量同步。** |
 | 2.1.87 | 2026-10-20 | 用户端账号菜单与个人设置窗口对齐（用户需求）：任务栏账号菜单面板的「修改密码」按钮由后台端专属（`@if ($webosTerminal === 'admin')`）改为双端共享，用户端点按后打开 WebOS 内置修改密码弹窗（按端分流接口 admin `/api/admin/auth/password`、user `/api/user/password`，字段自动映射），「清除缓存」仍仅后台端可见；`openEntry` 窗口尺寸覆盖由仅 `/admin/account` 改为 `'/admin/account' || '/user/account'`，用户端个人设置窗口宽度固定 680px、高度沿用同一 `windowKey` 计算，与后台端尺寸一致。156 测试 1787 断言通过。 |
 | 2.1.86 | 2026-10-20 | 用户端 WebOS 个人设置关闭刷新对齐（用户反馈）：`closeWindow` 原先仅判定 `path === '/admin/account'`，而用户端个人设置路径为 `/user/account`，关闭窗口后不刷新账号标识；改为 `'/admin/account' || '/user/account'` 双端共用 `refreshAdminIdentity`（重新请求 `data-identity-url`，按终端分流 admin 端管理员 / 用户端前台用户），同步任务栏账号按钮与账号菜单面板的昵称/头像。新增用户端 `admin-identity` 接口回归测试 `test_user_admin_identity_api_returns_current_account`。156 测试 1786 断言通过。 |
 | 2.1.85 | 2026-10-20 | 用户端 WebOS 渲染退化修复（用户反馈）：user 端 `loadCatalog` 原将 `applications` 置空，导致 `findApplication` 恒返回 null，开始菜单项、桌面入口选择树、桌面/任务栏自定义图标、窗口标题与品牌图标等渲染点退化为显示 app_id 与文件夹图标；新增用户端可见应用清单接口 `GET /user/cmspro/webos/api/applications`（数据源与 admin 端 `/api/admin/apps` 同构：apps 表 name/icon + 公开图标路由 icon_url，但仅返回 user 终端菜单涉及的 app_id，避免未分配应用外泄），`loadCatalog` user 分支改为并行拉取 applications + menus 并填充 `state.catalog.applications`；同时为桌面右键与任务栏固定项「卸载应用」补 `isSuperAdmin` 门控（原先依赖空应用清单隐式隐藏）。155 测试 1778 断言通过。 |
