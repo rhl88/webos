@@ -3342,10 +3342,10 @@ class WebosWorkspaceApiTest extends WebosTestCase
         $this->assertStringContainsString('function marketPurchased(appId) {', $script);
         $this->assertStringContainsString("state.marketPurchased.has(String(appId || '').toLowerCase())", $script);
         $this->assertStringContainsString('function marketPriceMarkup(app, className, compact) {', $script);
-        // marketState 补充付费上下文：付费且未购买时主操作由「安装」改为「¥xx 购买」
+        // marketState 补充付费上下文：付费且未购买时主操作由「安装」改为「购买」
         $this->assertStringContainsString('purchased: purchased,', $script);
         $this->assertStringContainsString('needs_purchase: price > 0 && !purchased', $script);
-        // 卡片与详情按钮三分支：更新 / 已安装 / ¥xx 购买（沿用 data-upgrade-id 点击委托链路）
+        // 卡片与详情按钮三分支：更新 / 已安装 / 购买（沿用 data-upgrade-id 点击委托链路）
         $this->assertStringContainsString("data-purchase-id=", $script);
         $this->assertStringContainsString("data-purchase-price=", $script);
         // 价格标签接入市场卡片元信息行与首页推荐卡片/列表项
@@ -3354,7 +3354,7 @@ class WebosWorkspaceApiTest extends WebosTestCase
         $this->assertStringContainsString('.app-card-price', $stylesheet);
         $this->assertStringContainsString('.market-home-price', $stylesheet);
 
-        // 站点身份：市场 Tab 先并行读取站点状态与已购清单，再渲染主体（避免已购应用闪现「¥xx 购买」）
+        // 站点身份：市场 Tab 先并行读取站点状态与已购清单，再渲染主体（避免已购应用闪现「购买」）
         $this->assertStringContainsString('function loadMarketContext(content, status) {', $script);
         $this->assertStringContainsString("api('/api/admin/market/site/status')", $script);
         $this->assertStringContainsString("api('/api/admin/market/purchase/list')", $script);

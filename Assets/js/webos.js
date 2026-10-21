@@ -5372,7 +5372,7 @@
     }
 
     /** 应用市场 Tab：顶部子Tab（首页/分类），首页为推荐区块，分类为原分类条+应用列表。
-     *  付费能力要求已购清单先于卡片到达，否则已购应用会先显示「¥xx 购买」再闪变为「安装」，
+     *  付费能力要求已购清单先于卡片到达，否则已购应用会先显示「购买」再闪变为「安装」，
      *  因此先并行读取站点身份与已购清单，再渲染主体。 */
     function loadMarketTab(content, status) {
         if (!state.marketSubTab) {
@@ -6033,7 +6033,7 @@
             has_update: installed && compareVersions(currentVersion, latestVersion) < 0,
             price: price,
             purchased: purchased,
-            // 付费且未购买：未安装状态下的主操作由「安装」改为「¥xx 购买」
+            // 付费且未购买：未安装状态下的主操作由「安装」改为「购买」
             needs_purchase: price > 0 && !purchased
         };
     }
@@ -6129,7 +6129,7 @@
         }
         if (market.needs_purchase) {
             return '<button class="small-action primary" type="button" data-purchase-id="' + escapeHtml(app.app_id)
-                + '" data-purchase-price="' + market.price.toFixed(2) + '">¥' + market.price.toFixed(2) + ' 购买</button>';
+                + '" data-purchase-price="' + market.price.toFixed(2) + '">购买</button>';
         }
 
         return '<button class="small-action primary" type="button" data-install-id="' + escapeHtml(app.app_id) + '" data-install-source="market">安装</button>';
@@ -6462,7 +6462,7 @@
         }
         if (market.needs_purchase) {
             return '<button class="webos-button primary" type="button" data-purchase-id="' + id
-                + '" data-purchase-price="' + market.price.toFixed(2) + '">¥' + market.price.toFixed(2) + ' 购买</button>';
+                + '" data-purchase-price="' + market.price.toFixed(2) + '">购买</button>';
         }
         return '<button class="webos-button primary" type="button" data-install-id="' + id
             + '" data-install-source="market">安装</button>';
@@ -11998,7 +11998,7 @@
             var upgrade = event.target.closest('[data-upgrade-id]');
             if (upgrade) { upgradeApp(upgrade.dataset.upgradeId); }
 
-            // 付费应用购买：卡片/详情的「¥xx 购买」按钮打开购买弹窗
+            // 付费应用购买：卡片/详情的「购买」按钮打开购买弹窗
             var purchase = event.target.closest('[data-purchase-id]');
             if (purchase) {
                 var purchaseApp = state.marketApps.get(purchase.dataset.purchaseId) || {};
