@@ -8605,7 +8605,7 @@
         }
 
         return '<table class="layui-table" style="margin:0;"><colgroup>'
-            + '<col width="200"><col width="110"><col width="100"><col></colgroup>'
+            + '<col width="200"><col width="110"><col width="140"><col></colgroup>'
             + '<thead><tr><th>备份时间</th><th>版本</th><th>大小</th>'
             + '<th style="text-align:right;">操作</th></tr></thead><tbody>'
             + backups.map(function (backup) {

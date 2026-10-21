@@ -2342,8 +2342,8 @@ class WebosWorkspaceApiTest extends WebosTestCase
         $this->assertStringContainsString('function doLocalRestore(', $script);
         // 备份管理弹层宽高 660 × 520
         $this->assertStringContainsString("title: '「' + appDisplayName(app) + '」备份管理',\n            area: ['660px', '520px']", $script);
-        // 备份时间列加宽且不换行（列宽 200，单元格 nowrap）
-        $this->assertStringContainsString('<col width="200"><col width="110"><col width="100"><col></colgroup>', $script);
+        // 备份时间列加宽且不换行（列宽 200，单元格 nowrap）；大小列 140，操作列自适应收窄
+        $this->assertStringContainsString('<col width="200"><col width="110"><col width="140"><col></colgroup>', $script);
         $this->assertStringContainsString('\'<tr><td style="white-space:nowrap;">\' + escapeHtml(backup.create_time', $script);
         // 操作列按钮去掉图标，只保留文字
         $this->assertStringContainsString('\'">导出</button>\'', $script);
