@@ -3406,4 +3406,32 @@ class WebosWorkspaceApiTest extends WebosTestCase
         // Blade：付费购买弹窗依赖的二维码库，与后台应用市场 market.blade.php 保持同一依赖
         $this->assertStringContainsString("CmsProUi/component/qrcodejs/qrcode.min.js", $view);
     }
+
+    public function test_app_center_purchased_tab_reuses_admin_market_purchase_flow(): void
+    {
+        $script = file_get_contents(dirname(__DIR__, 2) . '/Assets/js/webos.js');
+
+        $this->assertIsString($script);
+
+        // 侧栏 Tab：已购应用位于「安装记录」与「入口管理」之间
+        $this->assertStringContainsString("{ id: 'records', title: '安装记录', icon: 'fa fa-file-text-o' },", $script);
+        $this->assertStringContainsString("{ id: 'purchased', title: '已购应用', icon: 'fa fa-shopping-cart' },", $script);
+        $this->assertStringContainsString("purchased: ['已购应用', '查看已购买的付费应用并安装'],", $script);
+        $this->assertStringContainsString("purchased: '搜索已购应用'", $script);
+
+        // Tab 分发：已购应用走独立加载函数，不与市场 Tab 的滚动分页状态耦合
+        $this->assertStringContainsString("if (tab === 'purchased') {", $script);
+        $this->assertStringContainsString('function loadPurchasedTab(content, status) {', $script);
+
+        // 与后台应用市场已购应用页（market.blade.php）相同的两个接口：
+        // 已购清单决定筛选范围，市场应用列表提供卡片数据（一次拉全量后本地过滤）
+        $this->assertStringContainsString("api('/api/admin/market/purchase/list')", $script);
+        $this->assertStringContainsString("api('/api/admin/market/apps?page=1&per_page=200')", $script);
+        $this->assertStringContainsString('return marketPurchased(app && app.app_id);', $script);
+        // 过滤结果写入市场缓存并复用市场卡片渲染，卡片详情与「安装」操作沿用既有市场链路
+        $this->assertStringContainsString("setMarketApps(apps, 'market');", $script);
+        $this->assertStringContainsString("appCardsMarkup(apps, 'market')", $script);
+        $this->assertStringContainsString("emptyState('fa-shopping-cart', '暂无已购应用')", $script);
+        $this->assertStringContainsString("emptyState('fa-shopping-cart', '暂时无法读取已购应用')", $script);
+    }
 }

@@ -3523,6 +3523,7 @@
         { id: 'uninstalled', title: '未安装', icon: 'fa fa-download' },
         { id: 'updates', title: '应用更新', icon: 'fa fa-refresh' },
         { id: 'records', title: '安装记录', icon: 'fa fa-file-text-o' },
+        { id: 'purchased', title: '已购应用', icon: 'fa fa-shopping-cart' },
         { id: 'entries', title: '入口管理', icon: 'fa fa-th' }
     ];
 
@@ -5190,6 +5191,7 @@
         uninstalled: ['未安装应用', '查看本地已发现但尚未安装的应用'],
         updates: ['应用更新', '检查可用版本并查看更新说明'],
         records: ['安装记录', '查看应用安装、启用、升级与卸载记录'],
+        purchased: ['已购应用', '查看已购买的付费应用并安装'],
         entries: ['入口管理', '管理桌面快捷方式与可用系统菜单']
     };
 
@@ -5219,7 +5221,8 @@
             market: '搜索市场应用',
             installed: '搜索已安装应用',
             uninstalled: '搜索未安装应用',
-            records: '搜索应用名称或标识'
+            records: '搜索应用名称或标识',
+            purchased: '搜索已购应用'
         };
         var placeholder = placeholders[state.appCenterTab] || '搜索应用';
 
@@ -5302,6 +5305,10 @@
         }
         if (tab === 'records') {
             loadRecordsTab(content, status, state.recordsOperation || '');
+            return;
+        }
+        if (tab === 'purchased') {
+            loadPurchasedTab(content, status);
             return;
         }
         if (tab === 'entries') {
@@ -5434,6 +5441,34 @@
             }
         });
         state.marketPurchased = purchased;
+    }
+
+    /** 应用中心「已购应用」Tab：与传统后台应用市场 resources/views/admin/app/market.blade.php
+     *  的已购应用页使用相同接口——已购清单 /api/admin/market/purchase/list 决定筛选范围，
+     *  市场应用列表 /api/admin/market/apps 提供卡片数据（一次拉全量后本地过滤）。
+     *  结果写入市场缓存，使卡片详情与「安装」操作复用既有市场链路。 */
+    function loadPurchasedTab(content, status) {
+        status.classList.remove('is-error');
+        status.hidden = false;
+        status.innerHTML = '<i class="fa fa-circle-o-notch fa-spin"></i>正在读取已购应用';
+        Promise.all([
+            api('/api/admin/market/purchase/list'),
+            api('/api/admin/market/apps?page=1&per_page=200')
+        ]).then(function (results) {
+            applyMarketPurchased(results[0]);
+            var apps = extractCollection(results[1]).filter(function (app) {
+                return marketPurchased(app && app.app_id);
+            });
+            setMarketApps(apps, 'market');
+            status.innerHTML = '<i class="fa fa-shopping-cart"></i>共 ' + apps.length + ' 个已购应用';
+            content.innerHTML = apps.length
+                ? '<div class="app-grid market-app-grid">' + appCardsMarkup(apps, 'market') + '</div>'
+                : emptyState('fa-shopping-cart', '暂无已购应用');
+        }).catch(function (error) {
+            status.classList.add('is-error');
+            status.innerHTML = '<i class="fa fa-exclamation-circle"></i>' + escapeHtml(error.message);
+            content.innerHTML = emptyState('fa-shopping-cart', '暂时无法读取已购应用');
+        });
     }
 
     /** 站点身份提示条：未注册 → 「立即注册」；域名不一致 → 「同步到服务端」「重新注册」 */
