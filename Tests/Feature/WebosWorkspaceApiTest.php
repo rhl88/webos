@@ -3404,11 +3404,13 @@ class WebosWorkspaceApiTest extends WebosTestCase
         // 卡片与详情按钮三分支：更新 / 已安装 / 购买（沿用 data-upgrade-id 点击委托链路）
         $this->assertStringContainsString("data-purchase-id=", $script);
         $this->assertStringContainsString("data-purchase-price=", $script);
-        // 价格标签接入市场卡片元信息行与首页推荐卡片/列表项
+        // 价格标签仅接入市场「分类」卡片元信息行；首页推荐卡片/列表项不展示费用，付费信息在详情页呈现
         $this->assertStringContainsString("marketPriceMarkup(app, 'app-card-price', false)", $script);
-        $this->assertStringContainsString("marketPriceMarkup(app, 'market-home-price', true)", $script);
+        $this->assertStringNotContainsString("marketPriceMarkup(app, 'market-home-price', true)", $script);
         $this->assertStringContainsString('.app-card-price', $stylesheet);
-        $this->assertStringContainsString('.market-home-price', $stylesheet);
+        $this->assertStringNotContainsString('.market-home-price', $stylesheet);
+        // 详情页「基本信息」保留价格行（付费 / 免费口径与卡片一致）
+        $this->assertStringContainsString("items.push(['价格', Number(app.price) > 0", $script);
 
         // 站点身份：市场 Tab 先并行读取站点状态与已购清单，再渲染主体（避免已购应用闪现「购买」）
         $this->assertStringContainsString('function loadMarketContext(content, status) {', $script);

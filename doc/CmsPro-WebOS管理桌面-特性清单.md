@@ -1,7 +1,7 @@
 # CmsPro WebOS 管理桌面 · 特性清单
 
-> 文档版本：2.1.95 | 更新日期：2026-10-22
-> 应用版本：2.1.95 | 应用 ID：`cmspro.webos`
+> 文档版本：2.1.96 | 更新日期：2026-10-22
+> 应用版本：2.1.96 | 应用 ID：`cmspro.webos`
 
 ## 一、应用定位
 
@@ -183,6 +183,7 @@ CmsproWebos/
 
 | 版本 | 日期 | 说明 |
 |---|---|---|
+| 2.1.96 | 2026-10-22 | **应用市场首页不展示费用**（用户需求）：应用中心 → 应用市场「首页」Tab 的推荐卡片（`marketHomeCardMarkup`）与推荐位列表条目（`marketHomeListItemMarkup`）移除 `marketPriceMarkup(app, 'market-home-price', true)` 价格插槽，仅保留图标与应用名（列表项含描述）；`webos.css` 同步移除已无使用者的 `.market-home-price` 系列规则。「分类」Tab 卡片（`appCardMarkup` → `.app-card-price`）仍保留价格，应用详情页「基本信息 → 价格」为付费信息唯一入口。同步更新 `test_market_paid_apps_reuse_admin_market_purchase_flow` 契约断言。纯前端展示调整，无接口与数据结构变更。 |
 | 2.1.95 | 2026-10-22 | **后台端会话恢复接口修正**（问题修复）：后台端 419 时的静默续期此前请求 `/admin/cmspro/webos/api/csrf-token`（后台端未注册该路由，返回 `40401`），续期失败退化为弹出登录恢复层。现后台端直接复用框架既有接口 `GET /api/admin/csrf-token`（返回结构一致），用户端仍走自身接口。纯前端调用地址修正，无接口与数据结构变更。 |
 | 2.1.94 | 2026-10-21 | **用户桌面预设支持拖动排序**（用户需求）：OS 设置 → 用户桌面 Tab 的预设网格按住图标即可拖动重排，实时预览新顺序；网格排布顺序即预设 `desktop_items` 的数组顺序，也是下发到用户端桌面的排列次序（用户端列优先落位）。拖动严格按 5px 阈值区分单击/双击，拖回原位不产生保存请求；预设网格不做坐标布局、不收纳进文件夹，与桌面拖拽互不影响。纯前端交互增强，无接口与数据结构变更。 |
 | 2.1.93 | 2026-10-21 | 备份管理列表列宽微调（用户需求：大小列再宽一些，操作列还有空间）：`webos.js` 的 `renderBackupList()` 列宽由 `<col width="200"><col width="110"><col width="100">` 改为 `<col width="200"><col width="110"><col width="140">`，「大小」列加宽 40px，操作列自适应收窄后仍完整容纳「导出 / 恢复 / 删除」三按钮。同步更新 `test_backup_dialog_toolbar_matches_admin` 列宽断言。纯前端调整，无接口与数据结构变更。 |

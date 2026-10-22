@@ -4062,25 +4062,18 @@ textarea:focus-visible,
     font-size: 11px;
 }
 
-/* 市场卡片/首页价格标签：付费橙色、免费绿色（与详情「基本信息」价格口径一致） */
-.app-card-price,
-.market-home-price {
+/* 市场卡片价格标签：付费橙色、免费绿色（与详情「基本信息」价格口径一致） */
+.app-card-price {
     margin-left: 4px;
     font-weight: 600;
 }
 
-.app-card-price.is-paid,
-.market-home-price.is-paid {
+.app-card-price.is-paid {
     color: #d18b23;
 }
 
-.app-card-price.is-free,
-.market-home-price.is-free {
+.app-card-price.is-free {
     color: #2f9e6e;
-}
-
-.market-home-price {
-    font-size: 11px;
 }
 
 .app-card.has-remove {

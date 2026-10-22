@@ -5911,14 +5911,13 @@
             + marketHomePageApps(key).map(marketHomeCardMarkup).join('') + '</div></section>';
     }
 
-    /** 首页紧凑卡片：图标+名称，整卡点击进入市场详情 */
+    /** 首页紧凑卡片：图标+名称，整卡点击进入市场详情（首页不展示费用，付费信息在详情页「基本信息」呈现） */
     function marketHomeCardMarkup(app) {
         var id = app.app_id || '';
         return '<article class="market-home-card" data-market-detail="' + escapeHtml(id)
             + '" data-app-name="' + escapeHtml((app.name || id).toLowerCase()) + '">'
             + cardIconMarkup(app, 'market-home-icon')
-            + '<span class="market-home-name">' + escapeHtml(app.name || id) + '</span>'
-            + marketPriceMarkup(app, 'market-home-price', true) + '</article>';
+            + '<span class="market-home-name">' + escapeHtml(app.name || id) + '</span></article>';
     }
 
     /** 首页推荐位竖列区块：每个推荐位一列，列表形式分页展示（每列每页5个） */
@@ -5934,14 +5933,13 @@
         }).join('') + '</div>';
     }
 
-    /** 推荐位列表条目：图标+应用名，换行小字显示部分应用描述 */
+    /** 推荐位列表条目：图标+应用名，换行小字显示部分应用描述（首页不展示费用） */
     function marketHomeListItemMarkup(app) {
         var id = app.app_id || '';
         return '<article class="market-home-list-item" data-market-detail="' + escapeHtml(id)
             + '" data-app-name="' + escapeHtml((app.name || id).toLowerCase()) + '">'
             + cardIconMarkup(app, 'market-home-list-icon')
-            + '<div class="market-home-list-info"><strong>' + escapeHtml(app.name || id)
-            + marketPriceMarkup(app, 'market-home-price', true) + '</strong>'
+            + '<div class="market-home-list-info"><strong>' + escapeHtml(app.name || id) + '</strong>'
             + '<span>' + escapeHtml(app.description || '暂无应用说明') + '</span></div></article>';
     }
 
