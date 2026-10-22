@@ -17,6 +17,9 @@
     var logoutUrl = isUserTerminal ? '/api/user/logout' : '/api/admin/auth/logout';
     // 用户端修改密码走框架用户端接口（字段名与 admin 端不同：old_password/password/password_confirmation）
     var passwordUrl = isUserTerminal ? '/api/user/password' : '/api/admin/auth/password';
+    // 会话恢复换取新 CSRF Token 的接口：user 端走 WebOS 自有接口，admin 端复用框架 /api/admin/csrf-token
+    // （应用后台端未注册该路由，直接拼接应用前缀会 404）
+    var csrfTokenUrl = isUserTerminal ? '/user/cmspro/webos/api/csrf-token' : '/api/admin/csrf-token';
     // WebOS 自身 API 前缀：按终端分流（workspace/壁纸/日历等走 blade data-* 注入，此处仅覆盖 JS 内拼接的少数接口）
     function webosApiUrl(path) {
         return (isUserTerminal ? '/user/cmspro/webos/api/' : '/admin/cmspro/webos/api/') + path;
@@ -411,9 +414,10 @@
      * 静默刷新 CSRF Token（原生 fetch，GET 不受 CSRF 校验限制）：419 仅代表 Token 与服务器不一致，
      * 登录态可能仍有效——先静默换取新 Token 即可直接重放失败请求，全程无感、不弹层；
      * 返回 false（401 等）才说明登录态确实失效，需弹出登录恢复层。
+     * 接口来源见 csrfTokenUrl：user 端走 WebOS 自有接口，admin 端复用框架 /api/admin/csrf-token。
      */
     function refreshCsrfToken() {
-        return fetch(webosApiUrl('csrf-token'), { headers: { 'Accept': 'application/json' } }).then(function (response) {
+        return fetch(csrfTokenUrl, { headers: { 'Accept': 'application/json' } }).then(function (response) {
             if (!response.ok) {
                 return false;
             }

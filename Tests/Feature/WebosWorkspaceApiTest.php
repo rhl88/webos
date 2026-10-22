@@ -3366,6 +3366,23 @@ class WebosWorkspaceApiTest extends WebosTestCase
         $this->assertStringContainsString("is-dragging {\n    opacity: 0.5;", $stylesheet);
     }
 
+    /** 会话恢复：后台端 CSRF Token 接口复用框架 /api/admin/csrf-token（应用后台端未注册该路由，拼接应用前缀会 404） */
+    public function test_admin_csrf_token_reuses_framework_endpoint(): void
+    {
+        $script = file_get_contents(dirname(__DIR__, 2) . '/Assets/js/webos.js');
+
+        $this->assertIsString($script);
+        $this->assertStringContainsString(
+            "var csrfTokenUrl = isUserTerminal ? '/user/cmspro/webos/api/csrf-token' : '/api/admin/csrf-token';",
+            $script
+        );
+        $this->assertStringContainsString(
+            "return fetch(csrfTokenUrl, { headers: { 'Accept': 'application/json' } }).then(function (response) {",
+            $script
+        );
+        $this->assertStringNotContainsString("webosApiUrl('csrf-token')", $script);
+    }
+
     public function test_market_paid_apps_reuse_admin_market_purchase_flow(): void
     {
         $script = file_get_contents(dirname(__DIR__, 2) . '/Assets/js/webos.js');

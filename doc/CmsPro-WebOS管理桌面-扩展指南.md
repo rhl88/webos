@@ -1,7 +1,7 @@
 # CmsPro WebOS 管理桌面 · 扩展指南
 
-> 文档版本：2.1.94 | 更新日期：2026-10-21
-> 应用版本：2.1.94 | 应用 ID：`cmspro.webos`
+> 文档版本：2.1.95 | 更新日期：2026-10-22
+> 应用版本：2.1.95 | 应用 ID：`cmspro.webos`
 
 ## 一、概述
 
@@ -418,6 +418,7 @@ app(HookManager::class)->registerFilter(
 
 | 版本 | 日期 | 更新人 | 说明 |
 |---|---|---|---|
+| 2.1.95 | 2026-10-22 | CmsPro | **后台端会话恢复接口修正（问题修复）**：`webos.js` 新增 admin 端专用常量 `csrfTokenUrl`（与既有 `identityProbeUrl` / `logoutUrl` / `passwordUrl` 的按终端分流写法一致）：`isUserTerminal ? '/user/cmspro/webos/api/csrf-token' : '/api/admin/csrf-token'`；`refreshCsrfToken()` 由 `fetch(webosApiUrl('csrf-token'), ...)` 改为 `fetch(csrfTokenUrl, ...)`。原实现把后台端地址拼成 `/admin/cmspro/webos/api/csrf-token`，而 `Routes/admin.php` 未注册 `csrf-token` 路由，框架统一返回 `40401 请求的资源不存在`，导致 419 后静默续期失败并退化为弹出登录恢复层；框架已在 `routes/web.php` 提供等价接口 `GET api/admin/csrf-token`（`AuthController::csrfToken`，返回 `ApiResponse::success(['token' => csrf_token()])`，与前端期望的 `code === 0 && data.token` 一致，且 `permission` 中间件对该路径推导出的 `admin.csrf-token.index` 权限码不存在会直接放行）。测试——`WebosWorkspaceApiTest` 新增契约用例 `test_admin_csrf_token_reuses_framework_endpoint()`。**纯前端调用地址修正，无接口与数据结构变更；`routes/web.php` 属框架保护区，未做任何修改。** |
 | 2.1.94 | 2026-10-21 | CmsPro | **用户桌面预设支持拖动排序（用户需求）**：① 前端 `webos.js` 新增 `bindPresetGridSort()`（在 `bindEvents()` 预设右键委托旁调用；`root` 级 `pointerdown` 委托，要求 `state.presetEditing` 且左键命中 `[data-preset-grid]` 内 `[data-desktop-id]`，并以 `grid.querySelector('.desktop-icon.is-dragging')` 做并发守卫）、`startPresetSort(grid, button, event)`（位移 > 5px 才进入拖动，复用 `.desktop-icon.is-dragging` 的 `pointer-events:none` + `document.elementFromPoint` 穿透命中落点图标，按指针落在目标的左右半区 `insertBefore` 实时重排；监听统一绑 `document`，拖出设置窗口或 `pointercancel` 均能正常收尾；顺序未变化时只重绘不保存）、`presetGridOrder(grid)`（DOM 顺序即用户可见顺序）与 `applyPresetOrder(order)`（把网格内顶层项按新顺序填回 `desktop_items` 原数组位置，文件夹子项与未分配入口位置保持不动，随后 `renderPresetGrid()` + `saveWorkspace(false)` 走预设静默保存链路）。② 样式 `webos.css`——`.preset-desktop .desktop-icon` 的 `cursor: pointer` → `cursor: grab`；新增 `.preset-desktop .desktop-icon.is-dragging { opacity: 0.5; }`（白底网格上比桌面壁纸更明显地淡化，覆盖全局 `.is-dragging` 的 0.86）。③ 文案——`userDesktopSectionMarkup()` 提示追加「按住图标拖动可调整预设顺序，用户端同步时按该顺序列优先依次落位。」。④ 测试——`WebosWorkspaceApiTest` 新增契约用例 `test_user_desktop_preset_grid_supports_drag_sort()`。**接口与数据结构零变更：排序即 `desktop_items` 数组顺序，服务端 `savePresetItems()` 保序存储，用户端同步按该顺序列优先落位。** |
 | 2.1.93 | 2026-10-21 | CmsPro | **备份管理列表列宽微调（用户需求：大小列再宽一些，操作列还有空间）**：① `webos.js` `renderBackupList()` 列宽 `<col width="200"><col width="110"><col width="100">` → `<col width="200"><col width="110"><col width="140">`，「大小」列加宽 40px，操作列（末列自适应）收窄后仍完整容纳「导出 / 恢复 / 删除」三按钮。② 测试——`WebosWorkspaceApiTest::test_backup_dialog_toolbar_matches_admin()` 列宽断言同步为 `width="140"`。纯前端调整，无接口与数据结构变更。 |
 | 2.1.92 | 2026-10-21 | CmsPro | **应用中心 → 已安装 → 备份管理弹层界面微调（用户需求）**：① `webos.js` `renderBackupDialog()` 弹层 `area` 由 `['90%', '90%']` 改为固定 `['660px', '520px']`。② `renderBackupList()` 列宽 `<col width="168"><col width="120"><col width="140">` → `<col width="200"><col width="110"><col width="100">`（「备份时间」列加宽，「版本」「大小」让位）。③ `backupRowMarkup()` 时间单元格加 `white-space:nowrap`（完整 `Y-m-d H:i:s` 不再换行），操作列「导出 / 恢复 / 删除」按钮移除 `fa-download` / `fa-undo` / `fa-trash` 图标、仅保留文字。④ 测试——`WebosWorkspaceApiTest::test_backup_dialog_toolbar_matches_admin()` 断言同步为 660×520、列宽、nowrap 与无图标按钮。纯前端调整，无接口与数据结构变更。 |
