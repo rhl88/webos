@@ -3,6 +3,8 @@
 namespace App\Apps\CmsproWebos\Services;
 
 use App\Apps\CmsproWebos\Models\WebosWorkspace;
+use App\Enums\Status;
+use App\Models\AdminUser;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Str;
@@ -37,6 +39,9 @@ class WorkspaceService
     protected const PRESET_TERMINAL = 'preset';
 
     protected const PRESET_USER_ID = 0;
+
+    /** 「管理桌面」按后台角色预设的管理员桌面占位归属（terminal=admin_preset + 角色 ID） */
+    protected const ADMIN_PRESET_TERMINAL = 'admin_preset';
 
     public function getForAdmin(int $adminUserId): WebosWorkspace
     {
@@ -74,6 +79,10 @@ class WorkspaceService
         // 已推送过的预设项不再下发（用户删除/修改后也不回推）；后台管理员端不受影响。
         if ($terminal === 'user') {
             $this->syncPresetDesktop($workspace);
+        } elseif ($terminal === 'admin') {
+            // 后台管理员端：按其后台角色预设的「管理桌面」差量补齐初始图标（2.1.98），
+            // 推送台账与前台预设一致（preset_sync_ids，已推送不回推）。
+            $this->syncAdminRolePresets($workspace, $userId);
         }
 
         return $workspace;
@@ -118,16 +127,197 @@ class WorkspaceService
     }
 
     /**
-     * 前台用户端桌面与后台预设的差异化增量同步（2.1.89）：
-     * - 以「预设项 id」为推送标识：已推送过（记录在 preset_sync_ids）的预设项不再下发，
-     *   用户此后删除或修改该项也不回推——「已经推送过了，就不需要再推送了」。
-     * - 未推送过的项，若用户桌面已存在内容等价的项（内容指纹一致），仅登记为已推送、不重复添加；
-     *   否则追加到桌面（补齐后台新增且用户桌面缺失的项）。
-     * - 预设文件夹命中用户已有等价文件夹时，其子项挂靠到已有文件夹下（避免产生孤立子项）。
+     * 读取指定后台角色的「管理桌面」预设（terminal='admin_preset' + 角色 ID 单独一行，
+     * 与真实账号工作区以联合唯一约束隔离，无需新增数据表/字段）。
      */
+    public function getAdminPreset(int $roleId): WebosWorkspace
+    {
+        $workspace = WebosWorkspace::query()->firstOrCreate(
+            ['terminal' => self::ADMIN_PRESET_TERMINAL, 'admin_user_id' => $roleId],
+            [
+                'desktop_items' => [],
+                'taskbar_items' => [],
+                'preferences' => self::DEFAULT_PREFERENCES,
+                'status' => 1,
+            ]
+        );
+
+        if (! is_array($workspace->desktop_items)) {
+            $workspace->desktop_items = [];
+        }
+
+        return $workspace;
+    }
+
+    /**
+     * 保存指定后台角色的「管理桌面」预设项：净化规则与管理员工作区完全一致，
+     * 保证播种到管理员桌面的数据一定能通过保存校验。
+     *
+     * @param array<int,array<string,mixed>> $items
+     */
+    public function saveAdminPresetItems(int $roleId, array $items): WebosWorkspace
+    {
+        $workspace = $this->getAdminPreset($roleId);
+        $workspace->desktop_items = $this->sanitizeDesktopItems($items);
+        $workspace->save();
+
+        return $workspace->refresh();
+    }
+
+    /**
+     * 读取指定前台用户的用户端工作区（只读）：不创建缺失行、不触发预设差量同步
+     * （getFor 的 firstOrCreate 与 syncPresetDesktop 副作用对后台只读查看场景不可接受），
+     * 供后台「用户桌面」搜索查看指定用户桌面使用。
+     */
+    public function getUserWorkspace(int $userId): ?WebosWorkspace
+    {
+        return WebosWorkspace::query()
+            ->where('terminal', 'user')
+            ->where('admin_user_id', $userId)
+            ->first();
+    }
+
+    /**
+     * 后台代改前台用户桌面（「用户桌面」搜索选中用户后的保存，2.1.99）：
+     * 仅覆盖 desktop_items，任务栏固定项/偏好/预设推送台账（preset_sync_ids）保持不动——
+     * 台账不动意味着此后用户进入用户端时，后台预设的差量同步规则不受本次代改影响；
+     * 用户尚无工作区行时按用户端建行口径自动创建（与 getFor 首次建行一致）。
+     *
+     * @param array<int,array<string,mixed>> $items
+     */
+    public function saveUserDesktopItems(int $userId, array $items): WebosWorkspace
+    {
+        $workspace = $this->getUserWorkspace($userId) ?? new WebosWorkspace();
+        $isNew = ! $workspace->exists;
+
+        $workspace->terminal = 'user';
+        $workspace->admin_user_id = $userId;
+        $workspace->desktop_items = $this->sanitizeDesktopItems($items);
+        if ($isNew) {
+            $workspace->taskbar_items = [];
+            $workspace->preferences = self::DEFAULT_PREFERENCES;
+            $workspace->preset_sync_ids = [];
+            $workspace->status = 1;
+        }
+        $workspace->save();
+
+        return $workspace->refresh();
+    }
+
+    /**
+     * 读取指定管理员的后台工作区（只读）：不创建缺失行、不触发预设差量同步
+     * （getFor 的 firstOrCreate 与 syncAdminRolePresets 副作用对后台只读查看场景不可接受），
+     * 供后台「管理桌面」搜索查看指定管理员桌面使用（2.1.100）。
+     */
+    public function getAdminWorkspace(int $adminUserId): ?WebosWorkspace
+    {
+        return WebosWorkspace::query()
+            ->where('terminal', 'admin')
+            ->where('admin_user_id', $adminUserId)
+            ->first();
+    }
+
+    /**
+     * 后台代改指定管理员桌面（「管理桌面」搜索选中管理员后的保存，2.1.100）：
+     * 仅覆盖 desktop_items，任务栏固定项/偏好/角色预设推送台账（preset_sync_ids）保持不动——
+     * 台账不动意味着此后管理员进入后台时，角色「管理桌面」预设的差量同步规则不受本次代改影响；
+     * 管理员尚无工作区行时按后台建行口径自动创建（与 getFor 首次建行一致）。
+     *
+     * @param array<int,array<string,mixed>> $items
+     */
+    public function saveAdminDesktopItems(int $adminUserId, array $items): WebosWorkspace
+    {
+        $workspace = $this->getAdminWorkspace($adminUserId) ?? new WebosWorkspace();
+        $isNew = ! $workspace->exists;
+
+        $workspace->terminal = 'admin';
+        $workspace->admin_user_id = $adminUserId;
+        $workspace->desktop_items = $this->sanitizeDesktopItems($items);
+        if ($isNew) {
+            $workspace->taskbar_items = [];
+            $workspace->preferences = self::DEFAULT_PREFERENCES;
+            $workspace->preset_sync_ids = [];
+            $workspace->status = 1;
+        }
+        $workspace->save();
+
+        return $workspace->refresh();
+    }
+
+    /** 前台用户端：按后台预设（terminal=preset）差量同步桌面（同步规则见 syncPresetItems） */
     protected function syncPresetDesktop(WebosWorkspace $workspace): void
     {
-        $presetItems = $this->getPreset()->desktop_items ?? [];
+        $this->syncPresetItems($workspace, $this->getPreset()->desktop_items ?? []);
+    }
+
+    /**
+     * 后台管理员桌面与其后台角色「管理桌面」预设的差量同步（2.1.98）：
+     * 取管理员全部启用角色（按角色 sort/id 顺序）的预设做并集（presetItemId 去重，
+     * 先出现的角色优先），复用与前台预设相同的差量同步规则；无角色或角色均未
+     * 配置预设时不产生任何变更。
+     */
+    protected function syncAdminRolePresets(WebosWorkspace $workspace, int $adminUserId): void
+    {
+        $adminUser = AdminUser::query()->find($adminUserId);
+        if ($adminUser === null) {
+            return;
+        }
+
+        $roleIds = $adminUser->roles()
+            ->where('admin_roles.status', Status::ENABLED->value)
+            ->orderBy('admin_roles.sort')
+            ->orderBy('admin_roles.id')
+            ->pluck('admin_roles.id')
+            ->all();
+        if ($roleIds === []) {
+            return;
+        }
+
+        // 批量取已有预设行：不做 firstOrCreate，避免为未配置预设的角色创建空行
+        $presetRows = WebosWorkspace::query()
+            ->where('terminal', self::ADMIN_PRESET_TERMINAL)
+            ->whereIn('admin_user_id', $roleIds)
+            ->get(['admin_user_id', 'desktop_items'])
+            ->keyBy('admin_user_id');
+        if ($presetRows->isEmpty()) {
+            return;
+        }
+
+        $mergedItems = [];
+        $seenIds = [];
+        foreach ($roleIds as $roleId) {
+            $presetRow = $presetRows->get($roleId);
+            if ($presetRow === null || ! is_array($presetRow->desktop_items)) {
+                continue;
+            }
+            foreach ($presetRow->desktop_items as $presetItem) {
+                if (! is_array($presetItem)) {
+                    continue;
+                }
+                $itemId = $this->presetItemId($presetItem);
+                if ($itemId === '' || isset($seenIds[$itemId])) {
+                    continue;
+                }
+                $seenIds[$itemId] = true;
+                $mergedItems[] = $presetItem;
+            }
+        }
+
+        $this->syncPresetItems($workspace, $mergedItems);
+    }
+
+    /**
+     * 预设桌面项差量同步核心（前台用户预设与后台角色预设共用）：
+     * - 以「预设项 id」为推送标识：已推送过（记录在 preset_sync_ids）的预设项不再下发，
+     *   用户此后删除或修改该项也不回推——「已经推送过了，就不需要再推送了」。
+     * - 未推送过的项，若目标桌面已存在内容等价的项（内容指纹一致），仅登记为已推送、
+     *   不重复添加；否则追加到桌面（补齐预设新增且桌面缺失的项）。
+     * - 预设文件夹命中目标桌面已有等价文件夹时，其子项挂靠到已有文件夹下（避免产生孤立子项）。
+     *
+     * @param array<int,array<string,mixed>> $presetItems
+     */
+    protected function syncPresetItems(WebosWorkspace $workspace, array $presetItems): void
+    {
         if ($presetItems === []) {
             return;
         }
@@ -141,7 +331,7 @@ class WorkspaceService
             }
         }
 
-        // 用户桌面内容指纹 → 项 id：预设项内容与已有项一致时视为「已存在」，不重复添加
+        // 目标桌面内容指纹 → 项 id：预设项内容与已有项一致时视为「已存在」，不重复添加
         $signatures = [];
         foreach ($desktopItems as $item) {
             if (is_array($item)) {
@@ -149,7 +339,7 @@ class WorkspaceService
             }
         }
 
-        // 第一遍：预设文件夹命中用户已有等价文件夹时记录 id 映射，供其子项挂靠
+        // 第一遍：预设文件夹命中目标桌面已有等价文件夹时记录 id 映射，供其子项挂靠
         // （先建映射再逐项处理，消除预设项数组顺序对挂靠结果的影响）
         $folderMap = [];
         foreach ($presetItems as $presetItem) {
@@ -175,7 +365,7 @@ class WorkspaceService
 
             $signature = $this->presetItemSignature($presetItem);
             if (isset($signatures[$signature])) {
-                // 桌面已存在等价项：仅登记为已推送，不重复添加（此后该项的新增/删除/修改都不再下发）
+                // 目标桌面已存在等价项：仅登记为已推送，不重复添加（此后该项的新增/删除/修改都不再下发）
                 $pushedMap[$presetId] = true;
                 $changed = true;
                 continue;

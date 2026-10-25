@@ -733,8 +733,10 @@ class WebosWorkspaceApiTest extends WebosTestCase
 
         $this->assertIsString($script);
         $this->assertIsString($stylesheet);
-        // 数据链路：系统菜单树接口按前台终端过滤，前端按窗口应用 app_id 筛选叶子
-        $this->assertStringContainsString("api('/api/admin/menus/tree?terminal_type=home')", $script);
+        // 数据链路：前台菜单树接口按前台终端过滤，前端按窗口应用 app_id 筛选叶子；
+        // 接口按终端分流：用户端走 WebOS 自有 user 路由（请求 admin 受保护接口会让未登录后台的用户端误报「会话过期」）
+        $this->assertStringContainsString("isUserTerminal ? webosApiUrl('menus/tree') : '/api/admin/menus/tree?terminal_type=home'", $script);
+        $this->assertStringContainsString("isUserTerminal ? webosApiUrl('home-menu-urls') : '/admin/cmspro/webos/api/home-menu-urls'", $script);
         $this->assertStringContainsString('function loadWindowHomeMenu', $script);
         $this->assertStringContainsString('function collectHomeMenuLeaves', $script);
         $this->assertStringContainsString('function windowHomeMenuMarkup', $script);
@@ -2610,7 +2612,9 @@ class WebosWorkspaceApiTest extends WebosTestCase
         $script = file_get_contents(dirname(__DIR__, 2) . '/Assets/js/webos.js');
 
         $this->assertIsString($script);
-        $this->assertStringContainsString('/admin/cmspro/webos/api/home-menu-urls?app_ids[]=', $script);
+        // 接口按终端分流：user 端走 user 路由，admin 端走应用 admin 路由
+        $this->assertStringContainsString("webosApiUrl('home-menu-urls')", $script);
+        $this->assertStringContainsString("homeMenuUrlsUrl + '?app_ids[]=' + encodeURIComponent(appId)", $script);
         $this->assertStringContainsString("leaf.url = urlMap[leaf.path];", $script);
         $this->assertStringContainsString("escapeHtml(leaf.url || leaf.path)", $script);
     }
@@ -3310,7 +3314,8 @@ class WebosWorkspaceApiTest extends WebosTestCase
         $this->assertStringContainsString("tabs.push(['user-desktop', 'fa-desktop', '用户桌面']);", $script);
         $this->assertStringContainsString("if (osSettingsTab === 'user-desktop' && (isUserTerminal || !preferences.override_user_home)) {", $script);
         // 预设编辑会话：临时接管桌面数据源、网格渲染到独立宿主 [data-preset-grid]，退出还原真实桌面
-        $this->assertStringContainsString('function enterPresetSession() {', $script);
+        // enterPresetSession(type, userId)：2.1.98 参数化（user/admin 按来源 Tab）；2.1.99 增 userId 支持查看指定前台用户桌面
+        $this->assertStringContainsString('function enterPresetSession(type, userId) {', $script);
         $this->assertStringContainsString('function leavePresetSession() {', $script);
         $this->assertStringContainsString('state.presetEditing = true;', $script);
         $this->assertStringContainsString('function renderPresetGrid() {', $script);

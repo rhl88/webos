@@ -5,6 +5,7 @@ namespace App\Apps\CmsproWebos\Tests\Unit;
 use App\Apps\CmsproWebos\Models\WebosWorkspace;
 use App\Apps\CmsproWebos\Services\WorkspaceService;
 use App\Apps\CmsproWebos\Tests\WebosTestCase;
+use App\Models\AdminRole;
 use InvalidArgumentException;
 
 class WorkspaceServiceTest extends WebosTestCase
@@ -553,5 +554,185 @@ class WorkspaceServiceTest extends WebosTestCase
 
         $this->assertSame([], $workspace->desktop_items);
         $this->assertNull($workspace->preset_sync_ids);
+    }
+
+    /** 「管理桌面」角色预设（2.1.98）：以 terminal=admin_preset + 角色 ID 单独一行存储，与真实账号工作区隔离 */
+    public function test_it_stores_the_admin_role_preset_in_an_isolated_row(): void
+    {
+        $admin = $this->actingAdmin();
+        app(WorkspaceService::class)->getForAdmin($admin->id);
+
+        $role = AdminRole::create(['name' => '运营专员', 'code' => 'webos_preset_' . uniqid(), 'status' => 1]);
+
+        $preset = app(WorkspaceService::class)->saveAdminPresetItems($role->id, [
+            [
+                'id' => 'role-preset-folder',
+                'title' => '运营工具',
+                'path' => '',
+                'icon' => 'fa fa-folder',
+                'kind' => 'folder',
+                'x' => 0,
+                'y' => 0,
+            ],
+            [
+                'id' => 'role-preset-menu',
+                'menu_id' => 66,
+                'title' => '内容审核',
+                'path' => '/admin/content/review',
+                'icon' => 'fa fa-check-square-o',
+                'x' => 1,
+                'y' => 0,
+            ],
+        ]);
+
+        $this->assertSame('admin_preset', $preset->terminal);
+        $this->assertSame($role->id, $preset->admin_user_id);
+        // 净化口径与管理员工作区一致：文件夹 path 强制置空
+        $this->assertSame('', $preset->desktop_items[0]['path']);
+        $this->assertSame('/admin/content/review', $preset->desktop_items[1]['path']);
+
+        // 读回一致，且不污染管理员工作区（表中仅两行：管理员工作区 + 角色预设）
+        $this->assertSame(
+            $preset->desktop_items,
+            app(WorkspaceService::class)->getAdminPreset($role->id)->desktop_items
+        );
+        $this->assertSame([], app(WorkspaceService::class)->getForAdmin($admin->id)->desktop_items);
+        $this->assertSame(2, WebosWorkspace::query()->count());
+    }
+
+    /** 管理员带角色进入后台端：首次取工作区时按该角色「管理桌面」预设差量播种初始图标（2.1.98） */
+    public function test_it_seeds_the_admin_role_preset_for_an_admin_with_the_role(): void
+    {
+        $admin = $this->actingAdmin();
+        $role = AdminRole::create(['name' => '运营专员', 'code' => 'webos_seed_' . uniqid(), 'status' => 1]);
+        $admin->roles()->attach($role->id);
+
+        app(WorkspaceService::class)->saveAdminPresetItems($role->id, [[
+            'id' => 'role-preset-menu',
+            'menu_id' => 66,
+            'title' => '内容审核',
+            'path' => '/admin/content/review',
+            'icon' => 'fa fa-check-square-o',
+            'x' => 0,
+            'y' => 0,
+        ]]);
+
+        $workspace = app(WorkspaceService::class)->getForAdmin($admin->id);
+
+        $this->assertSame('admin', $workspace->terminal);
+        $this->assertCount(1, $workspace->desktop_items);
+        $this->assertSame('/admin/content/review', $workspace->desktop_items[0]['path']);
+        $this->assertSame(['role-preset-menu'], $workspace->preset_sync_ids);
+        // 同步结果已落库（重新查库仍是预设内容与推送台账，而非仅内存态）
+        $stored = WebosWorkspace::query()->where('terminal', 'admin')->where('admin_user_id', $admin->id)->first();
+        $this->assertSame('/admin/content/review', $stored->desktop_items[0]['path']);
+        $this->assertSame(['role-preset-menu'], $stored->preset_sync_ids);
+
+        // 管理员删除该项后：已推送过 → 不回推（与前台用户端预设语义一致）
+        app(WorkspaceService::class)->saveForAdmin($admin->id, ['desktop_items' => []]);
+        $this->assertSame([], app(WorkspaceService::class)->getForAdmin($admin->id)->desktop_items);
+    }
+
+    /** 多角色管理员：按角色 sort 顺序取各角色预设并集（presetItemId 去重，先出现的角色优先）（2.1.98） */
+    public function test_it_merges_admin_role_presets_as_a_union_for_multiple_roles(): void
+    {
+        $admin = $this->actingAdmin();
+        $firstRole = AdminRole::create(['name' => '运营组', 'code' => 'webos_union_a_' . uniqid(), 'status' => 1, 'sort' => 1]);
+        $secondRole = AdminRole::create(['name' => '客服组', 'code' => 'webos_union_b_' . uniqid(), 'status' => 1, 'sort' => 2]);
+        $admin->roles()->attach([$firstRole->id, $secondRole->id]);
+
+        app(WorkspaceService::class)->saveAdminPresetItems($firstRole->id, [
+            [
+                'id' => 'role-a-menu',
+                'menu_id' => 61,
+                'title' => '运营工作台',
+                'path' => '/admin/ops/dashboard',
+                'icon' => 'fa fa-line-chart',
+                'x' => 0,
+                'y' => 0,
+            ],
+            [
+                'id' => 'role-shared-menu',
+                'menu_id' => 63,
+                'title' => '公告管理',
+                'path' => '/admin/notice',
+                'icon' => 'fa fa-bullhorn',
+                'x' => 0,
+                'y' => 1,
+            ],
+        ]);
+        app(WorkspaceService::class)->saveAdminPresetItems($secondRole->id, [
+            // 与第一角色重复（推送标识相同）：并集去重，先出现的角色优先
+            [
+                'id' => 'role-shared-menu',
+                'menu_id' => 63,
+                'title' => '公告管理',
+                'path' => '/admin/notice',
+                'icon' => 'fa fa-bullhorn',
+                'x' => 0,
+                'y' => 1,
+            ],
+            [
+                'id' => 'role-b-menu',
+                'menu_id' => 62,
+                'title' => '客服工作台',
+                'path' => '/admin/service/dashboard',
+                'icon' => 'fa fa-headphones',
+                'x' => 0,
+                'y' => 2,
+            ],
+        ]);
+
+        $workspace = app(WorkspaceService::class)->getForAdmin($admin->id);
+
+        // 并集共 3 项：第一角色在前（role-a-menu、role-shared-menu），第二角色去重后仅剩 role-b-menu
+        $this->assertSame(
+            ['role-a-menu', 'role-shared-menu', 'role-b-menu'],
+            collect($workspace->desktop_items)->pluck('id')->all()
+        );
+        $this->assertSame(['role-a-menu', 'role-shared-menu', 'role-b-menu'], $workspace->preset_sync_ids);
+    }
+
+    /** 无角色管理员、禁用角色、未配置预设的启用角色均不参与同步（也不为未配置的角色创建空预设行）（2.1.98） */
+    public function test_it_skips_disabled_or_unconfigured_roles_and_admins_without_roles(): void
+    {
+        // 场景一：无角色管理员 → 桌面保持空白
+        $noRoleAdmin = $this->actingAdmin();
+        $this->assertSame([], app(WorkspaceService::class)->getForAdmin($noRoleAdmin->id)->desktop_items);
+        $this->assertSame(1, WebosWorkspace::query()->count());
+
+        // 场景二：管理员仅绑定禁用角色（该角色已配置预设）→ 不同步
+        $disabledRole = AdminRole::create([
+            'name' => '停用角色',
+            'code' => 'webos_disabled_' . uniqid(),
+            'status' => 0,
+            'sort' => 1,
+        ]);
+        app(WorkspaceService::class)->saveAdminPresetItems($disabledRole->id, [[
+            'id' => 'disabled-role-menu',
+            'menu_id' => 71,
+            'title' => '停用入口',
+            'path' => '/admin/disabled',
+            'icon' => 'fa fa-ban',
+            'x' => 0,
+            'y' => 0,
+        ]]);
+
+        $secondAdmin = $this->actingAdmin();
+        $secondAdmin->roles()->attach($disabledRole->id);
+        $this->assertSame([], app(WorkspaceService::class)->getForAdmin($secondAdmin->id)->desktop_items);
+
+        // 场景三：再绑定启用但未配置预设的角色 → 不同步，也不为其创建空预设行
+        $enabledRole = AdminRole::create([
+            'name' => '未配置角色',
+            'code' => 'webos_unconfigured_' . uniqid(),
+            'status' => 1,
+            'sort' => 2,
+        ]);
+        $secondAdmin->roles()->attach($enabledRole->id);
+        $this->assertSame([], app(WorkspaceService::class)->getForAdmin($secondAdmin->id)->desktop_items);
+
+        // 表中仅：无角色管理员工作区、停用角色预设、第二管理员工作区（未配置的启用角色未建空行）
+        $this->assertSame(3, WebosWorkspace::query()->count());
     }
 }

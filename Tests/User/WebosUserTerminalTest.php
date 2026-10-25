@@ -261,4 +261,60 @@ class WebosUserTerminalTest extends WebosTestCase
             ->assertJsonPath('data.name', $user->nickname ?: $user->username)
             ->assertJsonStructure(['data' => ['name', 'username', 'avatar']]);
     }
+
+    /**
+     * 窗口「前台菜单」数据源（用户端路由）：仅返回 terminal_type=home 的启用菜单树。
+     * 用户端不得请求 /api/admin/menus/tree，否则未登录后台时会话恢复层会误报「会话过期」。
+     */
+    public function test_user_home_menu_tree_api_returns_home_terminal_menus(): void
+    {
+        $this->actingUser();
+
+        // 菜单名避开框架默认 home 菜单，确保下面的筛选命中自建数据
+        $root = AdminMenu::create(['name' => 'WebOS 前台栏目', 'parent_id' => 0, 'terminal_type' => 'home', 'status' => 1, 'visible' => 1, 'sort' => 1]);
+        AdminMenu::create(['name' => 'WebOS 前台子页', 'parent_id' => $root->id, 'path' => '/forum/list', 'terminal_type' => 'home', 'status' => 1, 'visible' => 1, 'sort' => 2]);
+        AdminMenu::create(['name' => 'WebOS 前台停用页', 'parent_id' => 0, 'path' => '/forum/off', 'terminal_type' => 'home', 'status' => 0, 'visible' => 1, 'sort' => 3]);
+        AdminMenu::create(['name' => 'WebOS 后台菜单不外泄', 'parent_id' => 0, 'path' => '/admin/secret', 'terminal_type' => 'admin', 'status' => 1, 'visible' => 1, 'sort' => 4]);
+
+        $data = $this->getJson('/user/cmspro/webos/api/menus/tree')
+            ->assertOk()
+            ->assertJsonPath('code', 0)
+            ->json('data');
+
+        $rootNode = collect($data)->firstWhere('name', 'WebOS 前台栏目');
+        $this->assertNotNull($rootNode, '前台菜单树应包含 home 终端菜单');
+        $this->assertSame('home', $rootNode['terminal_type']);
+        $this->assertSame('WebOS 前台子页', $rootNode['children'][0]['name']);
+        // 停用菜单与后台终端菜单不外泄
+        $this->assertNull(collect($data)->firstWhere('name', 'WebOS 前台停用页'));
+        $this->assertNull(collect($data)->firstWhere('name', 'WebOS 后台菜单不外泄'));
+    }
+
+    /** 前台菜单 URL 兼容转换（用户端路由）：按 app_id 返回「原始路径 → 访问地址」映射，隐藏菜单不参与 */
+    public function test_user_home_menu_urls_api_returns_path_url_map(): void
+    {
+        $this->actingUser();
+
+        AdminMenu::create(['name' => 'WebOS 论坛首页', 'parent_id' => 0, 'app_id' => 'webos.app.forum', 'path' => '/forum', 'terminal_type' => 'home', 'status' => 1, 'visible' => 1, 'sort' => 1]);
+        AdminMenu::create(['name' => 'WebOS 论坛隐藏页', 'parent_id' => 0, 'app_id' => 'webos.app.forum', 'path' => '/forum/hidden', 'terminal_type' => 'home', 'status' => 1, 'visible' => 0, 'sort' => 2]);
+
+        $data = $this->getJson('/user/cmspro/webos/api/home-menu-urls?app_ids[]=webos.app.forum')
+            ->assertOk()
+            ->assertJsonPath('code', 0)
+            ->json('data');
+
+        $this->assertArrayHasKey('webos.app.forum', $data);
+        $items = collect($data['webos.app.forum']);
+        $visible = $items->firstWhere('path', '/forum');
+        $this->assertNotNull($visible, '可见前台菜单应出现在 URL 映射中');
+        $this->assertNotEmpty($visible['url'], '前台菜单应换算为可访问地址');
+        $this->assertNull($items->firstWhere('path', '/forum/hidden'), '隐藏菜单不参与 URL 映射');
+    }
+
+    /** 用户端前台菜单接口需登录：未认证请求被拒绝（与其它用户端 API 一致） */
+    public function test_user_home_menu_apis_require_auth(): void
+    {
+        $this->assertContains($this->getJson('/user/cmspro/webos/api/menus/tree')->status(), [302, 401]);
+        $this->assertContains($this->getJson('/user/cmspro/webos/api/home-menu-urls')->status(), [302, 401]);
+    }
 }

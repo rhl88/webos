@@ -29,7 +29,8 @@ abstract class WebosTestCase extends TestCase
         Schema::create('app_cmspro_webos_workspaces', function ($table) {
             $table->bigIncrements('id');
             // terminal + admin_user_id 联合唯一：admin/user 双端各自隔离（2.1.80，与生产迁移一致）
-            $table->string('terminal', 10)->default('admin');
+            // varchar(20)：2.1.98 起新增 admin_preset（12 字符）取值，2026_10_24 迁移已同步扩容生产列
+            $table->string('terminal', 20)->default('admin');
             $table->unsignedBigInteger('admin_user_id');
             $table->unique(['terminal', 'admin_user_id']);
             $table->text('desktop_items')->nullable();

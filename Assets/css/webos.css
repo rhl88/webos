@@ -2864,6 +2864,206 @@ textarea:focus-visible,
     line-height: 20px;
 }
 
+/* 「管理桌面」角色行（OS 设置 → 管理桌面 Tab）：角色选择 + 管理员搜索（右侧靠右，2.1.100），
+   查看管理员桌面时整行替换为目标提示条（角色行宿主 = data-admin-desktop-bar-host） */
+.preset-role-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 12px;
+}
+
+/* 角色行左侧：角色标签 + 角色下拉（与右侧管理员搜索同行） */
+.preset-role-picker {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-width: 0;
+}
+
+.preset-role-label {
+    color: var(--webos-muted);
+    font-size: 13px;
+    font-weight: 600;
+    white-space: nowrap;
+}
+
+.preset-role-select {
+    min-width: 180px;
+    max-width: 320px;
+    padding: 7px 10px;
+    border: 1px solid #d9e5ed;
+    border-radius: 8px;
+    background: #fff;
+    color: var(--webos-text);
+    font-size: 13px;
+    line-height: 18px;
+}
+
+.preset-role-select:focus-visible {
+    border-color: var(--webos-primary);
+    outline: none;
+}
+
+.preset-role-select:disabled {
+    color: var(--webos-muted);
+    background: #f4f7f9;
+    cursor: not-allowed;
+}
+
+/* 「用户桌面」搜索用户框（OS 设置 → 用户桌面 Tab 右上角，2.1.99）：
+   相对定位锚定下拉，margin-left:auto 使其靠卡片右侧；下接结果下拉 */
+.preset-user-search {
+    position: relative;
+    display: flex;
+    align-items: center;
+    max-width: 300px;
+    margin-left: auto;
+    margin-bottom: 12px;
+}
+
+.preset-user-search > i {
+    position: absolute;
+    left: 10px;
+    color: var(--webos-muted);
+    font-size: 13px;
+    pointer-events: none;
+}
+
+.preset-user-search input {
+    width: 100%;
+    padding: 7px 10px 7px 30px;
+    border: 1px solid #d9e5ed;
+    border-radius: 8px;
+    background: #fff;
+    color: var(--webos-text);
+    font-size: 13px;
+    line-height: 18px;
+}
+
+.preset-user-search input:focus-visible {
+    border-color: var(--webos-primary);
+    outline: none;
+}
+
+.preset-user-search input::-webkit-search-cancel-button {
+    cursor: pointer;
+}
+
+/* 搜索结果下拉：盖在预设网格之上，随搜索框等宽 */
+.preset-user-dropdown {
+    position: absolute;
+    top: calc(100% + 4px);
+    left: 0;
+    right: 0;
+    z-index: 20;
+    max-height: 240px;
+    margin: 0;
+    padding: 4px;
+    overflow-y: auto;
+    list-style: none;
+    border: 1px solid #d9e5ed;
+    border-radius: 8px;
+    background: #fff;
+    box-shadow: 0 8px 20px rgba(21, 34, 56, 0.12);
+}
+
+.preset-user-dropdown li button {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    padding: 7px 10px;
+    border: 0;
+    border-radius: 6px;
+    background: none;
+    color: var(--webos-text);
+    font-size: 13px;
+    line-height: 18px;
+    text-align: left;
+    cursor: pointer;
+}
+
+.preset-user-dropdown li button > i {
+    color: var(--webos-muted);
+}
+
+.preset-user-dropdown li button:hover,
+.preset-user-dropdown li button:focus-visible {
+    background: #f0f8ff;
+    color: var(--webos-primary-dark);
+    outline: none;
+}
+
+.preset-user-dropdown li.is-empty {
+    padding: 10px;
+    color: var(--webos-muted);
+    font-size: 12px;
+    text-align: center;
+}
+
+/* 查看用户桌面提示条：目标用户标识 + 任务栏摘要 + 保存/放弃/返回操作 */
+.preset-user-banner {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px 12px;
+    margin-bottom: 12px;
+    padding: 8px 12px;
+    border: 1px solid #cfe0ea;
+    border-radius: 8px;
+    background: #f0f8ff;
+    font-size: 13px;
+    color: var(--webos-text);
+}
+
+.preset-user-banner-main {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+}
+
+.preset-user-banner-main > i {
+    color: var(--webos-primary-dark);
+}
+
+.preset-user-banner-main small {
+    overflow: hidden;
+    color: var(--webos-muted);
+    font-size: 12px;
+    line-height: 17px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.preset-user-banner-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-left: auto;
+    white-space: nowrap;
+}
+
+.preset-user-banner-actions .wallpaper-confirm-button {
+    padding: 5px 12px;
+    font-size: 12px;
+    line-height: 16px;
+}
+
+/* 「管理桌面」角色行内复用的管理员搜索框与查看提示条（2.1.100）：
+   独立块布局的 margin-bottom/flex 行内布局叠加会双倍间距，行内场景归零并固定搜索框基准宽度 */
+.preset-role-row .preset-user-search {
+    flex-basis: 300px;
+    margin-bottom: 0;
+}
+
+.preset-role-row .preset-user-banner {
+    flex: 1;
+    min-width: 0;
+    margin-bottom: 0;
+}
+
 .settings-card-title {
     display: flex;
     align-items: center;

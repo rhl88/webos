@@ -4,6 +4,7 @@ namespace App\Apps\CmsproWebos\Controllers\User;
 
 use App\Apps\CmsproWebos\Controllers\Admin\WebosController as AdminWebosController;
 use App\Http\Responses\ApiResponse;
+use App\Services\MenuService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -14,7 +15,8 @@ use Illuminate\View\View;
  * 仅按 terminal 分流身份与入口渲染（UI 单版本，接口数据按端隔离）。
  *
  * 能力裁剪（用户端不提供）：应用中心、通知中心（all-todos/start-disabled-menus）、
- * 官网动态（home-menu-urls）、「覆盖传统后台」偏好——对应路由不在 Routes/user.php 注册。
+ * 「覆盖传统后台」偏好——对应路由不在 Routes/user.php 注册。
+ * 窗口前台菜单（menus/tree、home-menu-urls）由用户端自行提供，避免请求 admin 受保护接口。
  */
 class WebosController extends AdminWebosController
 {
@@ -97,6 +99,18 @@ class WebosController extends AdminWebosController
     public function menus(): JsonResponse
     {
         return $this->userTerminalMenus();
+    }
+
+    /**
+     * 窗口「前台菜单」数据源：home 终端菜单树。
+     *
+     * 与框架 /api/admin/menus/tree?terminal_type=home 完全同构（复用框架 MenuService::tree，
+     * 含 menu.rendering 渲染钩子），仅返回 terminal_type=home 菜单，不泄露后台菜单；
+     * 用户端不得请求 admin 受保护接口，否则未登录后台时会触发会话恢复层误报「会话过期」。
+     */
+    public function homeMenuTree(MenuService $menuService): JsonResponse
+    {
+        return response()->json($menuService->tree('home'));
     }
 
     /**

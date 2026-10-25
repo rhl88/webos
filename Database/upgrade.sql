@@ -122,3 +122,40 @@ WHERE table_schema = DATABASE() AND table_name = 'app_cmspro_webos_workspaces' A
 -- ---------- 回滚方案 ----------
 -- 见同目录 rollback.sql「2.1.89 回滚」段
 
+-- ============================================================================
+-- 2.1.98 管理桌面角色预设：terminal 列扩容 VARCHAR(10) → VARCHAR(20)
+-- 影响表: app_cmspro_webos_workspaces
+-- 变更类型: DDL (字段类型兼容扩容)
+-- 创建日期: 2026-10-24
+-- 风险等级: 低（扩容向兼容，无数据变更，无需停机；表数据量小）
+-- 说明: 2.1.98 新增 terminal='admin_preset'（12 字符）取值，超出 2.1.80 的
+--       VARCHAR(10) 定义，MySQL 严格模式下保存管理桌面预设报 1406 Data too long。
+--       Laravel 应用升级流程会自动执行对应迁移（Install::upgrade），
+--       本段脚本用于人工核验或应急升级，可重复执行（幂等）。
+-- ============================================================================
+
+-- ---------- 前置检查 + 正向变更：terminal 列扩容（已是 VARCHAR(20) 则跳过） ----------
+-- MODIFY 需带完整列定义，列位置保持不变；IF 同时校验存在性与当前长度
+SET @extend_terminal_sql := (
+    SELECT IF(
+        COUNT(*) = 1 AND CHARACTER_MAXIMUM_LENGTH < 20,
+        'ALTER TABLE `app_cmspro_webos_workspaces` MODIFY COLUMN `terminal` VARCHAR(20) NOT NULL DEFAULT ''admin'' COMMENT ''所属终端：admin后台，user前台用户，preset后台预设，admin_preset后台角色预设''',
+        'SELECT ''terminal 列已是 VARCHAR(20) 或表/列不存在，跳过'' AS notice'
+    )
+    FROM information_schema.columns
+    WHERE table_schema = DATABASE()
+      AND table_name = 'app_cmspro_webos_workspaces'
+      AND column_name = 'terminal'
+);
+PREPARE stmt FROM @extend_terminal_sql;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
+
+-- ---------- 数据验证 ----------
+SELECT column_name, column_type, is_nullable, column_default, character_maximum_length
+FROM information_schema.columns
+WHERE table_schema = DATABASE() AND table_name = 'app_cmspro_webos_workspaces' AND column_name = 'terminal';
+
+-- ---------- 回滚方案 ----------
+-- 见同目录 rollback.sql「2.1.98 回滚」段
+

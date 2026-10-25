@@ -26,4 +26,15 @@ Route::prefix('api')->name('api.')->group(function () {
     // 「用户桌面」预设（OS 设置 → 用户桌面 Tab）：新用户首次进入用户端 WebOS 的初始桌面图标
     Route::get('/user-desktop-preset', [WebosController::class, 'userDesktopPreset'])->name('user-desktop-preset.show');
     Route::put('/user-desktop-preset', [WebosController::class, 'saveUserDesktopPreset'])->name('user-desktop-preset.update');
+    // 「用户桌面」查看/代改指定前台用户桌面（OS 设置 → 用户桌面 Tab 搜索用户，2.1.99）
+    Route::get('/user-desktop/users', [WebosController::class, 'searchUsers'])->name('user-desktop-users.index');
+    Route::get('/user-desktop', [WebosController::class, 'userDesktop'])->name('user-desktop.show');
+    Route::put('/user-desktop', [WebosController::class, 'saveUserDesktop'])->name('user-desktop.update');
+    // 「管理桌面」按角色预设（OS 设置 → 管理桌面 Tab）：按后台角色预设管理员初始桌面图标
+    Route::get('/admin-desktop-preset', [WebosController::class, 'adminDesktopPreset'])->name('admin-desktop-preset.show');
+    Route::put('/admin-desktop-preset', [WebosController::class, 'saveAdminDesktopPreset'])->name('admin-desktop-preset.update');
+    // 「管理桌面」查看/代改指定管理员桌面（OS 设置 → 管理桌面 Tab 预设角色行右侧搜索管理员，2.1.100）
+    Route::get('/admin-desktop/admins', [WebosController::class, 'searchAdmins'])->name('admin-desktop-admins.index');
+    Route::get('/admin-desktop', [WebosController::class, 'adminWorkspaceDesktop'])->name('admin-desktop.show');
+    Route::put('/admin-desktop', [WebosController::class, 'saveAdminWorkspaceDesktop'])->name('admin-desktop.update');
 });

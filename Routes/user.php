@@ -17,6 +17,11 @@ Route::prefix('api')->name('api.')->group(function () {
     Route::get('/admin-identity', [WebosController::class, 'adminIdentity'])->name('admin-identity');
     // 用户端开始菜单数据源（terminal_type=user 菜单树，与 admin 端 userMenus 输出同构）
     Route::get('/menus', [WebosController::class, 'menus'])->name('menus');
+    // 窗口「前台菜单」数据源（terminal_type=home 菜单树，与框架 /api/admin/menus/tree?terminal_type=home 同构）；
+    // 用户端不得调用 admin 受保护接口，否则未登录后台时会触发会话恢复层并误报「会话过期」
+    Route::get('/menus/tree', [WebosController::class, 'homeMenuTree'])->name('menus.tree');
+    // 前台菜单 URL 兼容转换（域名绑定应用原始路径换算为访问地址），复用父类实现
+    Route::get('/home-menu-urls', [WebosController::class, 'homeMenuUrls'])->name('home-menu-urls');
     // 用户端可见应用清单（菜单涉及应用，提供名称/图标，供开始菜单与桌面入口树等渲染）
     Route::get('/applications', [WebosController::class, 'applications'])->name('applications');
     // 会话恢复：419 后静默换取新 CSRF Token（与框架 admin 端 csrf-token 接口行为一致）

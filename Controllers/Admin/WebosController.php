@@ -12,8 +12,11 @@ use App\Enums\Status;
 use App\Http\Controllers\Controller;
 use App\Http\Responses\ApiResponse;
 use App\Models\AdminMenu;
+use App\Models\AdminRole;
 use App\Models\AdminTodoRead;
+use App\Models\AdminUser;
 use App\Models\AppModel;
+use App\Models\User;
 use App\Services\LoginSecurityService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -225,22 +228,7 @@ class WebosController extends Controller
             ->pluck('app_id')
             ->all();
 
-        if (! $appIds) {
-            return [];
-        }
-
-        return AppModel::query()
-            ->whereIn('app_id', $appIds)
-            ->orderBy('id', 'asc')
-            ->get()
-            ->map(function (AppModel $app) {
-                $data = $app->only(['app_id', 'name', 'icon', 'version', 'status', 'is_system']);
-                // 应用图标公开路由（无需认证），与 admin 端 getInstalledApps 同一口径
-                $data['icon_url'] = url('/api/app/' . $app->app_id . '/icon');
-                return $data;
-            })
-            ->values()
-            ->all();
+        return $this->applicationListByAppIds($appIds);
     }
 
     /**
@@ -403,6 +391,406 @@ class WebosController extends Controller
             ['desktop_items' => $preset->desktop_items ?? []],
             '用户桌面预设已保存'
         ));
+    }
+
+    /**
+     * 「管理桌面」预设读取（OS 设置 → 管理桌面 Tab）：返回后台启用角色列表与指定角色
+     * （缺省取第一角色）预设的管理员桌面图标，及该角色被分配的后台菜单目录（菜单树/
+     * 应用清单）。预设面向后台管理员，编辑器只能从角色被分配的菜单中选取入口
+     * （角色未分配的菜单不出现在目录，与框架后台菜单授权口径一致）。
+     */
+    public function adminDesktopPreset(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'role_id' => ['nullable', 'integer', 'min:1'],
+        ]);
+
+        $roles = AdminRole::query()->enabled()->orderBy('sort')->orderBy('id')->get(['id', 'name']);
+        $roleId = (int) ($validated['role_id'] ?? 0);
+        $role = $roleId > 0 ? $roles->firstWhere('id', $roleId) : $roles->first();
+
+        return response()->json(ApiResponse::success([
+            'roles' => $roles->map(fn (AdminRole $item): array => ['id' => $item->id, 'name' => $item->name])->values()->all(),
+            'role_id' => $role?->id,
+            'desktop_items' => $role !== null ? ($this->workspaces->getAdminPreset((int) $role->id)->desktop_items ?? []) : [],
+            'catalog' => $role !== null ? [
+                'menus' => $this->roleMenuTree((int) $role->id),
+                'applications' => $this->roleApplicationList((int) $role->id),
+            ] : ['menus' => [], 'applications' => []],
+        ]));
+    }
+
+    /**
+     * 「管理桌面」预设保存：拥有该角色的后台管理员进入 WebOS 时，按其全部启用角色
+     * 的预设做并集差量同步（补齐管理员桌面缺失的初始图标；已推送过的项不再重复下发）。
+     * 校验与净化口径与工作区保存完全一致，保证下发数据必然通过保存校验。
+     */
+    public function saveAdminDesktopPreset(Request $request): JsonResponse
+    {
+        $validated = $request->validate(array_merge($this->desktopItemsRules(), [
+            'role_id' => ['required', 'integer', 'min:1', 'exists:admin_roles,id'],
+        ]));
+        $preset = $this->workspaces->saveAdminPresetItems(
+            (int) $validated['role_id'],
+            $validated['desktop_items'] ?? []
+        );
+
+        return response()->json(ApiResponse::success(
+            ['desktop_items' => $preset->desktop_items ?? []],
+            '管理桌面预设已保存'
+        ));
+    }
+
+    /**
+     * 搜索前台用户（「用户桌面」Tab 搜索框，2.1.99）：用户名/昵称模糊匹配，
+     * 排除禁用用户（status≠1）；仅返回列表展示所需的最小字段（不暴露邮箱/手机号等敏感信息）。
+     */
+    public function searchUsers(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'keyword' => ['nullable', 'string', 'max:60'],
+        ]);
+
+        $keyword = trim((string) ($validated['keyword'] ?? ''));
+        $query = User::query()
+            ->where('status', Status::ENABLED->value)
+            ->orderBy('id')
+            ->limit(20);
+        if ($keyword !== '') {
+            $query->where(function ($query) use ($keyword) {
+                $query->where('username', 'like', '%' . $keyword . '%')
+                    ->orWhere('nickname', 'like', '%' . $keyword . '%');
+            });
+        }
+
+        return response()->json(ApiResponse::success(
+            $query->get(['id', 'username', 'nickname'])
+                ->map(fn (User $user): array => [
+                    'id' => $user->id,
+                    'username' => $user->username,
+                    'nickname' => $user->nickname,
+                ])
+                ->values()
+                ->all()
+        ));
+    }
+
+    /**
+     * 读取指定前台用户的桌面数据（「用户桌面」Tab 搜索选中后查看，2.1.99）：
+     * 返回用户信息 + 桌面图标 + 任务栏固定项 + 用户端目录（菜单树/应用清单）。
+     * 只读不落库：用户尚无工作区行时图标/任务栏返回空列表（首次进入用户端时才建行），
+     * 也不触发后台预设的差量同步（查看行为不得改变用户桌面数据）。
+     */
+    public function userDesktop(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'user_id' => ['required', 'integer', 'min:1', 'exists:users,id'],
+        ]);
+
+        $userId = (int) $validated['user_id'];
+        $user = User::query()->findOrFail($userId);
+        $workspace = $this->workspaces->getUserWorkspace($userId);
+
+        return response()->json(ApiResponse::success([
+            'user' => [
+                'id' => $user->id,
+                'username' => $user->username,
+                'nickname' => $user->nickname,
+            ],
+            'desktop_items' => $workspace?->desktop_items ?? [],
+            'taskbar_items' => $workspace?->taskbar_items ?? [],
+            'catalog' => [
+                'menus' => $this->userTerminalMenuTree(),
+                'applications' => $this->userTerminalApplicationList(),
+            ],
+        ]));
+    }
+
+    /**
+     * 后台代改用户桌面保存（「用户桌面」Tab 查看用户后的保存，2.1.99）：
+     * 仅覆盖 desktop_items，任务栏固定项/偏好/预设推送台账不动；用户无工作区行时自动建行。
+     * 校验与净化口径与用户端工作区保存完全一致，保证代改数据与用户自行保存的数据同构。
+     */
+    public function saveUserDesktop(Request $request): JsonResponse
+    {
+        $validated = $request->validate(array_merge($this->desktopItemsRules(), [
+            'user_id' => ['required', 'integer', 'min:1', 'exists:users,id'],
+        ]));
+
+        $workspace = $this->workspaces->saveUserDesktopItems(
+            (int) $validated['user_id'],
+            $validated['desktop_items'] ?? []
+        );
+
+        return response()->json(ApiResponse::success(
+            ['desktop_items' => $workspace->desktop_items ?? []],
+            '用户桌面已保存'
+        ));
+    }
+
+    /**
+     * 搜索后台管理员（「管理桌面」Tab 预设角色行右侧搜索框，2.1.100）：账号/姓名模糊匹配，
+     * 排除禁用管理员（status≠1）；仅返回列表展示所需的最小字段（不暴露邮箱/手机号等敏感信息）。
+     */
+    public function searchAdmins(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'keyword' => ['nullable', 'string', 'max:60'],
+        ]);
+
+        $keyword = trim((string) ($validated['keyword'] ?? ''));
+        $query = AdminUser::query()
+            ->where('status', Status::ENABLED->value)
+            ->orderBy('id')
+            ->limit(20);
+        if ($keyword !== '') {
+            $query->where(function ($query) use ($keyword) {
+                $query->where('username', 'like', '%' . $keyword . '%')
+                    ->orWhere('name', 'like', '%' . $keyword . '%');
+            });
+        }
+
+        return response()->json(ApiResponse::success(
+            $query->get(['id', 'username', 'name'])
+                ->map(fn (AdminUser $admin): array => [
+                    'id' => $admin->id,
+                    'username' => $admin->username,
+                    'name' => $admin->name,
+                ])
+                ->values()
+                ->all()
+        ));
+    }
+
+    /**
+     * 读取指定管理员的后台桌面数据（「管理桌面」Tab 搜索选中后查看，2.1.100）：
+     * 返回管理员信息 + 桌面图标 + 任务栏固定项 + 该管理员的后台目录（菜单树/应用清单）。
+     * 只读不落库：管理员尚无工作区行时图标/任务栏返回空列表（首次进入后台时才建行），
+     * 也不触发其角色「管理桌面」预设的差量同步（查看行为不得改变管理员桌面数据）。
+     */
+    public function adminWorkspaceDesktop(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'admin_id' => ['required', 'integer', 'min:1', 'exists:admin_users,id'],
+        ]);
+
+        $adminId = (int) $validated['admin_id'];
+        $admin = AdminUser::query()->with('roles')->findOrFail($adminId);
+        $workspace = $this->workspaces->getAdminWorkspace($adminId);
+
+        return response()->json(ApiResponse::success([
+            'admin' => [
+                'id' => $admin->id,
+                'username' => $admin->username,
+                'name' => $admin->name,
+            ],
+            'desktop_items' => $workspace?->desktop_items ?? [],
+            'taskbar_items' => $workspace?->taskbar_items ?? [],
+            'catalog' => [
+                'menus' => $this->adminMenuTreeForAdmin($admin),
+                'applications' => $this->adminApplicationListForAdmin($admin),
+            ],
+        ]));
+    }
+
+    /**
+     * 后台代改指定管理员桌面保存（「管理桌面」Tab 查看管理员后的保存，2.1.100）：
+     * 仅覆盖 desktop_items，任务栏固定项/偏好/角色预设推送台账不动；管理员无工作区行时自动建行。
+     * 校验与净化口径与后台工作区保存完全一致，保证代改数据与管理员自行保存的数据同构。
+     */
+    public function saveAdminWorkspaceDesktop(Request $request): JsonResponse
+    {
+        $validated = $request->validate(array_merge($this->desktopItemsRules(), [
+            'admin_id' => ['required', 'integer', 'min:1', 'exists:admin_users,id'],
+        ]));
+
+        $workspace = $this->workspaces->saveAdminDesktopItems(
+            (int) $validated['admin_id'],
+            $validated['desktop_items'] ?? []
+        );
+
+        return response()->json(ApiResponse::success(
+            ['desktop_items' => $workspace->desktop_items ?? []],
+            '管理员桌面已保存'
+        ));
+    }
+
+    /**
+     * 指定后台角色的菜单树：与框架后台菜单授权口径一致（MenuService::userMenus
+     * 的按角色版本）——角色被分配的菜单（status/visible 开启）+ 祖先补全（子菜单
+     * 被授权时补齐其父级，避免树形结构断裂），不叠加 terminal_type 过滤。
+     *
+     * @return array<int,array<string,mixed>>
+     */
+    protected function roleMenuTree(int $roleId): array
+    {
+        return $this->roleMenuTreeForRoles([$roleId]);
+    }
+
+    /**
+     * 指定角色集合的菜单树（2.1.100 泛化）：全部角色（不过滤角色启用状态，与
+     * MenuService::userMenus 口径一致）被分配菜单的并集 + 祖先补全；供单角色预设
+     * 与「查看管理员桌面」目录共用（管理员目录 = 其全部角色的并集）。
+     *
+     * @param array<int,int> $roleIds
+     * @return array<int,array<string,mixed>>
+     */
+    protected function roleMenuTreeForRoles(array $roleIds): array
+    {
+        $roleIds = array_values(array_unique(array_filter(array_map('intval', $roleIds))));
+        if (! $roleIds) {
+            return [];
+        }
+
+        $menus = AdminMenu::query()
+            ->whereHas('roles', fn ($query) => $query->whereIn('admin_roles.id', $roleIds))
+            ->where('status', 1)
+            ->where('visible', 1)
+            ->orderBy('sort')
+            ->get();
+
+        // 补全父级菜单：沿 parent_id 逐级上溯收集缺失祖先，缺失祖先按 status/visible 开启口径补齐
+        $menuIds = $menus->pluck('id')->all();
+        $missingIds = [];
+        $allMenus = null;
+        foreach ($menus as $menu) {
+            $parentId = $menu->parent_id;
+            while ($parentId != 0 && ! in_array($parentId, $menuIds)) {
+                $missingIds[] = $parentId;
+                $menuIds[] = $parentId;
+                if ($allMenus === null) {
+                    $allMenus = AdminMenu::query()->where('status', 1)->where('visible', 1)->get()->keyBy('id');
+                }
+                $parentId = isset($allMenus[$parentId]) ? $allMenus[$parentId]->parent_id : 0;
+            }
+        }
+
+        if (! empty($missingIds)) {
+            $parentMenus = AdminMenu::query()
+                ->whereIn('id', array_unique($missingIds))
+                ->where('status', 1)
+                ->where('visible', 1)
+                ->orderBy('sort')
+                ->get();
+            $menus = $menus->merge($parentMenus)->sortBy('sort')->values();
+        }
+
+        return $this->buildMenuTree($menus->toArray());
+    }
+
+    /**
+     * 指定管理员的后台菜单树（「查看管理员桌面」目录，2.1.100）：与框架后台菜单授权
+     * 口径一致——超级管理员可见全部 status/visible 开启菜单；普通管理员可见其全部角色
+     * （不过滤角色启用状态）被分配菜单的并集 + 祖先补全；不叠加 terminal_type 过滤。
+     *
+     * @return array<int,array<string,mixed>>
+     */
+    protected function adminMenuTreeForAdmin(AdminUser $admin): array
+    {
+        if ($admin->isSuperAdmin()) {
+            $menus = AdminMenu::query()
+                ->where('status', 1)
+                ->where('visible', 1)
+                ->orderBy('sort')
+                ->get()
+                ->toArray();
+
+            return $this->buildMenuTree($menus);
+        }
+
+        return $this->roleMenuTreeForRoles($admin->roles->pluck('id')->all());
+    }
+
+    /**
+     * 指定后台角色可见的应用清单：仅返回该角色菜单中出现过 app_id 的应用
+     * （与 userTerminalApplicationList 同构，目录渲染依赖应用的名称与图标）。
+     *
+     * @return array<int,array<string,mixed>>
+     */
+    protected function roleApplicationList(int $roleId): array
+    {
+        return $this->roleApplicationListForRoleIds([$roleId]);
+    }
+
+    /**
+     * 指定角色集合可见的应用清单（2.1.100 泛化）：全部角色被分配菜单中出现过
+     * app_id 的应用的并集；供单角色预设与「查看管理员桌面」目录共用。
+     *
+     * @param array<int,int> $roleIds
+     * @return array<int,array<string,mixed>>
+     */
+    protected function roleApplicationListForRoleIds(array $roleIds): array
+    {
+        $roleIds = array_values(array_unique(array_filter(array_map('intval', $roleIds))));
+        if (! $roleIds) {
+            return [];
+        }
+
+        $appIds = AdminMenu::query()
+            ->whereHas('roles', fn ($query) => $query->whereIn('admin_roles.id', $roleIds))
+            ->where('status', 1)
+            ->where('visible', 1)
+            ->whereNotNull('app_id')
+            ->where('app_id', '!=', '')
+            ->distinct()
+            ->pluck('app_id')
+            ->all();
+
+        return $this->applicationListByAppIds($appIds);
+    }
+
+    /**
+     * 指定管理员可见的应用清单（「查看管理员桌面」目录，2.1.100）：菜单树口径的
+     * 应用侧补充——超级管理员取全部开启菜单、普通管理员取其全部角色被分配菜单
+     * 中出现过的 app_id 的应用并集（目录渲染依赖应用的名称与图标）。
+     *
+     * @return array<int,array<string,mixed>>
+     */
+    protected function adminApplicationListForAdmin(AdminUser $admin): array
+    {
+        $menus = AdminMenu::query()
+            ->where('status', 1)
+            ->where('visible', 1)
+            ->whereNotNull('app_id')
+            ->where('app_id', '!=', '');
+        if (! $admin->isSuperAdmin()) {
+            $roleIds = $admin->roles->pluck('id')->all();
+            if (! $roleIds) {
+                return [];
+            }
+            $menus->whereHas('roles', fn ($query) => $query->whereIn('admin_roles.id', $roleIds));
+        }
+
+        return $this->applicationListByAppIds(
+            $menus->distinct()->pluck('app_id')->all()
+        );
+    }
+
+    /**
+     * 按 app_id 集合返回应用清单（应用名称/图标等目录渲染数据源）：
+     * 数据源与 admin 端 /api/admin/apps 同构（apps 表 name/icon + 公开图标路由 icon_url）。
+     *
+     * @param array<int,string> $appIds
+     * @return array<int,array<string,mixed>>
+     */
+    protected function applicationListByAppIds(array $appIds): array
+    {
+        if (! $appIds) {
+            return [];
+        }
+
+        return AppModel::query()
+            ->whereIn('app_id', $appIds)
+            ->orderBy('id', 'asc')
+            ->get()
+            ->map(function (AppModel $app) {
+                $data = $app->only(['app_id', 'name', 'icon', 'version', 'status', 'is_system']);
+                // 应用图标公开路由（无需认证），与 admin 端 getInstalledApps 同一口径
+                $data['icon_url'] = url('/api/app/' . $app->app_id . '/icon');
+                return $data;
+            })
+            ->values()
+            ->all();
     }
 
     public function workspace(Request $request): JsonResponse

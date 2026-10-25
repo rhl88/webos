@@ -88,10 +88,26 @@
         calendarMonths: new Map(),
         calendarPending: new Set(),
         desktopSnapshot: [],
-        // 「用户桌面」预设编辑会话（后台 OS 设置 → 用户桌面 Tab）：为真时桌面数据源被临时接管为
-        // 预设内容，网格渲染到设置窗口内的 [data-preset-grid]，退出时按 presetSnapshot 还原
+        // 预设编辑会话（后台 OS 设置）：为真时桌面数据源被临时接管为预设内容，
+        // 网格渲染到设置窗口内的 [data-preset-grid]，退出时按 presetSnapshot 还原
         presetEditing: false,
         presetSnapshot: null,
+        // 预设编辑会话来源（presetSession）：user=「用户桌面」Tab（终端预设）、admin=「管理桌面」Tab（按后台角色）；
+        // user 会话携带 userId 时表示查看/代改指定前台用户的桌面（搜索用户选中后进入）
+        presetSession: null,
+        // 「管理桌面」Tab：后台角色列表（[{id,name}]）与当前编辑的角色 ID（随 admin-desktop-preset 接口回填）
+        adminPresetRoles: null,
+        adminPresetRoleId: null,
+        // 「用户桌面」Tab 搜索查看用户（2.1.99）：当前查看的目标用户（{id,username,nickname}）、
+        // 其任务栏固定项（提示条简要展示）、编辑后未显式保存的脏标记
+        userDesktopTarget: null,
+        userDesktopTaskbar: [],
+        userDesktopDirty: false,
+        // 「管理桌面」Tab 搜索查看管理员（2.1.100）：当前查看的目标管理员（{id,username,name}）、
+        // 其任务栏固定项（提示条简要展示）、编辑后未显式保存的脏标记
+        adminDesktopTarget: null,
+        adminDesktopTaskbar: [],
+        adminDesktopDirty: false,
         wallpapers: null
     };
 
@@ -843,16 +859,38 @@
         });
     }
 
-    /** 「用户桌面」预设保存：仅提交 desktop_items（预设不含任务栏与偏好），响应回填方式与工作区一致 */
+    /** 预设保存（「用户桌面」/「管理桌面」共用）：仅提交 desktop_items（预设不含任务栏与偏好），响应回填方式与工作区一致 */
     function savePresetWorkspace() {
-        var url = root.dataset.presetUrl;
+        var session = state.presetSession || {};
+        var isAdminPreset = session.type === 'admin';
+        // 查看用户桌面：编辑只落在内存，由提示条「保存到用户桌面」按钮显式提交——
+        // 代改他人桌面属敏感操作，不能像预设那样每个拖动/删除动作都直接落库
+        if (session.type === 'user' && session.userId) {
+            markUserDesktopDirty();
+            return Promise.resolve(null);
+        }
+        // 查看管理员桌面（2.1.100）：同用户桌面，编辑只落内存、由提示条「保存到管理员桌面」按钮显式提交
+        if (session.type === 'admin' && session.adminId) {
+            markAdminDesktopDirty();
+            return Promise.resolve(null);
+        }
+        var url = isAdminPreset ? root.dataset.adminPresetUrl : root.dataset.presetUrl;
         if (!url) {
             return Promise.resolve(null);
+        }
+        var body = { desktop_items: desktopItemsPayload() };
+        // 「管理桌面」保存到当前编辑的角色预设
+        if (isAdminPreset) {
+            if (!state.adminPresetRoleId) {
+                toast('请先选择预设角色', 'error');
+                return Promise.reject(new Error('请先选择预设角色'));
+            }
+            body.role_id = state.adminPresetRoleId;
         }
         var saveSeq = ++workspaceSaveSeq;
         return api(url, {
             method: 'PUT',
-            body: { desktop_items: desktopItemsPayload() }
+            body: body
         }).then(function (response) {
             if (saveSeq !== workspaceSaveSeq) {
                 return response;
@@ -953,8 +991,18 @@
         }
         var items = assignedDesktopItems();
         if (!items.length) {
-            host.innerHTML = '<div class="preset-desktop-hint"><i class="fa fa-hand-o-right"></i>'
-                + '暂无预设图标，在空白处右键「新建」即可为用户预设文件夹、桌面入口或 URL 链接</div>';
+            // 空提示按会话区分：「管理桌面」面向角色预设、「用户桌面」面向终端预设、查看用户时面向该用户桌面
+            var session = state.presetSession || {};
+            var isAdminPreset = session.type === 'admin';
+            var emptyHint;
+            if (session.type === 'user' && session.userId) {
+                emptyHint = '该用户桌面暂无图标（首次进入用户端时将按全局预设初始化），可在空白处右键「新建」为其添加';
+            } else if (isAdminPreset) {
+                emptyHint = '暂无预设图标，在空白处右键「新建」即可为该角色预设文件夹、桌面入口或 URL 链接';
+            } else {
+                emptyHint = '暂无预设图标，在空白处右键「新建」即可为用户预设文件夹、桌面入口或 URL 链接';
+            }
+            host.innerHTML = '<div class="preset-desktop-hint"><i class="fa fa-hand-o-right"></i>' + emptyHint + '</div>';
             return;
         }
         host.innerHTML = items.map(function (item) {
@@ -3461,8 +3509,10 @@
 
     /**
      * 加载窗口对应应用的前台菜单并在「收起左侧菜单」左侧注入下拉框。
-     * 数据源：系统菜单树接口 terminal_type=home（安装时 home_menus 已写入 admin_menus 表），
+     * 数据源：前台菜单树接口 terminal_type=home（安装时 home_menus 已写入 admin_menus 表），
      * 前端按窗口应用的 app_id 筛选叶子；应用没有前台菜单时不注入任何元素。
+     * 接口按终端分流：user 端走 WebOS 自有 user 路由，避免请求 admin 受保护接口时
+     * 未登录后台触发会话恢复层（表现为「会话过期」）。
      */
     function loadWindowHomeMenu(windowState) {
         if (!windowState || !windowState.entry) { return; }
@@ -3490,12 +3540,15 @@
             inject(homeMenusCache.get(appId));
             return;
         }
-        api('/api/admin/menus/tree?terminal_type=home').then(function (payload) {
+        // 前台菜单树与 URL 转换接口：user 端为 user 路由，admin 端为框架 / 应用 admin 路由
+        var homeTreeUrl = isUserTerminal ? webosApiUrl('menus/tree') : '/api/admin/menus/tree?terminal_type=home';
+        var homeMenuUrlsUrl = isUserTerminal ? webosApiUrl('home-menu-urls') : '/admin/cmspro/webos/api/home-menu-urls';
+        api(homeTreeUrl).then(function (payload) {
             var leaves = collectHomeMenuLeaves(Array.isArray(payload) ? payload : [], appId);
             if (!leaves.length) { return; }
             // 前台链接兼容转换：域名绑定应用的原始路径（如 /forum）在主站不可达，需换算为绑定域名；
             // 转换失败或非绑定应用回退原始路径（url 字段由应用侧 home-menu-urls 接口按 menu_path 生成）
-            api('/admin/cmspro/webos/api/home-menu-urls?app_ids[]=' + encodeURIComponent(appId))
+            api(homeMenuUrlsUrl + '?app_ids[]=' + encodeURIComponent(appId))
                 .then(function (urls) {
                     var urlMap = {};
                     (urls && Array.isArray(urls[appId]) ? urls[appId] : []).forEach(function (item) {
@@ -4070,6 +4123,10 @@
             ['wallpaper', 'fa-picture-o', '背景设置'],
             ['system', 'fa-cogs', '系统设置']
         ];
+        // 「管理桌面」按角色预设 Tab：仅后台端、且「后台首页直达 WebOS」开启时追加（该 Tab 在「用户桌面」之前）
+        if (!isUserTerminal && state.workspace.preferences.override_admin_home) {
+            tabs.push(['admin-desktop', 'fa-users', '管理桌面']);
+        }
         // 「用户桌面」预设 Tab：仅后台端、且「用户首页直达 WebOS」开启时追加（用户端不渲染）
         if (!isUserTerminal && state.workspace.preferences.override_user_home) {
             tabs.push(['user-desktop', 'fa-desktop', '用户桌面']);
@@ -4218,16 +4275,416 @@
             + '</span></div></section>';
     }
 
-    /** 「用户桌面」预设：预览网格宿主（进入 Tab 后由 renderPresetGrid 填充）+ 操作说明 */
+    /** 「用户桌面」预设：搜索查看用户 + 预览网格宿主（进入 Tab 后由 renderPresetGrid 填充）+ 操作说明 */
     function userDesktopSectionMarkup() {
         return '<section class="settings-card is-wide"><div class="settings-card-title"><i class="fa fa-desktop"></i><div>'
             + '<strong>用户桌面预设</strong><small>预设按差异化增量同步到用户端桌面：后台新增且用户桌面缺失的项会自动补齐，已存在等价项不重复添加；已推送过的项（用户删除或修改后）不再重复下发</small></div></div>'
+            // 顶部操作行宿主（2.1.99）：默认为搜索框，查看用户时为目标提示条；编辑产生修改后仅重渲本宿主（不动网格）
+            + '<div data-preset-user-bar-host>' + presetUserBarMarkup() + '</div>'
             + '<div class="preset-desktop" data-preset-grid>'
             + '<div class="preset-desktop-hint"><i class="fa fa-spinner fa-spin"></i>正在载入预设…</div></div>'
             + '<div class="preset-desktop-tips"><i class="fa fa-info-circle"></i>'
             + '在网格空白处右键可新建「文件夹 / 桌面入口 / URL 链接」；在图标上右键可重命名、设置图标、删除或管理文件夹内容。'
             + '按住图标拖动可调整预设顺序，用户端同步时按该顺序列优先依次落位。'
             + '预设仅包含桌面图标，不含任务栏固定图标。新老用户进入用户端时均按差异化增量补齐，推送过的项不再重复下发。</div></section>';
+    }
+
+    /**
+     * 「用户桌面」Tab 顶部操作行（2.1.99）：默认渲染搜索框（搜索用户名/昵称查看其桌面），
+     * 查看用户会话中渲染目标提示条（用户标识 + 任务栏固定项摘要 + 保存/放弃/返回操作）。
+     */
+    function presetUserBarMarkup() {
+        var target = state.userDesktopTarget;
+        var session = state.presetSession || {};
+        if (target && session.type === 'user' && session.userId) {
+            var userName = userDisplayLabel(target);
+            var taskbar = state.userDesktopTaskbar || [];
+            var taskbarSummary = taskbar.length
+                ? '任务栏固定 ' + taskbar.length + ' 项：' + taskbar.map(function (item) {
+                    return item.title || item.id || '未命名';
+                }).join('、')
+                : '任务栏暂无固定项';
+            return '<div class="preset-user-banner" data-preset-user-banner>'
+                + '<span class="preset-user-banner-main"><i class="fa fa-user-circle-o"></i>'
+                + '正在查看 <b>' + escapeHtml(userName) + '</b> 的桌面'
+                + '<small>' + escapeHtml(taskbarSummary) + '（仅可代改桌面图标，任务栏固定项保持不动）</small></span>'
+                + '<span class="preset-user-banner-actions">'
+                + (state.userDesktopDirty
+                    ? '<button class="wallpaper-confirm-button danger" type="button" data-preset-user-save>保存到用户桌面</button>'
+                    + '<button class="wallpaper-confirm-button" type="button" data-preset-user-discard>放弃修改</button>'
+                    : '')
+                + '<button class="wallpaper-confirm-button" type="button" data-preset-user-back><i class="fa fa-undo"></i>返回预设编辑</button>'
+                + '</span></div>';
+        }
+        return '<div class="preset-user-search" data-preset-user-search>'
+            + '<i class="fa fa-search" aria-hidden="true"></i>'
+            + '<input type="search" placeholder="搜索用户名/昵称，查看该用户的桌面" autocomplete="off" data-preset-user-input>'
+            + '<ul class="preset-user-dropdown" data-preset-user-dropdown hidden></ul>'
+            + '</div>';
+    }
+
+    /** 用户展示名：昵称与账号不同时「账号（昵称）」，否则取昵称或账号 */
+    function userDisplayLabel(user) {
+        if (user.nickname && user.nickname !== user.username) {
+            return user.username + '（' + user.nickname + '）';
+        }
+        return user.nickname || user.username || ('用户 #' + user.id);
+    }
+
+    /** 「用户桌面」搜索用户：防抖定时器与响应序号（丢弃过期响应） */
+    var presetUserSearchTimer = 0;
+    var presetUserSearchSeq = 0;
+
+    /** 搜索前台用户（接口限返回 20 个启用用户），结果渲染到搜索框下方下拉 */
+    function searchPresetUsers(keyword) {
+        var base = root.dataset.userDesktopUrl;
+        if (!base) {
+            return;
+        }
+        var seq = ++presetUserSearchSeq;
+        api(base + '/users?keyword=' + encodeURIComponent(keyword)).then(function (list) {
+            if (seq !== presetUserSearchSeq) {
+                return;
+            }
+            renderPresetUserDropdown(Array.isArray(list) ? list : []);
+        }).catch(function (error) {
+            if (seq !== presetUserSearchSeq) {
+                return;
+            }
+            renderPresetUserDropdown([]);
+            toast(error.message || '用户搜索失败', 'error');
+        });
+    }
+
+    /** 渲染搜索结果下拉：无结果时给出占位提示 */
+    function renderPresetUserDropdown(users) {
+        var dropdown = root.querySelector('[data-preset-user-dropdown]');
+        if (!dropdown) {
+            return;
+        }
+        dropdown.innerHTML = users.length
+            ? users.map(function (user) {
+                return '<li><button type="button" data-preset-user-pick="' + escapeHtml(String(user.id)) + '">'
+                    + '<i class="fa fa-user-o"></i><span>' + escapeHtml(userDisplayLabel(user)) + '</span></button></li>';
+            }).join('')
+            : '<li class="is-empty">未找到匹配的启用用户</li>';
+        dropdown.hidden = false;
+    }
+
+    /** 收起搜索结果下拉 */
+    function closePresetUserDropdown() {
+        var dropdown = root.querySelector('[data-preset-user-dropdown]');
+        if (dropdown) {
+            dropdown.hidden = true;
+            dropdown.innerHTML = '';
+        }
+    }
+
+    /** 重渲「用户桌面」Tab 顶部操作行（仅替换操作行宿主，不动网格与 tips） */
+    function renderPresetUserBar() {
+        var host = root.querySelector('[data-preset-user-bar-host]');
+        if (host) {
+            host.innerHTML = presetUserBarMarkup();
+        }
+    }
+
+    /** 查看用户桌面时编辑产生未保存修改：置脏标记并刷新提示条（出现保存/放弃按钮） */
+    function markUserDesktopDirty() {
+        if (state.userDesktopDirty) {
+            return;
+        }
+        state.userDesktopDirty = true;
+        renderPresetUserBar();
+    }
+
+    /** 搜索选中用户：进入该用户桌面查看/代改会话（网格先置加载态） */
+    function openUserDesktop(userId) {
+        closePresetUserDropdown();
+        if (state.presetEditing) {
+            leavePresetSession();
+        }
+        var host = root.querySelector('[data-preset-grid]');
+        if (host) {
+            host.innerHTML = '<div class="preset-desktop-hint"><i class="fa fa-spinner fa-spin"></i>正在载入用户桌面…</div>';
+        }
+        enterPresetSession('user', userId);
+    }
+
+    /** 查看用户桌面的显式保存：确认弹窗后提交（仅覆盖该用户桌面图标），保存成功后清除脏标记 */
+    function saveUserDesktopChanges() {
+        var session = state.presetSession || {};
+        var target = state.userDesktopTarget;
+        var url = root.dataset.userDesktopUrl;
+        if (!url || !target || !session.userId) {
+            return;
+        }
+        var layer = layuiLayer();
+        if (!layer) {
+            toast('弹层组件未就绪，请刷新页面后重试', 'error');
+            return;
+        }
+        layer.confirm('确定将修改保存到用户「' + escapeHtml(userDisplayLabel(target)) + '」的桌面？', {
+            icon: 3,
+            title: '保存用户桌面',
+            btn: ['确定保存', '取消']
+        }, function (index) {
+            layer.close(index);
+            api(url, {
+                method: 'PUT',
+                body: {
+                    user_id: session.userId,
+                    desktop_items: desktopItemsPayload()
+                }
+            }).then(function (response) {
+                state.workspace.desktop_items = mergeDesktopItems(response.desktop_items);
+                state.userDesktopDirty = false;
+                renderPresetUserBar();
+                renderDesktop();
+                toast('用户桌面已保存');
+            }).catch(function (error) {
+                toast(error.message || '保存用户桌面失败', 'error');
+            });
+        });
+    }
+
+    /** 放弃对用户桌面的未保存修改：退出会话（还原快照）后重新拉取该用户桌面 */
+    function discardUserDesktopChanges() {
+        var session = state.presetSession || {};
+        if (!session.userId) {
+            return;
+        }
+        leavePresetSession();
+        var host = root.querySelector('[data-preset-grid]');
+        if (host) {
+            host.innerHTML = '<div class="preset-desktop-hint"><i class="fa fa-spinner fa-spin"></i>正在载入用户桌面…</div>';
+        }
+        enterPresetSession('user', session.userId);
+    }
+
+    /** 退出查看用户桌面：回到「用户桌面」终端预设编辑 */
+    function backToUserPreset() {
+        leavePresetSession();
+        var host = root.querySelector('[data-preset-grid]');
+        if (host) {
+            host.innerHTML = '<div class="preset-desktop-hint"><i class="fa fa-spinner fa-spin"></i>正在载入预设…</div>';
+        }
+        enterPresetSession('user');
+    }
+
+    /** 「管理桌面」按角色预设：角色选择 + 管理员搜索（角色行宿主，2.1.100）+ 预览网格宿主（进入 Tab 后由 renderPresetGrid 填充）+ 操作说明 */
+    function adminDesktopSectionMarkup() {
+        return '<section class="settings-card is-wide"><div class="settings-card-title"><i class="fa fa-users"></i><div>'
+            + '<strong>按角色预设管理员桌面</strong><small>选择后台角色并预设其初始桌面图标：拥有该角色的管理员进入 WebOS 时按差异化增量补齐，已推送过的项（管理员删除或修改后）不再重复下发；多角色管理员按角色顺序取并集</small></div></div>'
+            // 角色行宿主（2.1.100）：默认为「角色选择 + 管理员搜索框」，查看管理员时为目标提示条；编辑产生修改后仅重渲本宿主（不动网格）
+            + '<div class="preset-role-row" data-admin-desktop-bar-host>' + adminDesktopBarMarkup() + '</div>'
+            + '<div class="preset-desktop" data-preset-grid>'
+            + '<div class="preset-desktop-hint"><i class="fa fa-spinner fa-spin"></i>正在载入预设…</div></div>'
+            + '<div class="preset-desktop-tips"><i class="fa fa-info-circle"></i>'
+            + '仅可选用该角色被分配的菜单入口（角色未分配的菜单不出现在目录）。'
+            + '在网格空白处右键可新建「文件夹 / 桌面入口 / URL 链接」；在图标上右键可重命名、设置图标、删除或管理文件夹内容。'
+            + '按住图标拖动可调整预设顺序，管理员桌面同步时按该顺序列优先依次落位。'
+            + '预设仅包含桌面图标，不含任务栏固定图标。</div></section>';
+    }
+
+    /**
+     * 「管理桌面」Tab 角色行（2.1.100）：默认渲染「预设角色选择 + 管理员搜索框」（搜索账号/姓名查看其桌面），
+     * 查看管理员会话中渲染目标提示条（管理员标识 + 任务栏固定项摘要 + 保存/放弃/返回操作）。
+     */
+    function adminDesktopBarMarkup() {
+        var target = state.adminDesktopTarget;
+        var session = state.presetSession || {};
+        if (target && session.type === 'admin' && session.adminId) {
+            var adminName = adminDisplayLabel(target);
+            var taskbar = state.adminDesktopTaskbar || [];
+            var taskbarSummary = taskbar.length
+                ? '任务栏固定 ' + taskbar.length + ' 项：' + taskbar.map(function (item) {
+                    return item.title || item.id || '未命名';
+                }).join('、')
+                : '任务栏暂无固定项';
+            return '<div class="preset-user-banner" data-admin-desktop-banner>'
+                + '<span class="preset-user-banner-main"><i class="fa fa-user-circle-o"></i>'
+                + '正在查看 <b>' + escapeHtml(adminName) + '</b> 的桌面'
+                + '<small>' + escapeHtml(taskbarSummary) + '（仅可代改桌面图标，任务栏固定项保持不动）</small></span>'
+                + '<span class="preset-user-banner-actions">'
+                + (state.adminDesktopDirty
+                    ? '<button class="wallpaper-confirm-button danger" type="button" data-admin-desktop-save>保存到管理员桌面</button>'
+                    + '<button class="wallpaper-confirm-button" type="button" data-admin-desktop-discard>放弃修改</button>'
+                    : '')
+                + '<button class="wallpaper-confirm-button" type="button" data-admin-desktop-back><i class="fa fa-undo"></i>返回角色预设</button>'
+                + '</span></div>';
+        }
+        return '<label class="preset-role-picker"><span class="preset-role-label">预设角色</span>'
+            + presetRoleSelectMarkup() + '</label>'
+            + '<div class="preset-user-search" data-admin-desktop-search>'
+            + '<i class="fa fa-search" aria-hidden="true"></i>'
+            + '<input type="search" placeholder="搜索账号/姓名，查看该管理员的桌面" autocomplete="off" data-admin-desktop-input>'
+            + '<ul class="preset-user-dropdown" data-admin-desktop-dropdown hidden></ul>'
+            + '</div>';
+    }
+
+    /** 管理员展示名：姓名与账号不同时「账号（姓名）」，否则取姓名或账号 */
+    function adminDisplayLabel(admin) {
+        if (admin.name && admin.name !== admin.username) {
+            return admin.username + '（' + admin.name + '）';
+        }
+        return admin.name || admin.username || ('管理员 #' + admin.id);
+    }
+
+    /** 「管理桌面」搜索管理员：防抖定时器与响应序号（丢弃过期响应） */
+    var presetAdminSearchTimer = 0;
+    var presetAdminSearchSeq = 0;
+
+    /** 搜索后台管理员（接口限返回 20 个启用管理员），结果渲染到搜索框下方下拉 */
+    function searchPresetAdmins(keyword) {
+        var base = root.dataset.adminDesktopUrl;
+        if (!base) {
+            return;
+        }
+        var seq = ++presetAdminSearchSeq;
+        api(base + '/admins?keyword=' + encodeURIComponent(keyword)).then(function (list) {
+            if (seq !== presetAdminSearchSeq) {
+                return;
+            }
+            renderPresetAdminDropdown(Array.isArray(list) ? list : []);
+        }).catch(function (error) {
+            if (seq !== presetAdminSearchSeq) {
+                return;
+            }
+            renderPresetAdminDropdown([]);
+            toast(error.message || '管理员搜索失败', 'error');
+        });
+    }
+
+    /** 渲染管理员搜索结果下拉：无结果时给出占位提示 */
+    function renderPresetAdminDropdown(admins) {
+        var dropdown = root.querySelector('[data-admin-desktop-dropdown]');
+        if (!dropdown) {
+            return;
+        }
+        dropdown.innerHTML = admins.length
+            ? admins.map(function (admin) {
+                return '<li><button type="button" data-admin-desktop-pick="' + escapeHtml(String(admin.id)) + '">'
+                    + '<i class="fa fa-user-o"></i><span>' + escapeHtml(adminDisplayLabel(admin)) + '</span></button></li>';
+            }).join('')
+            : '<li class="is-empty">未找到匹配的启用管理员</li>';
+        dropdown.hidden = false;
+    }
+
+    /** 收起管理员搜索结果下拉 */
+    function closePresetAdminDropdown() {
+        var dropdown = root.querySelector('[data-admin-desktop-dropdown]');
+        if (dropdown) {
+            dropdown.hidden = true;
+            dropdown.innerHTML = '';
+        }
+    }
+
+    /** 重渲「管理桌面」Tab 角色行（仅替换角色行宿主，不动网格与 tips） */
+    function renderPresetAdminBar() {
+        var host = root.querySelector('[data-admin-desktop-bar-host]');
+        if (host) {
+            host.innerHTML = adminDesktopBarMarkup();
+        }
+    }
+
+    /** 查看管理员桌面时编辑产生未保存修改：置脏标记并刷新提示条（出现保存/放弃按钮） */
+    function markAdminDesktopDirty() {
+        if (state.adminDesktopDirty) {
+            return;
+        }
+        state.adminDesktopDirty = true;
+        renderPresetAdminBar();
+    }
+
+    /** 搜索选中管理员：进入该管理员桌面查看/代改会话（网格先置加载态） */
+    function openAdminWorkspace(adminId) {
+        closePresetAdminDropdown();
+        if (state.presetEditing) {
+            leavePresetSession();
+        }
+        var host = root.querySelector('[data-preset-grid]');
+        if (host) {
+            host.innerHTML = '<div class="preset-desktop-hint"><i class="fa fa-spinner fa-spin"></i>正在载入管理员桌面…</div>';
+        }
+        enterPresetSession('admin', adminId);
+    }
+
+    /** 查看管理员桌面的显式保存：确认弹窗后提交（仅覆盖该管理员桌面图标），保存成功后清除脏标记 */
+    function saveAdminDesktopChanges() {
+        var session = state.presetSession || {};
+        var target = state.adminDesktopTarget;
+        var url = root.dataset.adminDesktopUrl;
+        if (!url || !target || !session.adminId) {
+            return;
+        }
+        var layer = layuiLayer();
+        if (!layer) {
+            toast('弹层组件未就绪，请刷新页面后重试', 'error');
+            return;
+        }
+        layer.confirm('确定将修改保存到管理员「' + escapeHtml(adminDisplayLabel(target)) + '」的桌面？', {
+            icon: 3,
+            title: '保存管理员桌面',
+            btn: ['确定保存', '取消']
+        }, function (index) {
+            layer.close(index);
+            api(url, {
+                method: 'PUT',
+                body: {
+                    admin_id: session.adminId,
+                    desktop_items: desktopItemsPayload()
+                }
+            }).then(function (response) {
+                state.workspace.desktop_items = mergeDesktopItems(response.desktop_items);
+                state.adminDesktopDirty = false;
+                renderPresetAdminBar();
+                renderDesktop();
+                toast('管理员桌面已保存');
+            }).catch(function (error) {
+                toast(error.message || '保存管理员桌面失败', 'error');
+            });
+        });
+    }
+
+    /** 放弃对管理员桌面的未保存修改：退出会话（还原快照）后重新拉取该管理员桌面 */
+    function discardAdminWorkspaceChanges() {
+        var session = state.presetSession || {};
+        if (!session.adminId) {
+            return;
+        }
+        leavePresetSession();
+        var host = root.querySelector('[data-preset-grid]');
+        if (host) {
+            host.innerHTML = '<div class="preset-desktop-hint"><i class="fa fa-spinner fa-spin"></i>正在载入管理员桌面…</div>';
+        }
+        enterPresetSession('admin', session.adminId);
+    }
+
+    /** 退出查看管理员桌面：回到「管理桌面」按角色预设编辑 */
+    function backToAdminPreset() {
+        leavePresetSession();
+        var host = root.querySelector('[data-preset-grid]');
+        if (host) {
+            host.innerHTML = '<div class="preset-desktop-hint"><i class="fa fa-spinner fa-spin"></i>正在载入预设…</div>';
+        }
+        enterPresetSession('admin');
+    }
+
+    /** 「管理桌面」角色下拉：后台启用角色列表（随 admin-desktop-preset 接口回填），未加载/无角色时给出占位提示 */
+    function presetRoleSelectMarkup() {
+        var options = '';
+        if (state.adminPresetRoles === null) {
+            options = '<option value="">正在读取角色…</option>';
+        } else if (!state.adminPresetRoles.length) {
+            options = '<option value="">暂无启用角色</option>';
+        } else {
+            options = state.adminPresetRoles.map(function (role) {
+                var selected = String(role.id) === String(state.adminPresetRoleId) ? ' selected' : '';
+                return '<option value="' + escapeHtml(String(role.id)) + '"' + selected + '>' + escapeHtml(role.name) + '</option>';
+            }).join('');
+        }
+        var disabled = !state.adminPresetRoles || !state.adminPresetRoles.length;
+        return '<select class="preset-role-select" data-preset-role' + (disabled ? ' disabled' : '') + '>' + options + '</select>';
     }
 
     /** 重置工作区：恢复默认布局后同步本地状态并重渲染桌面/任务栏 */
@@ -4252,8 +4709,12 @@
             return;
         }
         var preferences = state.workspace.preferences;
-        // 「用户桌面」Tab 仅在后台端且「用户首页直达 WebOS」开启时可用：配置被关闭时回退到基本设置
+        // 「用户桌面」Tab 仅在后台端且「用户首页直达 WebOS」开启时可用；「管理桌面」Tab 仅在后台端
+        // 且「后台首页直达 WebOS」开启时可用：配置被关闭时回退到基本设置
         if (osSettingsTab === 'user-desktop' && (isUserTerminal || !preferences.override_user_home)) {
+            osSettingsTab = 'general';
+        }
+        if (osSettingsTab === 'admin-desktop' && (isUserTerminal || !preferences.override_admin_home)) {
             osSettingsTab = 'general';
         }
         var positions = [
@@ -4267,6 +4728,8 @@
             content = '<div class="settings-grid">' + systemSectionMarkup(preferences) + '</div>';
         } else if (osSettingsTab === 'user-desktop') {
             content = '<div class="settings-grid">' + userDesktopSectionMarkup() + '</div>';
+        } else if (osSettingsTab === 'admin-desktop') {
+            content = '<div class="settings-grid">' + adminDesktopSectionMarkup() + '</div>';
         } else {
             content = '<div class="settings-grid">'
             + '<section class="settings-card"><div class="settings-card-title"><i class="fa fa-window-maximize"></i><div>'
@@ -4319,36 +4782,79 @@
         if (osSettingsTab === 'wallpaper' && state.wallpapers === null) {
             loadWallpapers();
         }
-        // 「用户桌面」Tab：首次进入拉取预设并开启预设编辑会话；已在会话中则重绘网格
-        if (osSettingsTab === 'user-desktop') {
-            if (state.presetEditing) {
+        // 预设编辑会话（「用户桌面」/「管理桌面」Tab）：首次进入拉取预设并开启会话；
+        // 已在同类会话中则重绘网格，跨 Tab 切换（user ↔ admin）时先退出旧会话再进入新会话
+        var presetSourceType = osSettingsTab === 'admin-desktop' ? 'admin' : (osSettingsTab === 'user-desktop' ? 'user' : '');
+        if (presetSourceType) {
+            if (state.presetEditing && state.presetSession && state.presetSession.type === presetSourceType) {
                 renderDesktop();
             } else {
-                enterPresetSession();
+                if (state.presetEditing) {
+                    leavePresetSession();
+                }
+                enterPresetSession(presetSourceType);
             }
         } else if (state.presetEditing) {
-            // 切离「用户桌面」Tab（设置窗口内切换其它 Tab）时结束会话，还原真实桌面数据
+            // 切离预设 Tab（设置窗口内切换其它 Tab）时结束会话，还原真实桌面数据
             leavePresetSession();
         }
     }
 
     /**
-     * 进入「用户桌面」预设编辑会话（幂等）：拉取预设与用户端菜单目录后，
-     * 把桌面数据源临时接管为「预设 desktop_items + 用户端目录」，
+     * 进入预设编辑会话（幂等）：type=user 为「用户桌面」（终端预设，目录按用户端菜单解析），
+     * type=admin 为「管理桌面」（按后台角色，目录按角色被分配的后台菜单解析）；
+     * 传入 userId（2.1.99，type=user）时切换为「查看指定前台用户桌面」会话：读取该用户工作区
+     * （不存在时为空网格，保存时自动建行），目录按用户端菜单解析，编辑仅落内存、由提示条显式保存；
+     * 传入 userId（2.1.100，type=admin，此时承载管理员 ID）时切换为「查看指定管理员桌面」会话：
+     * 只读读取该管理员工作区（不存在时为空网格，保存时自动建行），目录按该管理员授权后台菜单
+     * 解析（超管全部菜单/普通管理员其全部角色被分配菜单并集），编辑仅落内存、由提示条显式保存。
+     * 拉取预设与目录后，把桌面数据源临时接管为「预设 desktop_items + 对应目录」，
      * 使既有桌面编辑链路（新建/重命名/删除/文件夹浮层/图标设置）无需改造即可编辑预设；
      * 原 4 个 state 字段备份在 presetSnapshot，退出会话（leavePresetSession）时还原。
      */
-    function enterPresetSession() {
+    function enterPresetSession(type, userId) {
+        var isAdminPreset = type === 'admin';
+        var isUserDesktop = type === 'user' && !!userId;
+        var isAdminDesktop = type === 'admin' && !!userId;
         var host = root.querySelector('[data-preset-grid]');
-        var presetUrl = root.dataset.presetUrl;
+        var presetUrl = '';
+        if (isUserDesktop) {
+            presetUrl = root.dataset.userDesktopUrl || '';
+            if (presetUrl) {
+                presetUrl += (presetUrl.indexOf('?') === -1 ? '?' : '&') + 'user_id=' + encodeURIComponent(userId);
+            }
+        } else if (isAdminDesktop) {
+            presetUrl = root.dataset.adminDesktopUrl || '';
+            if (presetUrl) {
+                presetUrl += (presetUrl.indexOf('?') === -1 ? '?' : '&') + 'admin_id=' + encodeURIComponent(userId);
+            }
+        } else {
+            presetUrl = isAdminPreset ? root.dataset.adminPresetUrl : root.dataset.presetUrl;
+        }
         if (!presetUrl) {
             if (host) {
-                host.innerHTML = '<div class="preset-desktop-hint is-error">预设接口地址缺失，无法编辑用户桌面</div>';
+                host.innerHTML = '<div class="preset-desktop-hint is-error">'
+                    + (isUserDesktop ? '用户桌面接口地址缺失，无法查看用户桌面'
+                        : (isAdminDesktop ? '管理员桌面接口地址缺失，无法查看管理员桌面' : '预设接口地址缺失，无法编辑预设'))
+                    + '</div>';
             }
             return;
         }
+        // 「管理桌面」按角色预设读取时附当前选择的角色（未选择时由接口缺省取第一角色）；
+        // 查看指定管理员桌面走 admin-desktop 接口，不携带角色参数
+        if (isAdminPreset && !isAdminDesktop && state.adminPresetRoleId) {
+            presetUrl += (presetUrl.indexOf('?') === -1 ? '?' : '&') + 'role_id=' + encodeURIComponent(state.adminPresetRoleId);
+        }
         api(presetUrl).then(function (preset) {
             var data = preset || {};
+            // 「管理桌面」按角色预设回填角色列表与当前编辑角色（查看管理员桌面响应不含角色，
+            // 不回填避免清空已加载的角色列表）；角色列表首载后需重建面板刷新下拉与选中项
+            var rolesLoaded = false;
+            if (isAdminPreset && !isAdminDesktop) {
+                rolesLoaded = state.adminPresetRoles === null && Array.isArray(data.roles);
+                state.adminPresetRoles = Array.isArray(data.roles) ? data.roles : [];
+                state.adminPresetRoleId = data.role_id || null;
+            }
             state.presetSnapshot = {
                 desktopItems: state.workspace.desktop_items,
                 catalog: state.catalog,
@@ -4359,35 +4865,87 @@
             state.workspace.desktop_items = (data.desktop_items || []).map(function (item) {
                 return Object.assign({}, item);
             });
-            // 接管目录：预设中的入口树按用户端菜单解析，应用图标取用户端应用清单
+            // 接管目录：预设中的入口树按对应终端菜单解析，应用图标取对应应用清单
             state.catalog = {
                 applications: (data.catalog && data.catalog.applications) || [],
-                menus: filterAdminMenus((data.catalog && data.catalog.menus) || [], 'user'),
+                menus: filterAdminMenus((data.catalog && data.catalog.menus) || [], isAdminPreset ? 'admin' : 'user'),
                 operation_logs: []
             };
             state.flatMenus = flattenMenus(state.catalog.menus);
             state.startFlatMenus = state.flatMenus;
             state.presetEditing = true;
+            state.presetSession = { type: type };
+            if (isUserDesktop) {
+                // 查看指定用户桌面：记录目标用户与任务栏固定项（提示条简要展示），编辑未保存前无脏标记
+                state.presetSession.userId = userId;
+                state.userDesktopTarget = data.user || { id: userId, username: '', nickname: '' };
+                state.userDesktopTaskbar = Array.isArray(data.taskbar_items) ? data.taskbar_items : [];
+                state.userDesktopDirty = false;
+            }
+            if (isAdminDesktop) {
+                // 查看指定管理员桌面：记录目标管理员与任务栏固定项（提示条简要展示），编辑未保存前无脏标记
+                state.presetSession.adminId = userId;
+                state.adminDesktopTarget = data.admin || { id: userId, username: '', name: '' };
+                state.adminDesktopTaskbar = Array.isArray(data.taskbar_items) ? data.taskbar_items : [];
+                state.adminDesktopDirty = false;
+            }
+            // 角色列表首载：重建设置面板让角色下拉即刻反映接口返回，面板重建会复用当前会话重绘网格
+            if (rolesLoaded) {
+                renderWebosSettings();
+                return;
+            }
             renderDesktop();
         }).catch(function (error) {
             state.presetEditing = false;
             state.presetSnapshot = null;
+            state.presetSession = null;
+            // 读取失败时不残留查看用户/管理员桌面的半状态，避免提示条按旧目标渲染
+            state.userDesktopTarget = null;
+            state.userDesktopTaskbar = [];
+            state.userDesktopDirty = false;
+            state.adminDesktopTarget = null;
+            state.adminDesktopTaskbar = [];
+            state.adminDesktopDirty = false;
             var errorHost = root.querySelector('[data-preset-grid]');
             if (errorHost) {
                 errorHost.innerHTML = '<div class="preset-desktop-hint is-error"><i class="fa fa-exclamation-circle"></i>'
                     + escapeHtml(error.message || '预设读取失败') + '</div>';
             }
-            toast(error.message || '用户桌面预设读取失败', 'error');
+            toast(error.message || '预设读取失败', 'error');
         });
     }
 
-    /** 退出「用户桌面」预设编辑会话（幂等）：关闭预设遗留的右键菜单/文件夹浮层，还原被接管的 state 字段并重绘 */
+    /** 「管理桌面」切换编辑角色：退出当前会话（还原快照）后按新角色重新进入，网格先置加载态 */
+    function switchAdminPresetRole(roleId) {
+        if (String(roleId) === String(state.adminPresetRoleId)) {
+            return;
+        }
+        state.adminPresetRoleId = roleId;
+        if (state.presetEditing) {
+            leavePresetSession();
+        }
+        var host = root.querySelector('[data-preset-grid]');
+        if (host) {
+            host.innerHTML = '<div class="preset-desktop-hint"><i class="fa fa-spinner fa-spin"></i>正在载入预设…</div>';
+        }
+        enterPresetSession('admin');
+    }
+
+    /** 退出预设编辑会话（幂等）：关闭预设遗留的右键菜单/文件夹浮层，还原被接管的 state 字段并重绘 */
     function leavePresetSession() {
         if (!state.presetEditing) {
             return;
         }
         closeDesktopContextMenu();
         closeFolderOverlay();
+        // 查看用户桌面存在未保存修改时退出（切 Tab/返回/放弃）：提示修改未落库，避免误以为已保存
+        if (state.userDesktopDirty) {
+            toast('已放弃对该用户桌面的未保存修改', 'error');
+        }
+        // 查看管理员桌面存在未保存修改时退出（切 Tab/返回/放弃）：提示修改未落库，避免误以为已保存
+        if (state.adminDesktopDirty) {
+            toast('已放弃对该管理员桌面的未保存修改', 'error');
+        }
         var snapshot = state.presetSnapshot;
         if (snapshot) {
             state.workspace.desktop_items = snapshot.desktopItems;
@@ -4397,6 +4955,15 @@
         }
         state.presetEditing = false;
         state.presetSnapshot = null;
+        state.presetSession = null;
+        // 结束查看用户桌面：清空目标用户状态（下次进入时重新拉取回填）
+        state.userDesktopTarget = null;
+        state.userDesktopTaskbar = [];
+        state.userDesktopDirty = false;
+        // 结束查看管理员桌面：清空目标管理员状态（下次进入时重新拉取回填）
+        state.adminDesktopTarget = null;
+        state.adminDesktopTaskbar = [];
+        state.adminDesktopDirty = false;
         state.desktopSelection.clear();
         renderDesktop();
         renderStartMenu();
@@ -11658,6 +12225,97 @@
             var file = input.files[0];
             input.value = '';
             uploadWallpaper(file);
+        });
+
+        // 「管理桌面」角色下拉切换：切换编辑角色并重载该角色的预设
+        root.addEventListener('change', function (event) {
+            var select = event.target.closest('[data-preset-role]');
+            if (!select) {
+                return;
+            }
+            switchAdminPresetRole(select.value);
+        });
+
+        // 「用户桌面」搜索用户：输入防抖 300ms 后搜索；清空关键字时收起下拉并作废在途响应
+        root.addEventListener('input', function (event) {
+            var input = event.target.closest('[data-preset-user-input]');
+            if (!input) {
+                return;
+            }
+            clearTimeout(presetUserSearchTimer);
+            var keyword = input.value.trim();
+            if (!keyword) {
+                presetUserSearchSeq++;
+                closePresetUserDropdown();
+                return;
+            }
+            presetUserSearchTimer = setTimeout(function () {
+                searchPresetUsers(keyword);
+            }, 300);
+        });
+
+        // 「用户桌面」操作分发：下拉选择用户/返回预设编辑/保存到用户桌面/放弃修改；点击搜索框外收起下拉
+        root.addEventListener('click', function (event) {
+            if (!event.target.closest('[data-preset-user-search]')) {
+                closePresetUserDropdown();
+            }
+            var pick = event.target.closest('[data-preset-user-pick]');
+            if (pick) {
+                openUserDesktop(pick.dataset.presetUserPick);
+                return;
+            }
+            if (event.target.closest('[data-preset-user-back]')) {
+                backToUserPreset();
+                return;
+            }
+            if (event.target.closest('[data-preset-user-save]')) {
+                saveUserDesktopChanges();
+                return;
+            }
+            if (event.target.closest('[data-preset-user-discard]')) {
+                discardUserDesktopChanges();
+            }
+        });
+
+        // 「管理桌面」搜索管理员（2.1.100）：输入防抖 300ms 后搜索；清空关键字时收起下拉并作废在途响应
+        root.addEventListener('input', function (event) {
+            var input = event.target.closest('[data-admin-desktop-input]');
+            if (!input) {
+                return;
+            }
+            clearTimeout(presetAdminSearchTimer);
+            var keyword = input.value.trim();
+            if (!keyword) {
+                presetAdminSearchSeq++;
+                closePresetAdminDropdown();
+                return;
+            }
+            presetAdminSearchTimer = setTimeout(function () {
+                searchPresetAdmins(keyword);
+            }, 300);
+        });
+
+        // 「管理桌面」操作分发（2.1.100）：下拉选择管理员/返回角色预设/保存到管理员桌面/放弃修改；点击搜索框外收起下拉
+        root.addEventListener('click', function (event) {
+            if (!event.target.closest('[data-admin-desktop-search]')) {
+                closePresetAdminDropdown();
+            }
+            var pick = event.target.closest('[data-admin-desktop-pick]');
+            if (pick) {
+                openAdminWorkspace(pick.dataset.adminDesktopPick);
+                return;
+            }
+            if (event.target.closest('[data-admin-desktop-back]')) {
+                backToAdminPreset();
+                return;
+            }
+            if (event.target.closest('[data-admin-desktop-save]')) {
+                saveAdminDesktopChanges();
+                return;
+            }
+            if (event.target.closest('[data-admin-desktop-discard]')) {
+                discardAdminWorkspaceChanges();
+            }
         });
 
         // 任务栏固定图标：左键按住可拖动排序（独立于桌面顺序）；锁定任务栏时禁止拖动

@@ -30,6 +30,12 @@
     {{-- 用户桌面预设接口仅后台端提供（用户端不渲染「用户桌面」Tab，无需该地址） --}}
     @if ($webosTerminal === 'admin')
     data-preset-url="{{ $webosApiBase }}/user-desktop-preset"
+    {{-- 管理桌面按角色预设接口：仅后台端提供（「管理桌面」Tab 的角色预设编辑） --}}
+    data-admin-preset-url="{{ $webosApiBase }}/admin-desktop-preset"
+    {{-- 指定前台用户桌面查看/代改接口：仅后台端提供（「用户桌面」Tab 搜索用户，2.1.99） --}}
+    data-user-desktop-url="{{ $webosApiBase }}/user-desktop"
+    {{-- 指定管理员桌面查看/代改接口：仅后台端提供（「管理桌面」Tab 搜索管理员，2.1.100） --}}
+    data-admin-desktop-url="{{ $webosApiBase }}/admin-desktop"
     @endif
     data-calendar-url="{{ $webosApiBase }}/calendar"
     data-wallpaper-url="{{ asset('apps/cmspro.webos/images/webos-wallpaper.png') }}"
