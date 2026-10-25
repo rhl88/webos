@@ -16,7 +16,7 @@ class AdminDesktopPresetApiTest extends WebosTestCase
     /** 预设接口读写闭环：角色列表/角色预设/角色菜单目录一并下发，保存后读回一致，校验口径与工作区保存一致 */
     public function test_admin_desktop_preset_api_roundtrip(): void
     {
-        $this->actingAdmin();
+        $this->actingAsSuperAdmin();
 
         $role = AdminRole::create([
             'name' => '运营组',
@@ -91,7 +91,7 @@ class AdminDesktopPresetApiTest extends WebosTestCase
     /** role_id 缺省取第一启用角色：角色列表按 sort 排序且不含停用角色 */
     public function test_admin_desktop_preset_defaults_to_the_first_enabled_role(): void
     {
-        $this->actingAdmin();
+        $this->actingAsSuperAdmin();
 
         AdminRole::create(['name' => '低优先级', 'code' => 'webos_default_b_' . uniqid(), 'status' => 1, 'sort' => 9]);
         $firstRole = AdminRole::create(['name' => '高优先级', 'code' => 'webos_default_a_' . uniqid(), 'status' => 1, 'sort' => 1]);
@@ -101,15 +101,15 @@ class AdminDesktopPresetApiTest extends WebosTestCase
             ->assertOk()
             ->assertJsonPath('data.role_id', $firstRole->id);
 
-        // 角色列表：启用角色按 sort 升序，停用角色不下发
+        // 角色列表：启用角色按 sort 升序，停用角色不下发；末位为超管身份自带的内置角色（sort=999，2.1.104）
         $roles = collect($response->json('data.roles'));
-        $this->assertSame(['高优先级', '低优先级'], $roles->pluck('name')->all());
+        $this->assertSame(['高优先级', '低优先级', '超级管理员'], $roles->pluck('name')->all());
     }
 
     /** 角色菜单目录口径：仅该角色被分配的菜单（含祖先补全），未分配/停用/隐藏菜单不出现，应用清单按角色菜单收敛 */
     public function test_admin_desktop_preset_catalog_follows_role_menu_grants(): void
     {
-        $this->actingAdmin();
+        $this->actingAsSuperAdmin();
 
         $role = AdminRole::create(['name' => '运营组', 'code' => 'webos_catalog_' . uniqid(), 'status' => 1, 'sort' => 1]);
 
@@ -188,7 +188,7 @@ class AdminDesktopPresetApiTest extends WebosTestCase
         $this->assertStringContainsString('MODIFY COLUMN `terminal` VARCHAR(20) NOT NULL', $upgradeSql);
 
         // 业务回归：管理桌面角色预设按 terminal=admin_preset + 角色ID 完整落库
-        $this->actingAdmin();
+        $this->actingAsSuperAdmin();
         $role = AdminRole::create(['name' => '口径回归', 'code' => 'webos_terminal_fix_' . uniqid(), 'status' => 1, 'sort' => 1]);
         $this->putJson('/admin/cmspro/webos/api/admin-desktop-preset', [
             'role_id' => $role->id,
@@ -220,11 +220,11 @@ class AdminDesktopPresetApiTest extends WebosTestCase
 
         $script = file_get_contents(dirname(__DIR__, 2) . '/Assets/js/webos.js');
         $this->assertIsString($script);
-        // Tab 追加条件：仅后台端且「后台首页直达 WebOS」开启，且排在「用户桌面」之前
-        $this->assertStringContainsString('if (!isUserTerminal && state.workspace.preferences.override_admin_home) {', $script);
+        // Tab 追加条件：仅后台端、仅超管且「后台首页直达 WebOS」开启，且排在「用户桌面」之前
+        $this->assertStringContainsString('if (!isUserTerminal && isSuperAdmin && state.workspace.preferences.override_admin_home) {', $script);
         $this->assertStringContainsString("tabs.push(['admin-desktop', 'fa-users', '管理桌面']);", $script);
-        // 配置关闭/用户端访问时内容回退基本设置；Tab 内容与角色选择区
-        $this->assertStringContainsString("if (osSettingsTab === 'admin-desktop' && (isUserTerminal || !preferences.override_admin_home)) {", $script);
+        // 配置关闭/非超管/用户端访问时内容回退基本设置；Tab 内容与角色选择区
+        $this->assertStringContainsString("if (osSettingsTab === 'admin-desktop' && (isUserTerminal || !isSuperAdmin || !preferences.override_admin_home)) {", $script);
         $this->assertStringContainsString('function adminDesktopSectionMarkup() {', $script);
         $this->assertStringContainsString('function presetRoleSelectMarkup() {', $script);
         // 预设会话来源参数化：user=「用户桌面」Tab、admin=「管理桌面」Tab，跨 Tab 切换先退出旧会话

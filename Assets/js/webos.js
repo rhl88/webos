@@ -4123,12 +4123,12 @@
             ['wallpaper', 'fa-picture-o', '背景设置'],
             ['system', 'fa-cogs', '系统设置']
         ];
-        // 「管理桌面」按角色预设 Tab：仅后台端、且「后台首页直达 WebOS」开启时追加（该 Tab 在「用户桌面」之前）
-        if (!isUserTerminal && state.workspace.preferences.override_admin_home) {
+        // 「管理桌面」按角色预设 Tab：仅后台端、仅超级管理员、且「后台首页直达 WebOS」开启时追加（该 Tab 在「用户桌面」之前）
+        if (!isUserTerminal && isSuperAdmin && state.workspace.preferences.override_admin_home) {
             tabs.push(['admin-desktop', 'fa-users', '管理桌面']);
         }
-        // 「用户桌面」预设 Tab：仅后台端、且「用户首页直达 WebOS」开启时追加（用户端不渲染）
-        if (!isUserTerminal && state.workspace.preferences.override_user_home) {
+        // 「用户桌面」预设 Tab：仅后台端、仅超级管理员、且「用户首页直达 WebOS」开启时追加（用户端不渲染）
+        if (!isUserTerminal && isSuperAdmin && state.workspace.preferences.override_user_home) {
             tabs.push(['user-desktop', 'fa-desktop', '用户桌面']);
         }
         return '<nav class="settings-tabs" role="tablist">' + tabs.map(function (tab) {
@@ -4244,9 +4244,10 @@
 
     /** 系统设置：覆盖传统后台首页、重置工作区等高级选项 */
     function systemSectionMarkup(preferences) {
-        // 「覆盖传统后台」仅影响 /admin 首页，用户端不渲染该设置卡片；
+        // 「覆盖传统后台」仅影响 /admin 首页，且为全局设置仅超级管理员可配（2.1.104）：
+        // 用户端与普通管理员均不渲染该设置卡片；
         // 「用户首页直达 WebOS」（2.1.82）与前者同卡并列，均为任一管理员开启即全局生效
-        var overrideSection = isUserTerminal ? ''
+        var overrideSection = (isUserTerminal || !isSuperAdmin) ? ''
             : '<section class="settings-card"><div class="settings-card-title"><i class="fa fa-sign-in"></i><div>'
             + '<strong>覆盖传统后台</strong><small>开启后访问后台首页将直接进入 WebOS 桌面；在地址后加 ?skip_webos=1 可临时打开传统首页</small></div></div>'
             + '<button class="settings-toggle" type="button" data-toggle-webos-setting="override_admin_home" aria-pressed="'
@@ -4709,12 +4710,13 @@
             return;
         }
         var preferences = state.workspace.preferences;
-        // 「用户桌面」Tab 仅在后台端且「用户首页直达 WebOS」开启时可用；「管理桌面」Tab 仅在后台端
-        // 且「后台首页直达 WebOS」开启时可用：配置被关闭时回退到基本设置
-        if (osSettingsTab === 'user-desktop' && (isUserTerminal || !preferences.override_user_home)) {
+        // 「用户桌面」Tab 仅在后台端、超级管理员且「用户首页直达 WebOS」开启时可用；「管理桌面」Tab 仅在
+        // 后台端、超级管理员且「后台首页直达 WebOS」开启时可用（均为全局设置，2.1.104）：
+        // 配置被关闭或非超管时回退到基本设置
+        if (osSettingsTab === 'user-desktop' && (isUserTerminal || !isSuperAdmin || !preferences.override_user_home)) {
             osSettingsTab = 'general';
         }
-        if (osSettingsTab === 'admin-desktop' && (isUserTerminal || !preferences.override_admin_home)) {
+        if (osSettingsTab === 'admin-desktop' && (isUserTerminal || !isSuperAdmin || !preferences.override_admin_home)) {
             osSettingsTab = 'general';
         }
         var positions = [

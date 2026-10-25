@@ -497,7 +497,8 @@ class WebosWorkspaceApiTest extends WebosTestCase
 
     public function test_workspace_api_persists_override_admin_home_preference(): void
     {
-        $this->actingAdmin();
+        // 「覆盖传统后台」为全局设置，仅超级管理员可通过 API 修改（2.1.104）
+        $this->actingAsSuperAdmin();
 
         // 系统设置「覆盖传统后台」：开启后偏好持久化，供后台布局首页覆盖跳转读取
         $this->putJson('/admin/cmspro/webos/api/workspace', [
@@ -519,7 +520,8 @@ class WebosWorkspaceApiTest extends WebosTestCase
 
     public function test_workspace_api_persists_override_user_home_preference(): void
     {
-        $this->actingAdmin();
+        // 「用户首页直达 WebOS」为全局设置，仅超级管理员可通过 API 修改（2.1.104）
+        $this->actingAsSuperAdmin();
 
         // 系统设置「用户首页直达 WebOS」（2.1.82）：开启后偏好持久化，供用户首页直达中间件读取
         $this->putJson('/admin/cmspro/webos/api/workspace', [
@@ -3244,10 +3246,10 @@ class WebosWorkspaceApiTest extends WebosTestCase
         $this->assertStringContainsString('data-avatar-fallback="{{ asset(\'Admin/images/avatar.png\') }}"', $view);
     }
 
-    /** 「用户桌面」预设接口（2.1.88）：后台读写闭环，随预设下发前台用户端目录（菜单树 + 应用清单） */
+    /** 「用户桌面」预设接口（2.1.88）：后台读写闭环，随预设下发前台用户端目录（菜单树 + 应用清单）；仅超管可访问（2.1.104） */
     public function test_user_desktop_preset_api_roundtrip(): void
     {
-        $this->actingAdmin();
+        $this->actingAsSuperAdmin();
 
         $this->getJson('/admin/cmspro/webos/api/user-desktop-preset')
             ->assertOk()
@@ -3311,10 +3313,10 @@ class WebosWorkspaceApiTest extends WebosTestCase
 
         $script = file_get_contents(dirname(__DIR__, 2) . '/Assets/js/webos.js');
         $this->assertIsString($script);
-        // Tab 追加条件：仅后台端且「用户首页直达 WebOS」开启；配置关闭时内容回退基本设置
-        $this->assertStringContainsString('if (!isUserTerminal && state.workspace.preferences.override_user_home) {', $script);
+        // Tab 追加条件：仅后台端、仅超管且「用户首页直达 WebOS」开启；配置关闭/非超管时内容回退基本设置
+        $this->assertStringContainsString('if (!isUserTerminal && isSuperAdmin && state.workspace.preferences.override_user_home) {', $script);
         $this->assertStringContainsString("tabs.push(['user-desktop', 'fa-desktop', '用户桌面']);", $script);
-        $this->assertStringContainsString("if (osSettingsTab === 'user-desktop' && (isUserTerminal || !preferences.override_user_home)) {", $script);
+        $this->assertStringContainsString("if (osSettingsTab === 'user-desktop' && (isUserTerminal || !isSuperAdmin || !preferences.override_user_home)) {", $script);
         // 预设编辑会话：临时接管桌面数据源、网格渲染到独立宿主 [data-preset-grid]，退出还原真实桌面
         // enterPresetSession(type, userId)：2.1.98 参数化（user/admin 按来源 Tab）；2.1.99 增 userId 支持查看指定前台用户桌面
         $this->assertStringContainsString('function enterPresetSession(type, userId) {', $script);

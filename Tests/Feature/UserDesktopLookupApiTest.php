@@ -17,7 +17,7 @@ class UserDesktopLookupApiTest extends WebosTestCase
     /** 搜索口径：用户名/昵称模糊匹配，禁用用户被过滤，仅返回 id/username/nickname 最小字段 */
     public function test_search_users_matches_username_and_nickname_and_filters_disabled(): void
     {
-        $this->actingAdmin();
+        $this->actingAsSuperAdmin();
 
         $hitByUsername = User::create([
             'username' => 'webos_lookup_zhang' . uniqid(),
@@ -60,7 +60,7 @@ class UserDesktopLookupApiTest extends WebosTestCase
     /** 只读查看：无工作区行时返回空列表且不建行；有行时返回桌面/任务栏数据 */
     public function test_user_desktop_is_read_only_and_creates_no_row(): void
     {
-        $this->actingAdmin();
+        $this->actingAsSuperAdmin();
 
         $user = User::create([
             'username' => 'webos_lookup_read' . uniqid(),
@@ -111,7 +111,7 @@ class UserDesktopLookupApiTest extends WebosTestCase
     /** 代改保存往返：仅覆盖 desktop_items，任务栏固定项/偏好/预设推送台账保持不动 */
     public function test_save_user_desktop_overwrites_items_only_and_keeps_taskbar_and_ledger(): void
     {
-        $this->actingAdmin();
+        $this->actingAsSuperAdmin();
 
         $user = User::create([
             'username' => 'webos_lookup_save' . uniqid(),
@@ -182,7 +182,7 @@ class UserDesktopLookupApiTest extends WebosTestCase
     /** 首次建行口径：用户无工作区行时代改保存自动建行，任务栏空数组/偏好默认值/台账空数组 */
     public function test_save_user_desktop_creates_workspace_row_for_new_user(): void
     {
-        $this->actingAdmin();
+        $this->actingAsSuperAdmin();
 
         $user = User::create([
             'username' => 'webos_lookup_new' . uniqid(),

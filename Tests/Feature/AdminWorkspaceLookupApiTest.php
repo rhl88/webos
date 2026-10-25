@@ -22,7 +22,7 @@ class AdminWorkspaceLookupApiTest extends WebosTestCase
     /** 搜索口径：账号/姓名模糊匹配，禁用管理员被过滤，仅返回 id/username/name 最小字段 */
     public function test_search_admins_matches_username_and_name_and_filters_disabled(): void
     {
-        $this->actingAdmin();
+        $this->actingAsSuperAdmin();
 
         $hitByUsername = $this->createAdmin('webos_admin_zhang_', '张三');
         $hitByName = $this->createAdmin('webos_admin_li_', '搜索姓名李四');
@@ -50,7 +50,7 @@ class AdminWorkspaceLookupApiTest extends WebosTestCase
     /** 只读查看：无工作区行时返回空列表且不建行；有行时返回桌面/任务栏数据 */
     public function test_admin_desktop_is_read_only_and_creates_no_row(): void
     {
-        $this->actingAdmin();
+        $this->actingAsSuperAdmin();
 
         $admin = $this->createAdmin('webos_admin_read_', '只读查看管理员');
 
@@ -96,9 +96,10 @@ class AdminWorkspaceLookupApiTest extends WebosTestCase
     /** 目录口径（超级管理员）：全部 status/visible 开启菜单可见（含未分配给任何角色的），隐藏/停用菜单不可见 */
     public function test_super_admin_catalog_includes_all_enabled_menus(): void
     {
-        $this->actingAdmin();
+        $this->actingAsSuperAdmin();
 
-        $superRole = AdminRole::create(['name' => '超级管理员', 'code' => 'super_admin', 'status' => 1, 'sort' => 0]);
+        // 被查看对象挂超管角色：角色与操作者共用（super_admin 幂等复用，2.1.104）
+        $superRole = AdminRole::where('code', 'super_admin')->firstOrFail();
         $superAdmin = $this->createAdmin('webos_admin_super_', '超管目录管理员');
         DB::table('admin_user_roles')->insert(['user_id' => $superAdmin->id, 'role_id' => $superRole->id]);
 
@@ -124,7 +125,7 @@ class AdminWorkspaceLookupApiTest extends WebosTestCase
     /** 目录口径（普通管理员）：全部角色被分配菜单并集 + 祖先补全，应用清单按其菜单收敛；无角色时目录为空 */
     public function test_staff_admin_catalog_follows_role_union_and_applications(): void
     {
-        $this->actingAdmin();
+        $this->actingAsSuperAdmin();
 
         // 未分配给下方两角色的开启菜单：普通管理员不可见（与超管口径的差异点）
         $ungrantedMenu = AdminMenu::create(['name' => '未授权菜单', 'parent_id' => 0, 'terminal_type' => 'admin', 'path' => '/admin/other', 'status' => 1, 'visible' => 1, 'sort' => 1]);
@@ -178,7 +179,7 @@ class AdminWorkspaceLookupApiTest extends WebosTestCase
     /** 代改保存往返：仅覆盖 desktop_items，任务栏固定项/偏好/角色预设推送台账保持不动 */
     public function test_save_admin_desktop_overwrites_items_only_and_keeps_taskbar_and_ledger(): void
     {
-        $this->actingAdmin();
+        $this->actingAsSuperAdmin();
 
         $admin = $this->createAdmin('webos_admin_save_', '代改保存管理员');
 
@@ -243,7 +244,7 @@ class AdminWorkspaceLookupApiTest extends WebosTestCase
     /** 首次建行口径：管理员无工作区行时代改保存自动建行，任务栏空数组/偏好默认值/台账空数组 */
     public function test_save_admin_desktop_creates_workspace_row_for_new_admin(): void
     {
-        $this->actingAdmin();
+        $this->actingAsSuperAdmin();
 
         $admin = $this->createAdmin('webos_admin_new_', '首次建行管理员');
 

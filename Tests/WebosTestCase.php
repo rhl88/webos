@@ -2,9 +2,11 @@
 
 namespace App\Apps\CmsproWebos\Tests;
 
+use App\Models\AdminRole;
 use App\Models\AdminUser;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Tests\TestCase;
 
@@ -63,6 +65,25 @@ abstract class WebosTestCase extends TestCase
         ]);
 
         $this->actingAs($admin, 'admin');
+
+        return $admin;
+    }
+
+    /**
+     * 超级管理员登录态（2.1.104）：「覆盖传统后台」双开关与「管理桌面/用户桌面」
+     * 预设为全局设置、仅超管可用，相关接口测试统一以超管身份操作。
+     * 角色幂等复用（firstOrCreate，code 唯一索引），sort 取大值排在业务角色之后，
+     * 不干扰「管理桌面」角色列表的顺序与默认角色断言。
+     */
+    protected function actingAsSuperAdmin(): AdminUser
+    {
+        $admin = $this->actingAdmin();
+
+        $superRole = AdminRole::firstOrCreate(
+            ['code' => 'super_admin'],
+            ['name' => '超级管理员', 'status' => 1, 'sort' => 999]
+        );
+        DB::table('admin_user_roles')->insert(['user_id' => $admin->id, 'role_id' => $superRole->id]);
 
         return $admin;
     }

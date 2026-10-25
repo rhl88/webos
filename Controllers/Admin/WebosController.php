@@ -882,6 +882,13 @@ class WebosController extends Controller
             'preferences.ignored_updates.*' => ['string', 'max:180'],
         ]));
 
+        // 「覆盖传统后台」双开关为全局设置，仅超级管理员可改（2.1.104）：非超管提交的 override 键
+        // 静默剔除、保留库中原值——前端整包提交 preferences（普通管理员的 UI 已隐藏该开关，
+        // 但历史本地状态仍可能整包携带这两个键），剔除而非 403 以免误伤其正常保存
+        if (! auth('admin')->user()?->isSuperAdmin()) {
+            unset($validated['preferences']['override_admin_home'], $validated['preferences']['override_user_home']);
+        }
+
         $workspace = $this->workspaces->saveFor(
             $this->terminalOf($request),
             $this->userIdOf($request),
