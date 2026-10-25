@@ -13228,6 +13228,41 @@
         }, preferences || {});
     }
 
+    /**
+     * URL/表单直达启动（2.1.102）：桌面入口页携带 app=应用标识[&to=菜单路径] 时，
+     * 桌面就绪后自动打开对应应用窗口。launch 由后端仅在参数合法时注入（无 app 参数时缺省），
+     * 匹配范围限定当前账号已授权菜单（flatMenus），无权限或停用的应用自然匹配不到；
+     * to 口径：完整 path 精确匹配优先，尾段（最后一个「/」之后）兜底，均未命中退回应用默认入口。
+     */
+    function autoLaunchFromUrl() {
+        var launch = runtime.launch;
+        if (!launch || !launch.app) {
+            return;
+        }
+        var appId = String(launch.app);
+        var appMenus = state.flatMenus.filter(function (entry) {
+            return entry.app_id === appId;
+        });
+        if (!appMenus.length) {
+            var application = findApplication(appId);
+            toast('未找到应用「' + (application && application.name ? application.name : appId) + '」或当前账号无权访问', 'error');
+            return;
+        }
+        var entry = appEntryOf(appId);
+        var target = launch.to ? String(launch.to) : '';
+        if (target) {
+            var matched = appMenus.find(function (item) { return item.path === target; })
+                || appMenus.find(function (item) {
+                    var path = String(item.path || '');
+                    return path.slice(path.lastIndexOf('/') + 1) === target;
+                });
+            if (matched) {
+                entry = matched;
+            }
+        }
+        openEntry(entry);
+    }
+
     function initialize() {
         root.style.setProperty('--webos-wallpaper-image', 'url("' + root.dataset.wallpaperUrl + '")');
         bindEvents();
@@ -13279,6 +13314,8 @@
             if (isSuperAdmin) {
                 openEntry(officialNewsEntry());
             }
+            // URL/表单直达启动（?app=应用标识[&to=菜单路径]）：最后打开置于顶层（2.1.102）
+            autoLaunchFromUrl();
             // 每次进入 WebOS 页面检查应用市场是否有 WebOS 自身的更高版本
             checkWebosSelfUpdate();
             // 延迟检查系统框架新版本（Versionmgr）：错开 WebOS 自身的更新提示，避免两个弹窗同时出现

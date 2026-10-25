@@ -89,8 +89,10 @@ class WebosWorkspaceApiTest extends WebosTestCase
         $view = file_get_contents(dirname(__DIR__, 2) . '/Views/Admin/desktop/login.blade.php');
         $this->assertIsString($view);
         $this->assertStringContainsString("{{ \$webosLoginIsUser ? url('/user/login') : url('/admin/login') }}", $view);
-        // redirect 隐藏域随终端分流（user 端回跳 /user/cmspro/webos），admin 场景值不变
-        $this->assertStringContainsString("value=\"{{ \$webosLoginIsUser ? '/user/cmspro/webos' : '/admin/cmspro/webos' }}\"", $view);
+        // redirect 隐藏域随终端分流（user 端回跳 /user/cmspro/webos），admin 场景值不变；
+        // 2.1.102 起经 @php 构造的 $webosLoginRedirect 输出（保留 app/to 直达参数）
+        $this->assertStringContainsString("\$webosLoginRedirect = \$webosLoginIsUser ? '/user/cmspro/webos' : '/admin/cmspro/webos';", $view);
+        $this->assertStringContainsString('value="{{ $webosLoginRedirect }}"', $view);
         $this->assertStringContainsString("--webos-login-wallpaper:url(\"{{ asset('apps/cmspro.webos/images/webos-wallpaper.png') }}\")", $view);
         $this->assertStringContainsString("--webos-login-avatar:url(\"{{ asset('Admin/images/logo.png') }}\")", $view);
         $this->assertStringContainsString('webos-login-captcha-image', $view);

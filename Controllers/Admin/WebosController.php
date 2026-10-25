@@ -49,28 +49,59 @@ class WebosController extends Controller
             ));
         }
 
+        // URL/表单直达启动（2.1.102）：携带 app=应用标识 时注入 launch（GET query 与 POST 表单同口径），
+        // 仅在参数合法时写入，避免页面脚本出现 "launch":null
+        $webosRuntime = [
+            // 终端标识：前端按 admin/user 分流菜单源、API 前缀与能力开关
+            'terminal' => 'admin',
+            'admin' => [
+                'id' => $admin->id,
+                'name' => $admin->name ?: $admin->username,
+                'username' => $admin->username,
+                'avatar' => $admin->avatar,
+                // 应用中心与 WebOS 升级提醒仅对超级管理员开放
+                'is_super_admin' => $admin->isSuperAdmin(),
+            ],
+            'csrfToken' => csrf_token(),
+            'baseUrl' => url('/'),
+        ];
+        $launch = $this->launchParams($request);
+        if ($launch !== null) {
+            $webosRuntime['launch'] = $launch;
+        }
+
         return view('cmspro.webos::Admin.desktop.index', [
             'admin' => $admin,
-            'webosRuntime' => [
-                // 终端标识：前端按 admin/user 分流菜单源、API 前缀与能力开关
-                'terminal' => 'admin',
-                'admin' => [
-                    'id' => $admin->id,
-                    'name' => $admin->name ?: $admin->username,
-                    'username' => $admin->username,
-                    'avatar' => $admin->avatar,
-                    // 应用中心与 WebOS 升级提醒仅对超级管理员开放
-                    'is_super_admin' => $admin->isSuperAdmin(),
-                ],
-                'csrfToken' => csrf_token(),
-                'baseUrl' => url('/'),
-            ],
+            'webosRuntime' => $webosRuntime,
             'marketBaseUrl' => $this->marketBaseUrl(),
             'webosAssetVersion' => $this->assetVersion(),
             // 桌面标题与开始菜单版权：系统版本号动态读取（与框架后台页脚一致），WebOS 版本号读应用 manifest
             'cmsproVersion' => system_version(),
             'webosVersion' => $this->manifestVersion(),
         ]);
+    }
+
+    /**
+     * URL/表单直达启动参数（2.1.102）：app=应用标识、to=菜单路径（可选，完整 path
+     * 与尾段兜底的匹配口径由前端执行）。携带 app 时返回 launch 结构注入 webosRuntime，
+     * 前端桌面就绪后自动打开对应应用窗口；匹配仅限当前账号已授权菜单（flatMenus），
+     * 无权限或停用的应用自然匹配不到。app 截断 64 字符、to 截断 255 字符，防垃圾参数撑爆页面。
+     *
+     * @return array{app: string, to: string}|null
+     */
+    protected function launchParams(Request $request): ?array
+    {
+        $app = $request->input('app');
+        if (! is_string($app) || $app === '') {
+            return null;
+        }
+
+        $to = $request->input('to');
+
+        return [
+            'app' => mb_substr($app, 0, 64),
+            'to' => is_string($to) && $to !== '' ? mb_substr($to, 0, 255) : '',
+        ];
     }
 
     /**

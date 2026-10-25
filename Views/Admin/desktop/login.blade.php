@@ -10,6 +10,21 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     @php
         $webosLoginIsUser = ($webosLoginTerminal ?? 'admin') === 'user';
+        // 直达启动参数保留（2.1.102）：登录成功回跳原地址仍带 app/to，桌面就绪后自动打开目标窗口；
+        // 白名单仅 app/to 两键，截断口径与控制器 launchParams 一致
+        $webosLoginRedirect = $webosLoginIsUser ? '/user/cmspro/webos' : '/admin/cmspro/webos';
+        $launchQuery = [];
+        $launchApp = request()->query('app');
+        if (is_string($launchApp) && $launchApp !== '') {
+            $launchQuery['app'] = mb_substr($launchApp, 0, 64);
+            $launchTo = request()->query('to');
+            if (is_string($launchTo) && $launchTo !== '') {
+                $launchQuery['to'] = mb_substr($launchTo, 0, 255);
+            }
+        }
+        if ($launchQuery) {
+            $webosLoginRedirect .= '?' . http_build_query($launchQuery);
+        }
     @endphp
     <title>登录 · WebOS {{ $webosLoginIsUser ? '桌面' : '管理桌面' }}</title>
     {{-- 壁纸/CMSPRO logo 地址经 asset() 生成后以 CSS 变量下发（login.css 内不硬编码路径，兼容子目录部署）：
@@ -21,7 +36,7 @@
     <main class="webos-login">
         <form class="webos-login-card" method="POST" action="{{ $webosLoginIsUser ? url('/user/login') : url('/admin/login') }}">
             @csrf
-            <input type="hidden" name="redirect" value="{{ $webosLoginIsUser ? '/user/cmspro/webos' : '/admin/cmspro/webos' }}">
+            <input type="hidden" name="redirect" value="{{ $webosLoginRedirect }}">
             <span class="webos-login-avatar" aria-hidden="true"></span>
             <h1 class="webos-login-title">CMSPRO <sup>v5</sup></h1>
             <p class="webos-login-desc">WebOS {{ $webosLoginIsUser ? '桌面 · 请登录用户账号' : '管理桌面 · 请登录管理员账号' }}</p>

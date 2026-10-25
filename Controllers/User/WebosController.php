@@ -39,26 +39,33 @@ class WebosController extends AdminWebosController
             ));
         }
 
+        // URL/表单直达启动（2.1.102）：与 admin 端同口径注入 launch（含参数截断）
+        $webosRuntime = [
+            // 终端标识：前端按 admin/user 分流菜单源、API 前缀与能力开关
+            'terminal' => 'user',
+            'admin' => [
+                'id' => $user->id,
+                'name' => $user->nickname ?: $user->username,
+                'username' => $user->username,
+                'avatar' => $user->avatar,
+                // 用户端无应用中心与升级提醒能力
+                'is_super_admin' => false,
+            ],
+            'csrfToken' => csrf_token(),
+            'baseUrl' => url('/'),
+        ];
+        $launch = $this->launchParams($request);
+        if ($launch !== null) {
+            $webosRuntime['launch'] = $launch;
+        }
+
         return view('cmspro.webos::Admin.desktop.index', [
             'admin' => (object) [
                 'name' => $user->nickname ?: $user->username,
                 'username' => $user->username,
                 'avatar' => $user->avatar,
             ],
-            'webosRuntime' => [
-                // 终端标识：前端按 admin/user 分流菜单源、API 前缀与能力开关
-                'terminal' => 'user',
-                'admin' => [
-                    'id' => $user->id,
-                    'name' => $user->nickname ?: $user->username,
-                    'username' => $user->username,
-                    'avatar' => $user->avatar,
-                    // 用户端无应用中心与升级提醒能力
-                    'is_super_admin' => false,
-                ],
-                'csrfToken' => csrf_token(),
-                'baseUrl' => url('/'),
-            ],
+            'webosRuntime' => $webosRuntime,
             // 应用市场资源前缀仅 admin 端应用中心使用，用户端传空
             'marketBaseUrl' => '',
             'webosAssetVersion' => $this->assetVersion(),

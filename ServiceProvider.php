@@ -13,12 +13,13 @@ class ServiceProvider extends BaseServiceProvider
     public function boot(): void
     {
         // 桌面主页面（index）不挂 auth:admin：未登录访问时由控制器渲染 WebOS 登录窗口（2.1.77），
-        // 已登录渲染桌面；其余 API 路由全部保持 auth:admin
+        // 已登录渲染桌面；2.1.102 起 GET/POST 双通道（URL/表单携带 app=应用标识[&to=菜单路径]
+        // 直达启动应用窗口）；其余 API 路由全部保持 auth:admin
         Route::prefix('admin/cmspro/webos')
             ->middleware(['web'])
             ->name('cmspro.webos.admin.')
             ->group(function (): void {
-                Route::get('/', [\App\Apps\CmsproWebos\Controllers\Admin\WebosController::class, 'index'])->name('index');
+                Route::match(['get', 'post'], '/', [\App\Apps\CmsproWebos\Controllers\Admin\WebosController::class, 'index'])->name('index');
 
                 Route::middleware('auth:admin')->group(__DIR__ . '/Routes/admin.php');
             });
@@ -30,7 +31,7 @@ class ServiceProvider extends BaseServiceProvider
             ->middleware(['web'])
             ->name('cmspro.webos.user.')
             ->group(function (): void {
-                Route::get('/', [\App\Apps\CmsproWebos\Controllers\User\WebosController::class, 'index'])->name('index');
+                Route::match(['get', 'post'], '/', [\App\Apps\CmsproWebos\Controllers\User\WebosController::class, 'index'])->name('index');
 
                 Route::middleware(['auth:web', 'front_user_status'])->group(__DIR__ . '/Routes/user.php');
             });
