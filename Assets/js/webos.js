@@ -4789,16 +4789,20 @@
             if (state.presetEditing && state.presetSession && state.presetSession.type === presetSourceType) {
                 renderDesktop();
             } else {
-                if (state.presetEditing) {
-                    leavePresetSession();
-                }
+                leavePresetSession();
                 enterPresetSession(presetSourceType);
             }
-        } else if (state.presetEditing) {
-            // 切离预设 Tab（设置窗口内切换其它 Tab）时结束会话，还原真实桌面数据
+        } else {
+            // 切离预设 Tab（设置窗口内切换其它 Tab）时结束会话，还原真实桌面数据；
+            // 未在会话中也调用（幂等）：作废在途的预设读取请求，防止响应返回后污染真实桌面
             leavePresetSession();
         }
     }
+
+    /** 预设会话请求序号（快速切 Tab 竞态修复）：每次进入/退出预设会话都递增，
+     *  enterPresetSession 的异步响应返回时校验序号是否仍为最新，过期响应直接丢弃，
+     *  防止迟到的接管污染快照（presetSnapshot 拍到预设数据）导致真实桌面图标堆叠/消失 */
+    var presetSessionRequestSeq = 0;
 
     /**
      * 进入预设编辑会话（幂等）：type=user 为「用户桌面」（终端预设，目录按用户端菜单解析），
@@ -4845,7 +4849,12 @@
         if (isAdminPreset && !isAdminDesktop && state.adminPresetRoleId) {
             presetUrl += (presetUrl.indexOf('?') === -1 ? '?' : '&') + 'role_id=' + encodeURIComponent(state.adminPresetRoleId);
         }
+        // 登记本次请求序号：响应返回时校验，期间发生新的进入/退出（快速切 Tab）则本响应过期
+        var requestSeq = ++presetSessionRequestSeq;
         api(presetUrl).then(function (preset) {
+            if (requestSeq !== presetSessionRequestSeq) {
+                return;
+            }
             var data = preset || {};
             // 「管理桌面」按角色预设回填角色列表与当前编辑角色（查看管理员桌面响应不含角色，
             // 不回填避免清空已加载的角色列表）；角色列表首载后需重建面板刷新下拉与选中项
@@ -4896,6 +4905,9 @@
             }
             renderDesktop();
         }).catch(function (error) {
+            if (requestSeq !== presetSessionRequestSeq) {
+                return;
+            }
             state.presetEditing = false;
             state.presetSnapshot = null;
             state.presetSession = null;
@@ -4933,6 +4945,9 @@
 
     /** 退出预设编辑会话（幂等）：关闭预设遗留的右键菜单/文件夹浮层，还原被接管的 state 字段并重绘 */
     function leavePresetSession() {
+        // 作废在途的预设读取请求（快速切 Tab/关闭设置窗口时响应可能尚未返回）：
+        // 迟到的响应不得再接管桌面数据源或拍摄快照，避免真实桌面图标被预设数据污染
+        presetSessionRequestSeq += 1;
         if (!state.presetEditing) {
             return;
         }
