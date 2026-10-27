@@ -420,6 +420,16 @@ textarea:focus-visible,
     margin-left: 4px;
 }
 
+/* 标题栏前进/后退按钮：后退在刷新按钮左侧、前进在刷新按钮右侧（标题栏直属子元素）；
+   未开启多选项卡时无刷新按钮，两按钮相邻；仅站内同源 iframe 页面显示，其余场景 hidden 隐藏 */
+.window-history {
+    margin-left: 4px;
+}
+
+.window-history[hidden] {
+    display: none !important;
+}
+
 /* 选项卡模式下控制区占满品牌区之后的剩余空间：选项卡条从左侧展开，窗口按钮始终贴最右 */
 .app-window.has-window-tabs .window-controls {
     margin-left: 0;

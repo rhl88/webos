@@ -4037,6 +4037,8 @@
         var isOfficialNews = entry.special === 'official-news' || entry.id === 'webos-official-news';
         // 内置浏览器：无侧栏，内容区由 renderBrowserWindow 渲染（多标签 iframe）
         var isBrowser = entry.special === 'browser' || entry.id === 'webos-browser';
+        // 普通应用窗口：内容区为页面容器（有 iframe），可提供前进/后退；特殊窗口内容由前端渲染无 iframe
+        var hasPageHost = !isMarket && !isSettings && !isNotificationCenter && !isOfficialNews && !isBrowser;
         var navTree = isMarket || isSettings || isNotificationCenter || isOfficialNews || isBrowser ? [] : windowNavTree(entry);
         var sidebar = isSettings || isOfficialNews || isBrowser ? '' : windowSidebarMarkup(entry, navTree, true);
         // 特殊窗口内容区平铺分支：避免多层三元嵌套导致括号失配
@@ -4082,10 +4084,18 @@
             + '<header class="window-titlebar" data-window-drag>'
             + '<div class="window-brand">' + brandIcon + '<strong>'
             + escapeHtml(identity.title) + '<small>' + escapeHtml(identity.subtitle) + '</small></strong></div>'
+            // 标题栏前进/后退按钮：后退在刷新按钮左侧、前进在刷新按钮右侧，操作当前页面 iframe 内部历史；
+            // 仅普通应用窗口渲染（特殊窗口内容由前端渲染无 iframe），初始隐藏，渲染页面后按同源性同步显隐
+            + (hasPageHost
+                ? '<button class="window-control window-history" type="button" data-window-action="history-back" aria-label="后退" title="后退" hidden><i class="fa fa-angle-left"></i></button>'
+                : '')
             // 选项卡模式标题栏刷新按钮：置于品牌区右侧（标题栏直属，不随选项卡条/控制区布局变化），
             // 点击刷新当前激活选项卡内容（与选项卡右键「刷新页面」同链路）
             + (windowTabsEnabled()
                 ? '<button class="window-control window-refresh" type="button" data-window-action="refresh" aria-label="刷新当前页面" title="刷新当前页面"><i class="fa fa-refresh"></i></button>'
+                : '')
+            + (hasPageHost
+                ? '<button class="window-control window-history" type="button" data-window-action="history-forward" aria-label="前进" title="前进" hidden><i class="fa fa-angle-right"></i></button>'
                 : '')
             + '<div class="window-controls">'
             + sidebarToggle
@@ -5205,6 +5215,81 @@
             || windowState.tabs[windowState.tabs.length - 1];
     }
 
+    /**
+     * 地址是否与当前站点同源：站内相对路径（以「/」开头）直接判定为同源，
+     * 绝对地址按 origin 比较，非法地址视为跨域（父页无法操作其 iframe 内部历史）。
+     */
+    function isSameOriginUrl(path) {
+        var value = String(path || '');
+        if (value.charAt(0) === '/') {
+            return true;
+        }
+        try {
+            return new URL(value, window.location.href).origin === window.location.origin;
+        } catch (error) {
+            return false;
+        }
+    }
+
+    /**
+     * 前进/后退可用性：仅站内同源 iframe 页面可被父页操作内部历史；
+     * 组件页面（片段注入，无 iframe）与跨域外链不可用。
+     */
+    function windowHistoryNavigable(entry) {
+        if (!entry || entry.openType === '_component' || entry.open_type === '_component') {
+            return false;
+        }
+        return isSameOriginUrl(entry.path);
+    }
+
+    /**
+     * 标题栏前进/后退按钮显隐同步：仅当窗口当前页面为站内同源 iframe 时显示；
+     * 跨域外链、组件页面、无页面容器（选项卡全部关闭）时隐藏。
+     */
+    function syncWindowHistoryButtons(windowState, entry) {
+        if (!windowState || !windowState.element) {
+            return;
+        }
+        var buttons = windowState.element.querySelectorAll('.window-history');
+        if (!buttons.length) {
+            return;
+        }
+        var navigable = windowHistoryNavigable(entry);
+        buttons.forEach(function (button) {
+            button.hidden = !navigable;
+        });
+    }
+
+    /**
+     * 标题栏前进/后退：操作当前窗口激活页面 iframe 的内部历史（仅同源站内页面可用，
+     * 显隐同步已保证按钮仅在同源页面出现；跨域访问 contentWindow.history 受同源策略限制，静默忽略）。
+     */
+    function stepWindowHistory(key, direction) {
+        var windowState = state.windows.get(key);
+        if (!windowState) {
+            return;
+        }
+        var host = windowState.element.querySelector('[data-window-page-host]');
+        var page = host;
+        if (windowState.tabs && windowState.tabs.length) {
+            var tab = windowActiveTab(windowState);
+            page = tab && host ? host.querySelector('[data-window-page="' + tab.id + '"]') : null;
+        }
+        var frame = page ? page.querySelector('iframe') : null;
+        if (!frame) {
+            return;
+        }
+        try {
+            if (direction === 'back') {
+                frame.contentWindow.history.back();
+            } else {
+                frame.contentWindow.history.forward();
+            }
+        } catch (error) {
+            // 跨域 iframe：contentWindow.history 访问受限，忽略
+        }
+    }
+
     /** 选项卡条溢出导航：按滚动位置显隐左右切换按钮（hidden 切换，按钮常驻 DOM） */
     function updateWindowTabsNav(controls) {
         if (!controls) {
@@ -5342,6 +5427,8 @@
                 host.innerHTML = emptyState('fa-clone', '选项卡已全部关闭，可从左侧菜单重新打开内容');
                 // 全部关闭后副标题清空，品牌区仅保留应用名
                 syncWindowTabSubtitle(windowState, '');
+                // 选项卡全部关闭（无页面）时前进/后退按钮隐藏
+                syncWindowHistoryButtons(windowState, null);
             }
         }
         syncWindowTabsBar(windowState);
@@ -5385,6 +5472,8 @@
         if (!host) {
             return;
         }
+        // 前进/后退按钮显隐随当前渲染页面同步（跨域外链、组件页面隐藏）
+        syncWindowHistoryButtons(windowState, entry);
         // 多选项卡模式：每个选项卡独立容器（iframe/组件内容仅首次创建），切换只改变显示，页面状态保留
         if (windowState.tabs) {
             var tab = entry;
@@ -12598,6 +12687,8 @@
                         }
                     }
                 }
+                if (windowAction.dataset.windowAction === 'history-back') { stepWindowHistory(key, 'back'); }
+                if (windowAction.dataset.windowAction === 'history-forward') { stepWindowHistory(key, 'forward'); }
                 if (windowAction.dataset.windowAction === 'minimize') { minimizeWindow(key); }
                 if (windowAction.dataset.windowAction === 'maximize') { maximizeWindow(key); }
                 if (windowAction.dataset.windowAction === 'close') { closeWindow(key); }
