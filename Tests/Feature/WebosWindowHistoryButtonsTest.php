@@ -69,4 +69,21 @@ class WebosWindowHistoryButtonsTest extends WebosTestCase
         $this->assertStringContainsString('.window-history {', $css);
         $this->assertStringContainsString('.window-history[hidden] {', $css);
     }
+
+    /** 样式：前进/后退/刷新三按钮采用紧凑宽度（覆盖 .window-control 的 48px）靠得更近，
+     *  且基础 .window-control 宽度保持 48px 不变，最小化/最大化/关闭等按钮不受影响 */
+    public function test_compact_width_applies_only_to_refresh_and_history(): void
+    {
+        $css = (string) file_get_contents(dirname(__DIR__, 2) . '/Assets/css/webos.css');
+        $this->assertMatchesRegularExpression(
+            '/\.window-control\.window-refresh,\s*\.window-control\.window-history\s*\{[^}]*width:\s*20px;/',
+            $css,
+            '前进/后退/刷新按钮应以更窄的 20px 宽度呈现'
+        );
+        $this->assertMatchesRegularExpression(
+            '/\.window-control\s*\{[^}]*width:\s*48px;/',
+            $css,
+            '基础窗口按钮宽度应保持 48px，未被导航按钮的紧凑样式影响'
+        );
+    }
 }

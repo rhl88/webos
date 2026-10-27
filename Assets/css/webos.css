@@ -430,6 +430,13 @@ textarea:focus-visible,
     display: none !important;
 }
 
+/* 前进/后退/刷新三按钮采用紧凑宽度（覆盖 .window-control 的 48px）使其靠得更近；
+   选择器叠加两个类提升特异性，仅命中这三个导航按钮，最小化/最大化/关闭等按钮保持 48px 不受影响 */
+.window-control.window-refresh,
+.window-control.window-history {
+    width: 20px;
+}
+
 /* 选项卡模式下控制区占满品牌区之后的剩余空间：选项卡条从左侧展开，窗口按钮始终贴最右 */
 .app-window.has-window-tabs .window-controls {
     margin-left: 0;
