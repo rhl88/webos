@@ -1089,9 +1089,13 @@ class WebosWorkspaceApiTest extends WebosTestCase
         // 全屏下任务栏地球图标改为在内置浏览器窗口打开（新标签页会退出全屏）
         $this->assertStringContainsString('function openBrowserWithURL(url)', $script);
         $this->assertStringContainsString('openBrowserWithURL(elements.websiteButton.dataset.websiteUrl);', $script);
-        // 桌面项加载过滤：内置浏览器空 path 与桌面原生项（文件夹 path 置空、URL 链接为外链）均按特判/kind 放行，
-        // 否则首次载入被 safePath 过滤导致浏览器图标、文件夹、URL 链接每次加载都不显示
-        $this->assertStringContainsString("item.id === 'webos-browser' || item.kind === 'folder' || item.kind === 'url' || safePath(item.path)", $script);
+        // 桌面项加载过滤：内置浏览器空 path 与桌面原生项（文件夹 path 置空、URL 链接为外链、小工具 path 置空）均按特判/kind 放行，
+        // 否则首次载入被 safePath 过滤导致浏览器图标、文件夹、URL 链接、小工具每次加载都不显示
+        $this->assertMatchesRegularExpression(
+            "/item\.id === 'webos-browser' \|\| item\.kind === 'folder'\s*\|\| item\.kind === 'url' "
+            . "\|\| item\.kind === 'widget' \|\| safePath\(item\.path\)/",
+            $script
+        );
         // 桌面渲染权限过滤放行内置浏览器（entryAssigned 无特判时浏览器图标被判未分配而不渲染）
         $this->assertStringContainsString("if (entryId === 'webos-browser') { return true; }", $script);
         // 应用窗口 iframe 内框架「前台」地球链接：全屏改在内置浏览器打开，非全屏保持 target=_blank 新窗口
@@ -1149,8 +1153,8 @@ class WebosWorkspaceApiTest extends WebosTestCase
         $this->assertStringContainsString('medium: { cellW: 102, cellH: 104, iconW: 88, iconH: 96 }', $script);
         $this->assertStringContainsString('small: { cellW: 86, cellH: 88, iconW: 72, iconH: 78 }', $script);
         $this->assertStringContainsString('function desktopIconSize', $script);
-        // 渲染、网格容量、拖拽 move 三处按档位换算（新增找位/归一化经 desktopGridCapacity 间接取档位；拖拽落点用 dropSize）
-        $this->assertSame(3, substr_count($script, 'var size = desktopIconSize();'));
+        // 渲染、小工具局部刷新、网格容量、拖拽 move 四处按档位换算（新增找位/归一化经 desktopGridCapacity 间接取档位；拖拽落点用 dropSize）
+        $this->assertSame(4, substr_count($script, 'var size = desktopIconSize();'));
         $this->assertStringContainsString('var dropSize = desktopIconSize();', $script);
         $this->assertStringContainsString('root.dataset.iconSize = ', $script);
         // 右键「查看」子菜单与切档动作（当前档位勾选）
@@ -2979,9 +2983,9 @@ class WebosWorkspaceApiTest extends WebosTestCase
         // 持久化：工作区保存透传 kind/parent_folder；后端白名单净化
         $this->assertStringContainsString("kind: item.kind || '',", $script);
         $this->assertStringContainsString('parent_folder: item.parent_folder || \'\',', $script);
-        $this->assertStringContainsString("in_array(\$item['kind'] ?? '', ['folder', 'url'], true)", $service);
+        $this->assertStringContainsString("in_array(\$item['kind'] ?? '', ['folder', 'url', 'widget'], true)", $service);
         $this->assertStringContainsString("'URL 链接必须是 http(s) 地址'", $service);
-        // 可见口径：桌面原生项（folder/url）始终可见；文件夹子项不占桌面网格
+        // 可见口径：桌面原生项（folder/url/widget）始终可见；文件夹子项不占桌面网格
         $this->assertMatchesRegularExpression("/desktopItem\.kind === 'folder' \|\| desktopItem\.kind === 'url'/", $script);
         $this->assertStringContainsString('return entryAssigned(item.id) && !item.parent_folder;', $script);
         // 删除文件夹：子项移回桌面列优先找空格（findFreeDesktopSlot 抽取共用）

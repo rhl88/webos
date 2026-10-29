@@ -24,6 +24,8 @@ Route::prefix('api')->name('api.')->group(function () {
     Route::get('/page-meta', [WebosController::class, 'pageMeta'])->name('page-meta');
     // 当前管理员标识（姓名/账号/头像）：个人设置窗口关闭后刷新状态栏展示
     Route::get('/admin-identity', [WebosController::class, 'adminIdentity'])->name('admin-identity');
+    // 桌面小工具注册表（2.1.106）：聚合已启用应用 manifest.widgets 声明，供桌面右键「小工具」面板选择添加
+    Route::get('/widgets', [WebosController::class, 'widgets'])->name('widgets');
     // 「用户桌面/管理桌面」预设路由组：覆盖传统后台相关能力为全局设置，仅超级管理员可用（2.1.104）；
     // 普通管理员统一 403（code 40101），前端 OS 设置对其隐藏「覆盖传统后台」卡片与对应两个 Tab
     Route::middleware(EnsureSuperAdmin::class)->group(function () {

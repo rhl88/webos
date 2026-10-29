@@ -6,6 +6,7 @@ use App\Apps\CmsproWebos\Services\CalendarService;
 use App\Apps\CmsproWebos\Services\PageMetaService;
 use App\Apps\CmsproWebos\Services\WallpaperService;
 use App\Apps\CmsproWebos\Services\WebosNotificationService;
+use App\Apps\CmsproWebos\Services\WidgetRegistryService;
 use App\Apps\CmsproWebos\Services\WorkspaceService;
 use App\Enums\AppStatus;
 use App\Enums\Status;
@@ -21,6 +22,7 @@ use App\Services\LoginSecurityService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Validator;
 use Illuminate\View\View;
 
 class WebosController extends Controller
@@ -126,6 +128,15 @@ class WebosController extends Controller
             'username' => $admin->username,
             'avatar' => $admin->avatar,
         ]));
+    }
+
+    /**
+     * 桌面小工具注册表（2.1.106）：聚合已启用应用 manifest.widgets 声明，
+     * 供桌面右键「小工具」面板选择添加。小工具内容接口（entry）由各应用自行提供（/api/ 开头）。
+     */
+    public function widgets(): JsonResponse
+    {
+        return response()->json(ApiResponse::success(app(WidgetRegistryService::class)->list()));
     }
 
     /**
@@ -356,16 +367,26 @@ class WebosController extends Controller
             'desktop_items.*.title' => ['required', 'string', 'max:60'],
             // 桌面项类型与所属文件夹：无规则声明时 $validated 会丢弃该键，服务层收不到 kind 会把
             // 文件夹（空 path）当普通入口拒绝；parent_folder 非法字符由服务层净化（与 id 处理风格一致）
-            'desktop_items.*.kind' => ['nullable', 'in:folder,url'],
+            'desktop_items.*.kind' => ['nullable', 'in:folder,url,widget'],
             'desktop_items.*.parent_folder' => ['nullable', 'string', 'max:64'],
+            // 桌面小工具标识（kind=widget 必填）：此处仅声明以保留字段进入 $validated，
+            // 必填与格式校验在 validateWorkspacePayload 中补做（字段缺失时通配符规则不会展开）
+            'desktop_items.*.widget_key' => ['nullable', 'string', 'max:100'],
             // 内置浏览器入口（id=webos-browser）path 为空（内容由前端管理、按 id 特判打开）仅该 id 放行；
             // 桌面文件夹（kind=folder）path 不参与打开逻辑（服务层强制置空）、URL 链接（kind=url）放行 http(s) 外链；
+            // 桌面小工具（kind=widget）内容取自数据接口、不承载跳转，path 必须为空；
             // 注意不能用 nullable/string：空串经 ConvertEmptyStringsToNull 转 null 后规则被跳过或误报，
             // 普通/超长/外链路径与空路径的裁决全部收进闭包（服务层白名单再兜底一层）
             'desktop_items.*.path' => [
                 static function (string $attribute, mixed $value, \Closure $fail): void {
                     $kind = (string) request()->input(preg_replace('/\.path$/', '.kind', $attribute), '');
                     if ($kind === 'folder') {
+                        return;
+                    }
+                    if ($kind === 'widget') {
+                        if ($value !== null && $value !== '') {
+                            $fail('桌面小工具不支持跳转路径');
+                        }
                         return;
                     }
                     if ($kind === 'url') {
@@ -393,6 +414,36 @@ class WebosController extends Controller
     }
 
     /**
+     * 桌面项相关请求的统一校验入口（工作区保存、预设保存、代改桌面共用）：
+     * 字段缺失时通配符规则不会展开（规则键基于请求中已存在的字段生成），
+     * 因此「kind=widget 却漏传 widget_key」只能在 after 中按小工具项补校验。
+     */
+    protected function validateWorkspacePayload(Request $request, array $rules): array
+    {
+        $validator = Validator::make($request->all(), $rules);
+
+        $validator->after(static function ($validator) use ($request): void {
+            foreach ((array) $request->input('desktop_items', []) as $index => $item) {
+                if (! is_array($item) || (string) ($item['kind'] ?? '') !== 'widget') {
+                    continue;
+                }
+                $widgetKey = $item['widget_key'] ?? null;
+                // 格式：应用标识（点分）+ 冒号 + 小工具标识（小写字母数字与连字符）
+                if (! is_string($widgetKey) || $widgetKey === ''
+                    || mb_strlen($widgetKey) > 100
+                    || ! preg_match('/^[A-Za-z0-9_.-]+:[a-z0-9][a-z0-9-]{0,31}$/', $widgetKey)) {
+                    $validator->errors()->add(
+                        'desktop_items.' . $index . '.widget_key',
+                        '桌面小工具缺少有效的 widget_key'
+                    );
+                }
+            }
+        });
+
+        return $validator->validate();
+    }
+
+    /**
      * 「用户桌面」预设读取（OS 设置 → 用户桌面 Tab）：返回后台预设的用户端桌面图标
      * 与前台用户端目录（菜单树/应用清单）。预设面向前台用户，编辑器必须按用户端目录
      * 渲染与校验（与后台目录不同），因此目录随预设一并下发。
@@ -415,7 +466,7 @@ class WebosController extends Controller
      */
     public function saveUserDesktopPreset(Request $request): JsonResponse
     {
-        $validated = $request->validate($this->desktopItemsRules());
+        $validated = $this->validateWorkspacePayload($request, $this->desktopItemsRules());
         $preset = $this->workspaces->savePresetItems($validated['desktop_items'] ?? []);
 
         return response()->json(ApiResponse::success(
@@ -458,7 +509,7 @@ class WebosController extends Controller
      */
     public function saveAdminDesktopPreset(Request $request): JsonResponse
     {
-        $validated = $request->validate(array_merge($this->desktopItemsRules(), [
+        $validated = $this->validateWorkspacePayload($request, array_merge($this->desktopItemsRules(), [
             'role_id' => ['required', 'integer', 'min:1', 'exists:admin_roles,id'],
         ]));
         $preset = $this->workspaces->saveAdminPresetItems(
@@ -544,7 +595,7 @@ class WebosController extends Controller
      */
     public function saveUserDesktop(Request $request): JsonResponse
     {
-        $validated = $request->validate(array_merge($this->desktopItemsRules(), [
+        $validated = $this->validateWorkspacePayload($request, array_merge($this->desktopItemsRules(), [
             'user_id' => ['required', 'integer', 'min:1', 'exists:users,id'],
         ]));
 
@@ -631,7 +682,7 @@ class WebosController extends Controller
      */
     public function saveAdminWorkspaceDesktop(Request $request): JsonResponse
     {
-        $validated = $request->validate(array_merge($this->desktopItemsRules(), [
+        $validated = $this->validateWorkspacePayload($request, array_merge($this->desktopItemsRules(), [
             'admin_id' => ['required', 'integer', 'min:1', 'exists:admin_users,id'],
         ]));
 
@@ -833,7 +884,7 @@ class WebosController extends Controller
 
     public function saveWorkspace(Request $request): JsonResponse
     {
-        $validated = $request->validate(array_merge($this->desktopItemsRules(), [
+        $validated = $this->validateWorkspacePayload($request, array_merge($this->desktopItemsRules(), [
             'taskbar_items' => ['sometimes', 'array', 'max:12'],
             'taskbar_items.*.id' => ['required', 'string', 'max:80'],
             'taskbar_items.*.menu_id' => ['nullable', 'integer', 'min:0'],

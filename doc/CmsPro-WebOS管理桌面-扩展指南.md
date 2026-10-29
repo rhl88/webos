@@ -1,7 +1,7 @@
 # CmsPro WebOS 管理桌面 · 扩展指南
 
-> 文档版本：2.1.105 | 更新日期：2026-10-27
-> 应用版本：2.1.105 | 应用 ID：`cmspro.webos`
+> 文档版本：2.1.106 | 更新日期：2026-10-29
+> 应用版本：2.1.106 | 应用 ID：`cmspro.webos`
 
 ## 一、概述
 
@@ -30,8 +30,70 @@
 | 通知中心待办聚合 | HookManager filter `admin.notifications.todos` | 注册 filter 回调 |
 | 应用设置弹窗 | manifest `config_groups` | 声明配置组 |
 | WebOS 个人工作区 API | 工作区/壁纸/日历/全量待办接口（见第五章） | 可选，属用户个人数据，不建议应用直写 |
+| 桌面小工具（2.1.106） | manifest `widgets` + 应用侧 `/api/` 数据接口（见本章「桌面小工具接入」） | 声明清单 + 实现一个只读数据接口 |
 
-WebOS 没有面向第三方应用的桌面右键菜单、任务栏或开始菜单扩展点；这些区域全部由系统菜单目录与工作区数据驱动。
+WebOS 没有面向第三方应用的桌面右键菜单、任务栏或开始菜单扩展点；这些区域全部由系统菜单目录与工作区数据驱动。桌面小工具是唯一的桌面内容扩展点：应用只声明数据源，卡片渲染、轮询与右键「小工具」添加入口均由 WebOS 统一提供（见下节）。
+
+### 桌面小工具接入（2.1.106 新增）
+
+小工具是 1x1 的桌面卡片，由应用在 `manifest.json` 中声明、由用户经桌面右键「小工具」面板手动添加。WebOS 从 `apps` 表的 `manifest` 快照聚合注册表，因此**应用安装/升级后即生效，无需调用任何 WebOS 接口**。
+
+清单声明示例：
+
+```json
+{
+    "widgets": [
+        {
+            "id": "service-status",
+            "title": "本地服务状态",
+            "icon": "fa fa-server",
+            "entry": "/api/admin/cmspro/localservice/widget/status",
+            "refresh": 60
+        }
+    ]
+}
+```
+
+字段约定：
+
+| 字段 | 必填 | 说明 |
+|---|---|---|
+| `id` | 是 | 小工具标识，`[a-z0-9][a-z0-9-]{0,31}`；与 `app_id` 组成 `widget_key`（`{app_id}:{id}`），**发布后不可变更**（用户桌面项按它关联） |
+| `title` | 是 | 卡片标题，≤40 字符 |
+| `icon` | 否 | 字体图标类名，缺省 `fa fa-cube` |
+| `entry` | 是 | 数据接口地址，必须以 `/api/` 开头（同源站内接口），≤500 字符 |
+| `refresh` | 否 | 轮询间隔秒数，缺省 60，有效区间 15–3600（越界按缺省处理） |
+
+聚合规则：仅聚合 `status` 启用的应用；单个应用最多 5 条；`id`/`title`/`entry` 不合法的声明直接跳过；注册表项额外输出 `widget_key`、`app_id`、`desktop_id`（`widget-{app_id 点转下划线}-{id}`，桌面项 id 仅允许 `[A-Za-z0-9_-]`）。
+
+数据接口契约（`entry` 必须返回统一响应结构，`data` 字段按「有则渲染」消费）：
+
+```json
+{
+    "title": "本地服务状态",
+    "status": "running",
+    "value": "1.4.0",
+    "unit": "",
+    "items": [
+        { "label": "端口", "value": "9501" },
+        { "label": "累计任务", "value": "8" },
+        { "label": "成功率", "value": "80%" }
+    ],
+    "updated_at": "2026-10-29 18:00:00"
+}
+```
+
+- `status`：`running` / `stopped` / `warning` / `unknown`，决定卡片状态点颜色与文案。
+- `value` + `unit`：主值，缺省时前端显示 `—`。
+- `items`：次要明细，最多渲染 3 条。
+- `updated_at`：必须为 `Y-m-d H:i:s` 格式。
+- 接口鉴权按应用自身路由中间件执行（WebOS 以当前会话调用，`auth:admin` 保护的接口可直接复用）；轮询失败不弹提示，卡片显示「读取失败」，下一次轮询自动重试。
+
+注意事项：
+
+1. 卡片只读展示，**点击不打开窗口**（不承载跳转，`path` 强制为空）；需要详情请让用户从开始菜单进入应用页面。
+2. 轮询按 `refresh` 秒串行排队，桌面无该小工具时立即停止，不会长期占用请求。
+3. 小工具不参与用户桌面预设同步与角色预设推送，属用户手动添加的桌面项；删除沿用桌面项右键「删除」。
 
 ## 二、菜单接入
 
@@ -223,6 +285,7 @@ $wallpapers = app(WallpaperService::class)->listFor($adminUserId);
 | DELETE | `/admin/cmspro/webos/api/wallpaper` | JSON 字段 `url`（≤200） | 删除自定义壁纸；非本人或非法路径返回业务码 `40302` |
 | GET | `/admin/cmspro/webos/api/calendar` | 查询参数 `month`（`YYYY-MM` 格式，正则 `^\d{4}-(0[1-9]|1[0-2])$`） | 返回当月日历数据（含农历与二十四节气换算） |
 | GET | `/admin/cmspro/webos/api/all-todos` | — | 全量待办（含已读）：聚合系统待办 hook（含权限过滤/去重/归零过滤），附加 `seen` 与 `is_read`（`seen_count ≥ count` 视为已读）；数据源见第七章 |
+| GET | `/admin/cmspro/webos/api/widgets` | — | 桌面小工具注册表（2.1.106 新增）：聚合全部启用应用 `manifest.widgets`，返回 `data` 为数组，每项含 `widget_key`（`{app_id}:{id}`）、`app_id`、`id`、`title`、`icon`、`entry`、`refresh`（秒）、`desktop_id`（桌面项 id）；右键「小工具」面板与前端轮询均以此为唯一数据源 |
 | GET | `/admin/cmspro/webos/api/user-desktop-preset` | — | 读取全局用户桌面预设（`data.desktop_items`）及用户端可选菜单/应用目录（`data.catalog.menus`、`data.catalog.applications`）；仅后台端可用（用户端路由不存在）。2.1.88 新增；2.1.89 起该预设按差异化增量同步下发到前台用户桌面 |
 | PUT | `/admin/cmspro/webos/api/user-desktop-preset` | JSON：`desktop_items`（≤48，校验同工作区 `desktopItemsRules()`） | 保存全局用户桌面预设，成功返回 `message='用户桌面预设已保存'`；仅后台端可用。2.1.88 新增；2.1.94 起预设网格支持拖动排序，请求体 `desktop_items` 的**数组顺序即预设排列顺序**（前端把拖动后的顶层项顺序回填数组，用户端同步时按该顺序列优先落位），接口与校验无变更 |
 | GET | `/admin/cmspro/webos/api/admin-desktop-preset` | 查询参数 `role_id`（可选，缺省取第一个启用角色） | 读取后台角色桌面预设及该角色可选目录（2.1.98 新增）：`data.role_id`（本次读取的角色）、`data.roles`（启用角色列表 `id`/`name`，按 `sort` 升序）、`data.desktop_items`（该角色预设图标）、`data.catalog.menus`（该角色被分配的后台菜单树，含祖先链补全；未分配/停用/隐藏菜单不出现）、`data.catalog.applications`（该角色菜单涉及的应用清单，含 `icon_url`）；仅后台端可用（用户端路由不存在） |
@@ -295,6 +358,8 @@ WebOS 不新增应用管理接口，应用中心的数据与操作全部复用�
 | `path` | 必填，必须以 `/` 开头且不得以 `//` 开头，截断 500 字符 | 站内绝对路径（URL 相对路径，不含域名）；协议地址与协议相对地址一律拒绝；数据库只存这种相对路径 |
 | `icon` | 必填，仅 `A-Za-z0-9 _-`（允许字体图标类名中的空格），≤100 字符，空值兜底 `fa fa-cube` | 字体图标类名；应用图片图标由前端按应用根目录解析，不存于此字段 |
 | `group_title` | 可空，截断 60 字符，空值兜底「应用」 | 分组标题 |
+| `kind` | 可空，`folder` / `url` / `widget` | 桌面项类型：文件夹、URL 链接、桌面小工具；空值为普通入口 |
+| `widget_key` | `kind=widget` 时必填，格式 `{app_id}:{widget_id}`（`[A-Za-z0-9_.-]+:[a-z0-9][a-z0-9-]{0,31}`），≤100 字符 | 小工具标识，指向应用 `manifest.widgets` 注册表项；widget 项 `path` 与 `parent_folder` 强制为空，点击不打开窗口（2.1.106 新增） |
 | `x` / `y` | 整数 0–99 | 桌面网格坐标（仅桌面项） |
 
 数量与统计约束：
@@ -450,6 +515,7 @@ app(HookManager::class)->registerFilter(
 
 | 版本 | 日期 | 更新人 | 说明 |
 |---|---|---|---|
+| 2.1.106 | 2026-10-29 | CmsPro | **桌面小工具机制一期（用户需求：应用桌面能力扩展）**：应用（如本地服务、便签、KylinIDProxy）可将业务指标以 1x1 数据卡片挂到 WebOS 桌面。三项设计裁定（经用户确认）：① 尺寸——先 1x1 打通，二期再上 2x1；② 添加入口——桌面右键新增「小工具」面板；③ 落地范围——先 WebOS + Localservice 试点。一期不做：2x1/2x2 布局、Notepad 与 KylinIDProxy 接入、框架 `AppInstallerService` 清单校验、widget 级权限、用户端 `/widgets` 路由。① 注册表（**零新表、零框架改动**）——新建 `Services/WidgetRegistryService.php`，以 `apps` 表原有 `manifest` JSON 快照为注册源（`AppModel::$casts['manifest']='array'`），聚合所有启用应用的 `manifest.widgets`；常量 `MAX_PER_APP=5`、`DESKTOP_ID_LIMIT=80`、`DEFAULT_REFRESH=60`、`MIN_REFRESH=15`、`MAX_REFRESH=3600`；每项输出 `widget_key`（`{app_id}:{widget_id}`，落库口径）/`app_id`/`id`/`title`/`icon`/`entry`/`refresh`/`desktop_id`（`widget-{app_id 点转下划线}-{widget_id}`）；非法 id（不匹配 `/^[a-z0-9][a-z0-9-]{0,31}$/`）、entry 非站内 API 路径、`desktop_id` 超长、应用停用或未安装一律跳过；`refresh` 缺失或越界时收敛到 `[15, 3600]`、`icon` 缺省 `fa fa-cube`。② 接口与校验——`WebosController::widgets()` + `Routes/admin.php` 注册 `GET /api/widgets` 返回聚合清单；`desktopItemsRules()` 的 `kind` 白名单由 `folder,url` 扩为 `in:folder,url,widget`，新增 `widget_key nullable|string|max:100`；因 Laravel 通配符规则在字段缺失时不展开，「`kind=widget` 却漏传 `widget_key`」改由 `validateWorkspacePayload()` 内的 `Validator::after()` 补校验（5 处调用点统一入口），`widget_key` 格式 `/^[A-Za-z0-9_.-]+:[a-z0-9][a-z0-9-]{0,31}$/`。③ 服务端桌面项——`WorkspaceService::sanitizeDesktopItem()` 的 kind 收敛扩为三值（`folder`/`url`/`widget`），widget 项 path 强制置空、保留 `widget_key`；widget 与 folder/url 同属「桌面原生项」始终可见，不依赖菜单目录。④ 前端 `webos.js`——`WIDGET_STATUS_TEXT` 状态文案表（running/stopped/warning/unknown）；`loadWidgetRegistry()` 拉注册表（URL 追加 `_t` 防缓存，失败缓存空数组、不阻断桌面渲染）；`widgetDeclaration()`/`widgetStatusOf()`/`desktopWidgetBody()`（明细最多 3 行，读取中/读取失败各有占位文案）；`desktopWidgetMarkup()` 渲染 `.desktop-icon.is-widget.is-widget-{status}` 卡片（头部图标+名称、主值+单位、明细行、状态点）；`renderWidgetCard()` 数据到达后按 `[data-desktop-id]` 定位并 `replaceWith` **局部替换**，不整盘重绘；`syncWidgetPollers()` 统一维护轮询器（预设编辑态整体跳过、项被移除时 `stopped=true`+`clearTimeout`+清缓存、`widget_key` 变更时重启）；`refreshWidgetData()` 在声明失效时写 error 态；`scheduleWidgetRefresh()` 周期取 `Math.max(15, refresh || 60)` 秒（服务端下限的前端兜底）；`refreshWidgetOnce()` 供右键「刷新数据」即时拉取；`normalizeDesktopItems()` 放行 `kind === 'widget'`；桌面右键新增「小工具」面板项（`new-widget`），widget 项右键菜单新增「刷新数据」（`widget-refresh`）；`openWidgetPickerDialog()` 按应用分组列出注册表项，`addDesktopWidget()` 落位后即时拉数并局部渲染。⑤ 样式 `webos.css`——`.desktop-icon.is-widget` 卡片基样式（深色半透明底、左对齐纵向布局，覆盖图标按钮的居中纵向布局）+ medium 96×98 / large 120×124 / small 80×82 三档覆盖（特异性高于档位通用规则）；`.desktop-widget-head|icon|name|value|hint|lines|line|state|dot` 系列；状态点四色（running 绿 / stopped 灰 / warning 橙 / unknown 蓝）；`.webos-widget-picker` 面板样式。⑥ Localservice 1.4.0 试点——`manifest.json` 新增 `widgets` 声明「本地服务状态」（`id=service-status`、`icon=fa fa-server`、`entry=/api/admin/cmspro/localservice/widget/status`、`refresh=60`）；`Routes/admin_api.php` 新增只读 `GET /widget/status`；`ServiceApiController::widgetStatus()` 输出小工具契约（`status` 依在线/离线但二进制存在/二进制缺失映射 `running/stopped/warning`，`value` 为服务版本，`items` 为端口/累计任务/成功率（无任务时 `—`），`updated_at` 固定 `Y-m-d H:i:s`）。⑦ 测试——新增 `WidgetRegistryTest` 9 用例（聚合口径、停用/未安装/无 widgets/非法 id/非 API entry 跳过、单应用上限、`desktop_id` 超长跳过、icon/refresh 默认值、注册表接口鉴权）与 `WidgetDesktopItemTest` 5 用例（widget 项保存成功、缺 `widget_key`/`path` 非空/非法 `widget_key`/未知 kind 均拒绝且 `code=40201`），Localservice 新增 `WidgetStatusTest` 3 用例 14 断言；`WebosWorkspaceApiTest` 四处既有源码断言同步（`desktopIconSize()` 调用点 3→4、加载过滤正则纳入 widget 分支、kind 白名单三值、可见性注释口径）。231 测试 2446 断言通过（另 8 个既有失败为 `WebosLaunchParamTest` 7 + `WebosUserTerminalTest` 1 的 "The response is not a view."，HEAD 基线同样失败，与本期无关）。 |
 | 2.1.105 | 2026-10-27 | CmsPro | **应用窗口前进/后退按钮（用户需求）**：① 需求——在应用窗口标题栏刷新按钮左侧增加后退「<」、右侧增加前进「>」按钮，用于前进/后退 iframe 内的链接。② 设计决策（经用户确认）——生效范围为「所有应用窗口」（普通应用窗口标题栏均渲染，不含内置浏览器窗口）；不可用时「直接隐藏」（跨域外链窗口、`_component` 组件页面无 iframe 时不显示，非置灰）。③ 前端 `webos.js`——`windowMarkup()` 内新增 `hasPageHost`（非应用中心 / OS 设置 / 通知中心 / 官网动态 / 内置浏览器）判定，在标题栏 `brand` 之后注入后退按钮、`windowTabsEnabled()` 刷新按钮三元之后注入前进按钮（均带 `data-window-action="history-back|history-forward"` 与 `hidden` 初始态）；新增 `isSameOriginUrl(path)`（仅 `path` 以 `/` 开头视为同源，兼容子目录部署）、`windowHistoryNavigable(entry)`（排除 `open_type='_component'` + 同源判定）、`syncWindowHistoryButtons(windowState, entry)`（`querySelectorAll('.window-history')` 批量设置 `hidden`）、`stepWindowHistory(key, direction)`（`state.windows.get(key)` → 按 `windowActiveTab` 定位当前激活页 `[data-window-page]` → iframe `contentWindow.history.back()/forward()`，跨域 `try/catch` 静默忽略）；`renderWindowPage()` 开头与 `closeWindowTab()` 空状态分支接入显隐同步；窗口动作委托新增两个 `dataset.windowAction` 分支。④ 样式 `webos.css`——新增 `.window-history { margin-left: 4px; }` 与 `.window-history[hidden] { display: none !important; }`（flex 布局下显式兜底）；三按钮采用紧凑宽度 `.window-control.window-refresh, .window-control.window-history { width: 20px; }`（双类选择器提升特异性覆盖 `.window-control` 的 48px，使三者相互靠拢，最小化/最大化/关闭等按钮保持 48px 不受影响）。⑤ 测试——新增 `Tests/Feature/WebosWindowHistoryButtonsTest` 6 用例（源码静态断言：后退 < 刷新 < 前进 字符串顺序、`window-action` 分发、`stepWindowHistory` 取激活选项卡 iframe 历史、三个函数齐备 + `button.hidden = !navigable` + 组件排除、CSS `[hidden]` 兜底、导航按钮紧凑宽度且基础窗口按钮宽度不被覆盖）。225 测试 2404 断言通过。 |
 | 2.1.104 | 2026-10-25 | CmsPro | **超管专属权限收口（用户需求）**：OS 设置中的「覆盖传统后台」双开关及对应的「管理桌面」「用户桌面」Tab 与预设/查看/代改功能仅超级管理员（`super_admin` 角色）开放，普通管理员不可见不可用；覆盖开关为全局设置（任一超管开启即全局生效），OS 设置其余项仍按当前账号独立保存。① 中间件——新增 `Http/Middleware/EnsureSuperAdmin`：`handle()` 以 `auth('admin')->user()?->isSuperAdmin()` 判定（`AdminUser::isSuperAdmin()` = `roles()->where('code', 'super_admin')->exists()`），未通过返回 `response()->json(ApiResponse::error(40101, '无访问权限'), 403)`；`Routes/admin.php` 把用户桌面与管理桌面的预设/查看/代改共 10 条路由（`GET/PUT user-desktop-preset`、`GET user-desktop/users`、`GET/PUT user-desktop`、`GET/PUT admin-desktop-preset`、`GET admin-desktop/admins`、`GET/PUT admin-desktop`）包进 `Route::middleware(EnsureSuperAdmin::class)->group(...)`。② 静默剔除——`Admin/WebosController::saveWorkspace()` 校验后、入库前判定非超管则 `unset($validated['preferences']['override_admin_home'], $validated['preferences']['override_user_home'])`（设计决策：非超管整包提交不 403，避免误伤前端把全部偏好一起提交的既有链路；`sanitizePreferences()` 合并链 `array_replace(DEFAULT_PREFERENCES, $current, $allowed)` 下剔除后保留库中原值，其余偏好照常保存；用户端 `saveWorkspace` 经 nullsafe `isSuperAdmin()` 判定天然覆盖剔除）。③ 前端门槛（`webos.js`）——三处 `isSuperAdmin` 条件（`var isSuperAdmin = !!(runtime.admin && runtime.admin.is_super_admin)`，视图 `webosRuntime` 已有 `admin.is_super_admin` 下发）：OS 设置 Tab 追加处（用户桌面/管理桌面 Tab 仅超管追加）、系统设置「覆盖传统后台」双开关卡片仅超管渲染、Tab 内容守卫（非超管请求预设 Tab 渲染系统设置兜底）。④ 测试——新增 `Tests/Feature/WebosSuperAdminPermissionTest` 6 用例（预设 API 10 条路由超管放行/普通管理员 403 + 业务码 40101 断言、非超管 saveWorkspace 提交 override 字段静默剔除且其余偏好照常保存、超管可正常持久化 override 偏好、前端三处门槛源码断言）；`Tests/WebosTestCase` 基类新增 `actingAsSuperAdmin()` helper（`AdminRole::firstOrCreate(['code' => 'super_admin'], [name/status/sort=999])` 幂等建角色——admin_roles.code 有 unique 索引必须幂等、sort=999 排在业务角色之后不干扰「管理桌面」角色列表顺序与默认角色断言 + `admin_user_roles` 关联当前管理员）；既有 15 个预设相关测试的操作者身份从普通管理员同步改为超管（`AdminDesktopPresetApiTest` 4 处、`AdminWorkspaceLookupApiTest` 6 处、`UserDesktopLookupApiTest` 4 处、`WebosWorkspaceApiTest` 1 处——预设/代改功能现仅超管可用，身份语义与业务口径对齐，未削弱断言；`test_super_admin_catalog` 内联建角色改 `firstOrFail` 复用防撞唯一索引；`test_admin_desktop_preset_defaults` 角色列表断言适配超管身份自带的内置角色）。219 测试 2383 断言通过。 |
 | 2.1.103 | 2026-10-25 | CmsPro | **预设 Tab 快速切换竞态修复（问题修复）**：① 现象——OS 设置「管理桌面/用户桌面」Tab 连续快速点击后，真实桌面图标全部堆叠到左上角（预设项无坐标，`renderDesktop` 坐标计算 `left = 4 + Number(item.x||0)*cellW` 全落 (4,4)），再多切一次图标全部消失（`assignedDesktopItems()` 过滤链在 items 与目录不配套时返回空），刷新页面恢复（污染仅内存 state，纯 Tab 切换不触发 `saveWorkspace` 不落库）。② 根因——`enterPresetSession()` 的 `api(presetUrl)` 异步响应无时效校验：快速切 Tab 时多个在途响应交错执行「拍快照（`state.presetSnapshot` 备份 desktop_items/catalog/flatMenus/startFlatMenus 四字段）→接管数据源」，后到的响应把已污染 state（预设数据）拍进 snapshot；`leavePresetSession()` 还原污染快照后 `renderDesktop()` 用预设数据渲染真实桌面。③ 修复（`webos.js`）——IIFE 顶层（`enterPresetSession` 声明前）新增 `var presetSessionRequestSeq = 0`；`enterPresetSession()` 请求前 `var requestSeq = ++presetSessionRequestSeq` 登记序号，`then`/`catch` 开头 `if (requestSeq !== presetSessionRequestSeq) { return; }` 过期即丢（不接管、不拍快照、不渲染、不写错误态）；`leavePresetSession()` 开头（幂等 return 之前）`presetSessionRequestSeq += 1` 作废全部在途请求——未在会话中（`presetEditing=false`，如 API 在途未返回时切离预设 Tab）也能作废在途请求；`renderWebosSettings()` 切 Tab 分支去掉 `if (state.presetEditing)` 前置条件（无条件 `leavePresetSession()` + `enterPresetSession()`），切离预设 Tab 分支由 `} else if (state.presetEditing) {` 改为无条件 `} else {`——`leavePresetSession` 幂等可重入。④ 模式对齐——与项目既有「响应序号丢弃过期响应」先例一致（搜索用户 L4334、搜索管理员 L4533 的防抖作废机制）。⑤ 测试——新增 `Tests/Feature/WebosPresetTabRaceTest` 2 用例（源码静态断言：序号守卫三件套齐备——声明/登记/双校验/作废各锚点；切 Tab 无条件退出会话——旧条件形态 NotContains）。213 测试 2301 断言通过。 |

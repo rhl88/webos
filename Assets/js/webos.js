@@ -32,6 +32,14 @@
         small: { cellW: 86, cellH: 88, iconW: 72, iconH: 78 }
     };
 
+    // 桌面小工具状态文案：数据接口返回 status（running|stopped|warning|unknown），未知值统一按「未知」渲染
+    var WIDGET_STATUS_TEXT = {
+        running: '运行中',
+        stopped: '已停止',
+        warning: '异常',
+        unknown: '未知'
+    };
+
     /** 当前桌面图标尺寸档位（非法值回退中图标默认档） */
     function desktopIconSize() {
         var size = state.workspace.preferences.icon_size;
@@ -108,6 +116,13 @@
         adminDesktopTarget: null,
         adminDesktopTaskbar: [],
         adminDesktopDirty: false,
+        // 桌面小工具（2.1.106）：注册表（widget_key → manifest.widgets 声明项，打开「小工具」面板时懒加载）、
+        // 数据缓存（桌面项 id → {status,data,error}）与轮询器（桌面项 id → {timer,widgetKey,stopped}）
+        widgetRegistry: null,
+        // 注册表请求去重：面板与轮询可能同时首启，共用一个在途 Promise
+        widgetRegistryLoading: null,
+        widgetData: new Map(),
+        widgetPollers: new Map(),
         wallpapers: null
     };
 
@@ -727,8 +742,10 @@
 
     function normalizeDesktopItems(items) {
         return (items || []).filter(function (item) {
-            // 内置浏览器入口 path 为空（内容按 id 特判渲染），仅要求合法 id；桌面原生项（文件夹 path 置空、URL 链接为外链）按 kind 放行；其余项仍须站内路径
-            return item && item.id && (item.id === 'webos-browser' || item.kind === 'folder' || item.kind === 'url' || safePath(item.path));
+            // 内置浏览器入口 path 为空（内容按 id 特判渲染），仅要求合法 id；桌面原生项（文件夹 path 置空、
+            // URL 链接为外链、小工具 path 置空由数据接口提供内容）按 kind 放行；其余项仍须站内路径
+            return item && item.id && (item.id === 'webos-browser' || item.kind === 'folder'
+                || item.kind === 'url' || item.kind === 'widget' || safePath(item.path));
         }).map(function (item, index) {
             return Object.assign({}, item, {
                 icon: safeIcon(item.icon),
@@ -850,9 +867,11 @@
                 path: item.path,
                 icon: safeIcon(item.icon),
                 group_title: item.group_title || '应用',
-                // 桌面原生项：folder=桌面文件夹、url=URL 链接；parent_folder 为所属文件夹 id（文件夹子项）
+                // 桌面原生项：folder=桌面文件夹、url=URL 链接、widget=桌面小工具（内容取自 widget_key 指向的数据接口）；
+                // parent_folder 为所属文件夹 id（文件夹子项）
                 kind: item.kind || '',
                 parent_folder: item.parent_folder || '',
+                widget_key: item.kind === 'widget' ? (item.widget_key || '') : '',
                 x: Math.max(0, Math.min(99, Number(item.x) || 0)),
                 y: Math.max(0, Math.min(99, Number(item.y) || 0))
             };
@@ -964,6 +983,10 @@
         elements.desktopIcons.innerHTML = assignedDesktopItems().map(function (item) {
             var left = 4 + Math.max(0, Number(item.x) || 0) * size.cellW;
             var top = 4 + Math.max(0, Number(item.y) || 0) * size.cellH;
+            // 桌面小工具：1x1 数据卡片（图标 + 名称 + 主值 + 状态），内容由数据接口轮询刷新
+            if (item.kind === 'widget') {
+                return desktopWidgetMarkup(item, left, top);
+            }
             // 桌面「应用中心」图标右上角显示可更新应用数量（无更新时不渲染）
             var updateBadge = item.id === 'webos-app-center' && visibleUpdates.length
                 ? '<span class="desktop-update-badge">' + visibleUpdates.length + '</span>'
@@ -976,6 +999,231 @@
                 + '</button>';
         }).join('');
         renderTaskbarWindows();
+        // 桌面重绘后校准小工具轮询器：新出现的卡片启动拉取，已移除的卡片停止并清缓存
+        syncWidgetPollers();
+    }
+
+    /* ======================================================================
+     * 桌面小工具（2.1.106）：应用在 manifest.widgets 中声明小工具，WebOS 聚合为注册表；
+     * 用户从桌面右键「新建 > 小工具」添加为 kind=widget 的桌面项，卡片数据由声明的 entry
+     * （/api/ 接口）按 refresh 秒轮询获取，返回 {title,status,value,unit,items,updated_at}。
+     * ==================================================================== */
+
+    /** 注册表声明查找：widget_key 形如 {app_id}:{widget_id}，注册表由 WebOS 后端聚合 */
+    function widgetDeclaration(widgetKey) {
+        var key = String(widgetKey || '');
+        if (!key || !state.widgetRegistry) {
+            return null;
+        }
+        for (var index = 0; index < state.widgetRegistry.length; index += 1) {
+            if (state.widgetRegistry[index].widget_key === key) {
+                return state.widgetRegistry[index];
+            }
+        }
+        return null;
+    }
+
+    /** 注册表懒加载：面板与桌面轮询共用；失败缓存空数组，避免每次重绘反复请求 */
+    function loadWidgetRegistry() {
+        if (state.widgetRegistry) {
+            return Promise.resolve(state.widgetRegistry);
+        }
+        if (state.widgetRegistryLoading) {
+            return state.widgetRegistryLoading;
+        }
+        state.widgetRegistryLoading = api(webosApiUrl('widgets') + '?_t=' + Date.now())
+            .catch(function () { return []; })
+            .then(function (list) {
+                state.widgetRegistry = Array.isArray(list) ? list : [];
+                state.widgetRegistryLoading = null;
+                return state.widgetRegistry;
+            });
+        return state.widgetRegistryLoading;
+    }
+
+    /** 卡片展示状态：尚无数据或读取失败按 unknown，其余取接口 status（未知值同样归 unknown） */
+    function widgetStatusOf(record) {
+        if (!record || record.status !== 'ready' || !record.data) {
+            return 'unknown';
+        }
+        var status = String(record.data.status || '');
+        return Object.prototype.hasOwnProperty.call(WIDGET_STATUS_TEXT, status) ? status : 'unknown';
+    }
+
+    /** 卡片主体：主值 + 单位 + 明细（最多 3 行），读取中/失败以占位文案呈现 */
+    function desktopWidgetBody(item) {
+        var record = state.widgetData.get(item.id);
+        if (!record) {
+            return '<span class="desktop-widget-value">—</span>'
+                + '<span class="desktop-widget-hint">读取中…</span>';
+        }
+        if (record.status !== 'ready') {
+            return '<span class="desktop-widget-value">—</span>'
+                + '<span class="desktop-widget-hint" title="' + escapeHtml(record.error) + '">读取失败</span>';
+        }
+        var data = record.data || {};
+        var value = data.value === null || data.value === undefined || data.value === ''
+            ? '—'
+            : String(data.value);
+        var unit = data.unit ? '<small>' + escapeHtml(data.unit) + '</small>' : '';
+        var lines = Array.isArray(data.items) ? data.items.slice(0, 3).map(function (line) {
+            if (!line || typeof line !== 'object') {
+                return '';
+            }
+            return '<span class="desktop-widget-line"><span>' + escapeHtml(line.label)
+                + '</span><b>' + escapeHtml(line.value) + '</b></span>';
+        }).join('') : '';
+        return '<span class="desktop-widget-value">' + escapeHtml(value) + unit + '</span>'
+            + (lines ? '<span class="desktop-widget-lines">' + lines + '</span>' : '');
+    }
+
+    /** 小工具卡片 HTML（1x1）：与桌面图标同宿主同定位，样式由 .desktop-icon.is-widget 覆盖 */
+    function desktopWidgetMarkup(item, left, top) {
+        var status = widgetStatusOf(state.widgetData.get(item.id));
+        return '<button class="desktop-icon is-widget is-widget-' + status
+            + (state.desktopSelection.has(item.id) ? ' is-selected' : '') + '" type="button"'
+            + ' data-desktop-id="' + escapeHtml(item.id) + '"'
+            + ' style="left:' + left + 'px;top:' + top + 'px" title="' + escapeHtml(item.title) + '">'
+            + '<span class="desktop-widget-head">'
+            + '<span class="desktop-widget-icon"><i class="' + safeIcon(item.icon) + '"></i></span>'
+            + '<span class="desktop-widget-name">' + escapeHtml(item.title) + '</span>'
+            + '</span>'
+            + desktopWidgetBody(item)
+            + '<span class="desktop-widget-state"><i class="desktop-widget-dot"></i>'
+            + WIDGET_STATUS_TEXT[status] + '</span>'
+            + '</button>';
+    }
+
+    /** 局部替换单个小工具卡片：轮询返回后只刷该节点，避免整桌重绘打断拖拽/框选 */
+    function renderWidgetCard(id) {
+        var item = findDesktopItem(id);
+        if (!item || item.kind !== 'widget') {
+            return;
+        }
+        var current = null;
+        Array.prototype.some.call(elements.desktopIcons.querySelectorAll('[data-desktop-id]'), function (node) {
+            if (node.getAttribute('data-desktop-id') === id) {
+                current = node;
+                return true;
+            }
+            return false;
+        });
+        if (!current) {
+            return;
+        }
+        var size = desktopIconSize();
+        var left = 4 + Math.max(0, Number(item.x) || 0) * size.cellW;
+        var top = 4 + Math.max(0, Number(item.y) || 0) * size.cellH;
+        var wrapper = document.createElement('div');
+        wrapper.innerHTML = desktopWidgetMarkup(item, left, top);
+        if (wrapper.firstElementChild) {
+            current.replaceWith(wrapper.firstElementChild);
+        }
+    }
+
+    /** 轮询器与桌面可见小工具对齐：新增项启动首拉、移除项停止并清缓存、widget_key 变更重启 */
+    function syncWidgetPollers() {
+        // 预设编辑会话渲染的是设置窗口内的预设网格，不做数据轮询
+        if (state.presetEditing) {
+            return;
+        }
+        var visible = new Map();
+        assignedDesktopItems().forEach(function (item) {
+            if (item.kind === 'widget' && item.widget_key) {
+                visible.set(item.id, item.widget_key);
+            }
+        });
+        state.widgetPollers.forEach(function (poller, id) {
+            if (visible.has(id)) {
+                return;
+            }
+            poller.stopped = true;
+            if (poller.timer) {
+                clearTimeout(poller.timer);
+            }
+            state.widgetPollers.delete(id);
+            state.widgetData.delete(id);
+        });
+        if (!visible.size) {
+            return;
+        }
+        loadWidgetRegistry().then(function () {
+            visible.forEach(function (widgetKey, id) {
+                var poller = state.widgetPollers.get(id);
+                if (poller && poller.widgetKey === widgetKey) {
+                    return;
+                }
+                if (poller) {
+                    poller.stopped = true;
+                    if (poller.timer) {
+                        clearTimeout(poller.timer);
+                    }
+                }
+                var next = { timer: null, widgetKey: widgetKey, stopped: false };
+                state.widgetPollers.set(id, next);
+                refreshWidgetData(id, next);
+            });
+        });
+    }
+
+    /** 拉取单个小工具数据：成功/失败都按 refresh 续排下一次（失败保留占位文案，不弹 toast 打扰） */
+    function refreshWidgetData(id, poller) {
+        if (!poller || poller.stopped) {
+            return;
+        }
+        var declaration = widgetDeclaration(poller.widgetKey);
+        if (!declaration) {
+            state.widgetData.set(id, { status: 'error', error: '小工具声明已失效' });
+            renderWidgetCard(id);
+            return;
+        }
+        api(declaration.entry).then(function (data) {
+            if (poller.stopped) {
+                return;
+            }
+            state.widgetData.set(id, { status: 'ready', data: data || null });
+            renderWidgetCard(id);
+        }).catch(function (error) {
+            if (poller.stopped) {
+                return;
+            }
+            state.widgetData.set(id, {
+                status: 'error',
+                error: error && error.message ? error.message : '数据读取失败'
+            });
+            renderWidgetCard(id);
+        }).then(function () {
+            scheduleWidgetRefresh(id, poller, declaration);
+        });
+    }
+
+    /** 按声明 refresh（秒）续排下一次拉取，下限 15 秒避免异常声明打爆接口 */
+    function scheduleWidgetRefresh(id, poller, declaration) {
+        if (poller.stopped) {
+            return;
+        }
+        if (poller.timer) {
+            clearTimeout(poller.timer);
+        }
+        var seconds = Math.max(15, Number(declaration.refresh) || 60);
+        poller.timer = setTimeout(function () {
+            refreshWidgetData(id, poller);
+        }, seconds * 1000);
+    }
+
+    /** 右键「刷新数据」：丢弃已排队的一次性立即重拉 */
+    function refreshWidgetOnce(id) {
+        var poller = state.widgetPollers.get(id);
+        if (!poller) {
+            // 轮询器尚未建立（如刚添加的卡片）：交给统一同步逻辑启动首拉
+            syncWidgetPollers();
+            return;
+        }
+        if (poller.timer) {
+            clearTimeout(poller.timer);
+            poller.timer = null;
+        }
+        refreshWidgetData(id, poller);
     }
 
     /**
@@ -2202,7 +2450,11 @@
     }
 
     function desktopContextMenuItems(context) {
-        var items = [[context.entry && context.entry.app_id ? '打开应用' : '打开', 'fa-external-link', 'open']];
+        // 桌面小工具不承载窗口与页面，「打开」无意义：首项改为立即重拉数据
+        var widget = context.entry && context.entry.kind === 'widget';
+        var items = [widget
+            ? ['刷新数据', 'fa-refresh', 'widget-refresh']
+            : [context.entry && context.entry.app_id ? '打开应用' : '打开', 'fa-external-link', 'open']];
         // 重命名仅修改桌面显示名称（工作区数据），不影响应用本身的名称与菜单
         items.push(['重命名', 'fa-pencil', 'rename']);
         // 应用中心与内置浏览器为系统内置入口，不允许删除，右键不提供删除项
@@ -2302,11 +2554,12 @@
             { label: '中图标', action: 'icon-medium', checked: currentSize === 'medium' },
             { label: '小图标', action: 'icon-small', checked: currentSize === 'small' }
         ];
-        // 新建子菜单（Windows 桌面风格）：文件夹 / 桌面入口（应用中心可用菜单）/ URL 链接
+        // 新建子菜单（Windows 桌面风格）：文件夹 / 桌面入口（应用中心可用菜单）/ URL 链接 / 小工具
         var newChildren = [
             { label: '文件夹', action: 'new-folder' },
             { label: '桌面入口', action: 'new-entry' },
-            { label: 'URL 链接', action: 'new-url' }
+            { label: 'URL 链接', action: 'new-url' },
+            { label: '小工具', action: 'new-widget' }
         ];
         // 全屏切换：文案与图标随当前状态切换（每次打开菜单重新渲染，Esc 退出后再次打开即为「全屏显示」）
         var fullscreenActive = Boolean(document.fullscreenElement || document.webkitFullscreenElement);
@@ -2435,6 +2688,16 @@
         }
         if (action === 'new-url') {
             openNewUrlDialog();
+            return;
+        }
+        // 新建 > 小工具：按注册表列出可添加的桌面小工具（无可用声明时提示）
+        if (action === 'new-widget') {
+            openWidgetPickerDialog();
+            return;
+        }
+        // 小工具右键「刷新数据」：立即重拉一次，不影响后续轮询节奏
+        if (action === 'widget-refresh') {
+            refreshWidgetOnce(iconId);
             return;
         }
         // 桌面右键「全屏显示/退出全屏」：与原任务栏按钮同一切换逻辑
@@ -2840,6 +3103,68 @@
                 layer.close(index);
             }
         });
+    }
+
+    /** 新建 > 小工具：按注册表列出可添加的桌面小工具，点击即加入桌面（已在桌面上的置灰标记） */
+    function openWidgetPickerDialog() {
+        var layer = layuiLayer();
+        if (!layer) {
+            toast('弹层组件未就绪，请刷新页面后重试', 'error');
+            return;
+        }
+        loadWidgetRegistry().then(function (list) {
+            if (!list.length) {
+                toast('当前没有可添加的桌面小工具');
+                return;
+            }
+            var markup = '<div class="webos-widget-picker">' + list.map(function (widget) {
+                var added = Boolean(findDesktopItem(widget.desktop_id));
+                return '<button class="webos-widget-pick-item' + (added ? ' is-added' : '') + '" type="button"'
+                    + ' data-widget-key="' + escapeHtml(widget.widget_key) + '"' + (added ? ' disabled' : '') + '>'
+                    + '<span class="webos-widget-pick-icon"><i class="' + safeIcon(widget.icon) + '"></i></span>'
+                    + '<span class="webos-widget-pick-text"><strong>' + escapeHtml(widget.title) + '</strong>'
+                    + '<small>' + escapeHtml(widget.app_id) + ' · 每 ' + (Number(widget.refresh) || 60) + ' 秒刷新</small></span>'
+                    + '<span class="webos-widget-pick-flag">' + (added ? '已添加' : '添加') + '</span>'
+                    + '</button>';
+            }).join('') + '</div>';
+            var index = layer.open({
+                type: 1,
+                title: '小工具',
+                area: ['420px', '440px'],
+                shadeClose: true,
+                content: markup,
+                success: function (layero) {
+                    layero.find('.webos-widget-pick-item').on('click', function () {
+                        var widgetKey = String(this.getAttribute('data-widget-key') || '');
+                        var widget = widgetDeclaration(widgetKey);
+                        if (!widget) {
+                            layer.msg('小工具声明已失效，请刷新页面后重试', { icon: 2 });
+                            return;
+                        }
+                        layer.close(index);
+                        addDesktopWidget(widget);
+                    });
+                }
+            });
+        });
+    }
+
+    /** 添加桌面小工具：id 取注册表 desktop_id（后端桌面项 id 仅允许 [A-Za-z0-9_-]），widget_key 原样保存 */
+    function addDesktopWidget(widget) {
+        if (!widget) {
+            return;
+        }
+        addDesktopEntry({
+            id: widget.desktop_id,
+            menu_id: null,
+            app_id: widget.app_id,
+            title: widget.title,
+            path: '',
+            icon: widget.icon,
+            group_title: '小工具',
+            kind: 'widget',
+            widget_key: widget.widget_key
+        }, '已添加「' + widget.title + '」');
     }
 
     /** 新建 > 桌面入口：树结构展示可用菜单（与入口管理「可用菜单」树同构，应用分支默认收起），点选叶子即添加 */
@@ -5541,6 +5866,11 @@
         if (entry.kind === 'folder') {
             closePanels();
             openFolderOverlay(entry);
+            return;
+        }
+        // 桌面小工具：内容由卡片自身按数据接口轮询渲染，不承载窗口/页面，点击仅收起面板
+        if (entry.kind === 'widget') {
+            closePanels();
             return;
         }
         if (openMenuByType(entry)) {
@@ -10868,9 +11198,10 @@
         if (entryId === 'webos-settings') { return true; }
         // 内置浏览器：与应用中心同待遇的内置入口，无权限要求（所有角色桌面均预置）
         if (entryId === 'webos-browser') { return true; }
-        // 桌面原生项（文件夹/URL 链接）不依赖菜单目录，始终可见
+        // 桌面原生项（文件夹/URL 链接/小工具）不依赖菜单目录，始终可见
         var desktopItem = findDesktopItem(entryId);
-        if (desktopItem && (desktopItem.kind === 'folder' || desktopItem.kind === 'url')) { return true; }
+        if (desktopItem && (desktopItem.kind === 'folder' || desktopItem.kind === 'url'
+            || desktopItem.kind === 'widget')) { return true; }
         if (state.flatMenus.some(function (item) { return item.id === entryId; })) { return true; }
 
         var appPrefix = 'app:';

@@ -415,6 +415,7 @@ class WorkspaceService
             (string) ($item['path'] ?? ''),
             (string) ($item['title'] ?? ''),
             (string) ($item['parent_folder'] ?? ''),
+            (string) ($item['widget_key'] ?? ''),
         ]);
     }
 
@@ -520,10 +521,12 @@ class WorkspaceService
     protected function sanitizeDesktopItem(array $item): array
     {
         $id = preg_replace('/[^A-Za-z0-9_-]/', '', (string) ($item['id'] ?? '')) ?: Str::uuid()->toString();
-        // 桌面原生项类型：folder=桌面文件夹（前端浮层管理内容）、url=URL 链接（iframe 外链窗口），空为普通应用/菜单入口
-        $kind = in_array($item['kind'] ?? '', ['folder', 'url'], true) ? $item['kind'] : '';
+        // 桌面原生项类型：folder=桌面文件夹（前端浮层管理内容）、url=URL 链接（iframe 外链窗口）、
+        // widget=桌面小工具（2.1.106，内容取自注册表 widget_key 指向的 /api/ 数据接口），空为普通应用/菜单入口
+        $kind = in_array($item['kind'] ?? '', ['folder', 'url', 'widget'], true) ? $item['kind'] : '';
         // 所属桌面文件夹 id（文件夹子项）：仅允许安全字符；文件夹自身不允许再挂入文件夹
         $parentFolder = Str::limit(preg_replace('/[^A-Za-z0-9_-]/', '', (string) ($item['parent_folder'] ?? '')), 64, '');
+        $widgetKey = '';
         $path = trim((string) ($item['path'] ?? ''));
         if ($kind === 'folder') {
             // 文件夹内容由前端浮层按 parent_folder 关系管理，path 不参与打开逻辑，强制置空
@@ -533,6 +536,18 @@ class WorkspaceService
             // URL 链接放行 http(s) 外链（前端以 iframe 窗口打开），其余地址仍拒绝
             if (! preg_match('/^https?:\/\/[^\s]+$/i', $path)) {
                 throw new InvalidArgumentException('URL 链接必须是 http(s) 地址');
+            }
+        } elseif ($kind === 'widget') {
+            // 小工具内容由 widget_key 指向的注册表项与 /api/ 数据接口提供，不承载跳转：path 强制置空
+            $path = '';
+            $parentFolder = '';
+            $widgetKey = Str::limit(
+                preg_replace('/[^A-Za-z0-9_.:-]/', '', (string) ($item['widget_key'] ?? '')),
+                100,
+                ''
+            );
+            if ($widgetKey === '' || ! str_contains($widgetKey, ':')) {
+                throw new InvalidArgumentException('桌面小工具缺少有效的 widget_key');
             }
         } elseif ($path === '') {
             // 内置浏览器入口（id=webos-browser）path 为空：内容由前端管理、按 id 特判打开；其余入口仍必须是站内路径
@@ -556,6 +571,7 @@ class WorkspaceService
             'group_title' => Str::limit(trim((string) ($item['group_title'] ?? '应用')), 60, ''),
             'kind' => $kind,
             'parent_folder' => $parentFolder,
+            'widget_key' => $widgetKey,
             'x' => min(99, max(0, (int) ($item['x'] ?? 0))),
             'y' => min(99, max(0, (int) ($item['y'] ?? 0))),
         ];
