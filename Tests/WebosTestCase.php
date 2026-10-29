@@ -18,6 +18,11 @@ abstract class WebosTestCase extends TestCase
     {
         parent::setUp();
 
+        // 关闭开发模式视图路径提示条（APP_DEV_MODE）：该中间件为注入提示条会对响应调用
+        // setContent()，把 Response::$original 由 View 对象覆盖为渲染后字符串，导致
+        // viewData() / assertViewHas() 断言报「The response is not a view.」
+        config(['app.dev_mode' => false]);
+
         $this->createWebosTables();
         $this->registerWebosProvider();
     }
