@@ -5928,31 +5928,63 @@ textarea:focus-visible,
     line-height: 16px;
 }
 
-/* 桌面小工具卡片（2.1.106）：1x1 数据卡片，覆盖图标按钮的居中纵向布局为「头部/主值/明细/状态」。
-   卡片尺寸需与三档格子（JS DESKTOP_ICON_SIZES）匹配，故三档各写一条，特异性高于档位通用规则 */
+/* 桌面小工具卡片（2.1.106）：覆盖图标按钮的居中纵向布局为「头部/主值/明细/状态+操作」。
+   宽高由 JS 按占格（1x1/2x1/2x2）以内联样式写入，此处不再固定，避免与尺寸档位规则互相覆盖 */
+/* 卡片底色走 CSS 变量（2.1.109）：数据契约 color 只需覆盖这组变量，
+   hover/选中的高亮与配色因此不会互相覆盖 */
 .webos-desktop .desktop-icon.is-widget {
-    width: 96px;
-    min-height: 98px;
+    --widget-surface: rgba(12, 28, 48, 0.42);
+    --widget-surface-hover: rgba(24, 56, 88, 0.58);
+    --widget-surface-active: rgba(28, 82, 126, 0.66);
     padding: 7px 8px;
     gap: 3px;
     align-items: stretch;
     justify-content: flex-start;
+    overflow: hidden;
     border-color: rgba(255, 255, 255, 0.18);
     border-radius: 10px;
-    background: rgba(12, 28, 48, 0.42);
+    background: var(--widget-surface);
     text-align: left;
     text-shadow: none;
 }
 
+/* 便签标记色（2.1.109）：契约 color 为 red/orange/green/blue/purple，与记事本六色一一对应；
+   未声明或非法值不加该类，沿用默认深蓝 */
+.webos-desktop .desktop-icon.is-widget.is-widget-tone-red {
+    --widget-surface: rgba(154, 38, 24, 0.55);
+    --widget-surface-hover: rgba(178, 52, 34, 0.68);
+    --widget-surface-active: rgba(198, 66, 44, 0.76);
+}
+
+.webos-desktop .desktop-icon.is-widget.is-widget-tone-orange {
+    --widget-surface: rgba(154, 92, 12, 0.55);
+    --widget-surface-hover: rgba(178, 112, 24, 0.68);
+    --widget-surface-active: rgba(198, 132, 36, 0.76);
+}
+
+.webos-desktop .desktop-icon.is-widget.is-widget-tone-green {
+    --widget-surface: rgba(24, 112, 56, 0.55);
+    --widget-surface-hover: rgba(32, 136, 70, 0.68);
+    --widget-surface-active: rgba(44, 158, 86, 0.76);
+}
+
+.webos-desktop .desktop-icon.is-widget.is-widget-tone-blue {
+    --widget-surface: rgba(18, 92, 152, 0.55);
+    --widget-surface-hover: rgba(26, 112, 178, 0.68);
+    --widget-surface-active: rgba(38, 132, 198, 0.76);
+}
+
+.webos-desktop .desktop-icon.is-widget.is-widget-tone-purple {
+    --widget-surface: rgba(94, 42, 132, 0.55);
+    --widget-surface-hover: rgba(112, 54, 154, 0.68);
+    --widget-surface-active: rgba(130, 68, 174, 0.76);
+}
+
 .webos-desktop[data-icon-size="large"] .desktop-icon.is-widget {
-    width: 120px;
-    min-height: 124px;
     padding: 9px 10px;
 }
 
 .webos-desktop[data-icon-size="small"] .desktop-icon.is-widget {
-    width: 80px;
-    min-height: 82px;
     padding: 5px 6px;
 }
 
@@ -5960,12 +5992,12 @@ textarea:focus-visible,
 .webos-desktop .desktop-icon.is-widget:hover,
 .webos-desktop .desktop-icon.is-widget:focus-visible {
     border-color: rgba(255, 255, 255, 0.42);
-    background: rgba(24, 56, 88, 0.58);
+    background: var(--widget-surface-hover);
 }
 
 .webos-desktop .desktop-icon.is-widget.is-selected {
     border-color: rgba(120, 195, 255, 0.85);
-    background: rgba(28, 82, 126, 0.66);
+    background: var(--widget-surface-active);
     box-shadow: inset 0 0 0 1px rgba(120, 195, 255, 0.35);
 }
 
@@ -5998,6 +6030,62 @@ textarea:focus-visible,
     line-height: 14px;
     text-overflow: ellipsis;
     white-space: nowrap;
+}
+
+/* 右上角关闭按钮（2.1.109）：仅从桌面移除卡片，不删除应用数据；默认隐藏，hover/选中/聚焦显形 */
+.desktop-icon.is-widget .desktop-widget-close {
+    flex: 0 0 14px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.24);
+    color: #fff;
+    font-size: 12px;
+    line-height: 1;
+    opacity: 0;
+    cursor: pointer;
+    pointer-events: auto;
+    transition: opacity 0.15s ease, background-color 0.15s ease;
+}
+
+.desktop-icon.is-widget .desktop-widget-close::before {
+    content: "\00d7";
+}
+
+.desktop-icon.is-widget:hover .desktop-widget-close,
+.desktop-icon.is-widget:focus-visible .desktop-widget-close,
+.desktop-icon.is-widget.is-selected .desktop-widget-close {
+    opacity: 1;
+}
+
+.desktop-icon.is-widget .desktop-widget-close:hover {
+    background: rgba(232, 76, 61, 0.92);
+}
+
+/* 正文卡片（2.1.109）：数据契约 text 优先于 value 渲染，保留换行并按尺寸档位限制行数 */
+.desktop-widget-text {
+    display: -webkit-box;
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow: hidden;
+    color: rgba(255, 255, 255, 0.92);
+    font-size: 11px;
+    line-height: 15px;
+    white-space: pre-wrap;
+    word-break: break-word;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 3;
+}
+
+.desktop-icon.is-widget[data-widget-size="2x1"] .desktop-widget-text {
+    -webkit-line-clamp: 5;
+}
+
+.desktop-icon.is-widget[data-widget-size="2x2"] .desktop-widget-text {
+    -webkit-line-clamp: 9;
 }
 
 .desktop-widget-value {
@@ -6060,10 +6148,105 @@ textarea:focus-visible,
     display: flex;
     align-items: center;
     gap: 4px;
-    margin-top: auto;
     color: rgba(255, 255, 255, 0.78);
     font-size: 10px;
     line-height: 12px;
+}
+
+/* 卡片底部一行：左侧状态、右侧声明操作按钮，始终贴卡片底边 */
+.desktop-widget-foot {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 4px;
+    min-width: 0;
+    margin-top: auto;
+}
+
+/* 按钮容器本身不接收指针事件（.desktop-icon span 已屏蔽子元素），按钮自身恢复接收 */
+.desktop-widget-actions {
+    display: flex;
+    flex: 0 0 auto;
+    gap: 2px;
+    pointer-events: none;
+}
+
+.desktop-widget-action {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    max-width: 100%;
+    padding: 1px 5px;
+    border: 1px solid rgba(120, 195, 255, 0.42);
+    border-radius: 6px;
+    color: rgba(255, 255, 255, 0.92);
+    background: rgba(23, 143, 229, 0.32);
+    font-size: 10px;
+    line-height: 14px;
+    white-space: nowrap;
+    cursor: pointer;
+    pointer-events: auto;
+}
+
+.desktop-widget-action:hover,
+.desktop-widget-action:focus-visible {
+    border-color: rgba(120, 195, 255, 0.82);
+    background: rgba(23, 143, 229, 0.55);
+    outline: none;
+}
+
+.desktop-widget-action i {
+    font-size: 9px;
+}
+
+/* 1x1 卡片宽度有限：操作按钮只留图标，避免文字把卡片撑出格子 */
+.desktop-icon.is-widget[data-widget-size="1x1"] .desktop-widget-action span {
+    display: none;
+}
+
+/* 右下角调尺寸手柄：默认透明，hover/选中/拖动中显形 */
+.desktop-icon.is-widget .desktop-widget-resize {
+    position: absolute;
+    right: 2px;
+    bottom: 2px;
+    width: 14px;
+    height: 14px;
+    opacity: 0;
+    cursor: nwse-resize;
+    pointer-events: auto;
+}
+
+.desktop-icon.is-widget .desktop-widget-resize::before {
+    content: "";
+    position: absolute;
+    right: 2px;
+    bottom: 2px;
+    width: 6px;
+    height: 6px;
+    border-right: 2px solid rgba(255, 255, 255, 0.72);
+    border-bottom: 2px solid rgba(255, 255, 255, 0.72);
+}
+
+.desktop-icon.is-widget:hover .desktop-widget-resize,
+.desktop-icon.is-widget:focus-visible .desktop-widget-resize,
+.desktop-icon.is-widget.is-selected .desktop-widget-resize,
+.desktop-icon.is-widget.is-resizing .desktop-widget-resize {
+    opacity: 1;
+}
+
+/* 调尺寸过程中提升层级盖过相邻卡片，并禁用过渡保证跟手 */
+.desktop-icon.is-widget.is-resizing {
+    z-index: 4000;
+    transition: none;
+}
+
+/* 应用停用/卸载导致声明缺失：卡片整体降透明度，提示当前不可用 */
+.webos-desktop .desktop-icon.is-widget-disabled {
+    opacity: 0.62;
+}
+
+.webos-desktop .desktop-icon.is-widget-disabled .desktop-widget-dot {
+    background: #8fa3b8;
 }
 
 .desktop-widget-dot {
@@ -6169,6 +6352,23 @@ textarea:focus-visible,
 .webos-widget-pick-item.is-added .webos-widget-pick-flag {
     background: #eef1f5;
     color: #8a97a4;
+}
+
+/* 下拉选择输入（2.1.109）：小工具声明 input.type=select 时由 layer 弹层承载，样式向后台表单靠拢 */
+.webos-widget-select {
+    padding: 16px;
+}
+
+.webos-widget-select-input {
+    width: 100%;
+    height: 34px;
+    padding: 0 8px;
+    border: 1px solid #d8e2ec;
+    border-radius: 6px;
+    background: #fff;
+    color: #33475f;
+    font-family: inherit;
+    font-size: 13px;
 }
 
 /* 「忽略的应用」弹窗（2.1.53）：每条忽略键一行（应用名 + 版本 + 移除按钮），空集合显示空态 */

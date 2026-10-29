@@ -45,6 +45,78 @@ class WidgetDesktopItemTest extends WebosTestCase
             ->assertJsonPath('data.desktop_items.0.widget_key', 'cmspro.localservice:service-status');
     }
 
+    public function test_workspace_api_persists_widget_size(): void
+    {
+        $this->actingAdmin();
+
+        $this->putJson('/admin/cmspro/webos/api/workspace', [
+            'desktop_items' => [$this->widgetItem(['w' => 2, 'h' => 2])],
+            'preferences' => [],
+        ])->assertOk()
+            ->assertJsonPath('data.desktop_items.0.w', 2)
+            ->assertJsonPath('data.desktop_items.0.h', 2);
+
+        $this->getJson('/admin/cmspro/webos/api/workspace')
+            ->assertOk()
+            ->assertJsonPath('data.desktop_items.0.w', 2)
+            ->assertJsonPath('data.desktop_items.0.h', 2);
+    }
+
+    public function test_workspace_api_defaults_widget_size_to_single_cell(): void
+    {
+        $this->actingAdmin();
+
+        $this->putJson('/admin/cmspro/webos/api/workspace', [
+            'desktop_items' => [$this->widgetItem()],
+            'preferences' => [],
+        ])->assertOk()
+            ->assertJsonPath('data.desktop_items.0.w', 1)
+            ->assertJsonPath('data.desktop_items.0.h', 1);
+    }
+
+    public function test_workspace_api_rejects_widget_size_out_of_range(): void
+    {
+        $this->actingAdmin();
+
+        $response = $this->putJson('/admin/cmspro/webos/api/workspace', [
+            'desktop_items' => [$this->widgetItem(['w' => 3, 'h' => 0])],
+            'preferences' => [],
+        ])->assertUnprocessable()
+            ->assertJsonPath('code', 40201);
+
+        $errors = $response->json('data');
+        $this->assertArrayHasKey('desktop_items.0.w', $errors);
+        $this->assertArrayHasKey('desktop_items.0.h', $errors);
+    }
+
+    public function test_workspace_api_omits_size_for_non_widget_item(): void
+    {
+        $this->actingAdmin();
+
+        $this->putJson('/admin/cmspro/webos/api/workspace', [
+            'desktop_items' => [[
+                'id' => 'menu-100',
+                'menu_id' => 100,
+                'title' => '便签列表',
+                'path' => '/admin/cmspro/notepad/notes',
+                'icon' => 'fa fa-list',
+                'x' => 0,
+                'y' => 0,
+                'w' => 2,
+                'h' => 2,
+            ]],
+            'preferences' => [],
+        ])->assertOk();
+
+        $item = $this->getJson('/admin/cmspro/webos/api/workspace')
+            ->assertOk()
+            ->json('data.desktop_items.0');
+
+        // 尺寸仅属于小工具卡片：普通入口不落存 w/h
+        $this->assertArrayNotHasKey('w', $item);
+        $this->assertArrayNotHasKey('h', $item);
+    }
+
     public function test_workspace_api_rejects_widget_without_widget_key(): void
     {
         $this->actingAdmin();

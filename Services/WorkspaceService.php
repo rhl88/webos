@@ -43,6 +43,15 @@ class WorkspaceService
     /** 「管理桌面」按后台角色预设的管理员桌面占位归属（terminal=admin_preset + 角色 ID） */
     protected const ADMIN_PRESET_TERMINAL = 'admin_preset';
 
+    /** 小工具桌面项实例参数上限（键数量）：多实例场景由 picker 选中值写入 */
+    public const MAX_WIDGET_PARAMS = 3;
+
+    /** 实例参数键名规则（与注册表 picker.param 一致） */
+    protected const WIDGET_PARAM_KEY_PATTERN = '/^[a-z][a-z0-9_]{0,31}$/';
+
+    /** 实例参数值最大长度 */
+    protected const MAX_WIDGET_PARAM_VALUE_LENGTH = 64;
+
     public function getForAdmin(int $adminUserId): WebosWorkspace
     {
         return $this->getFor('admin', $adminUserId);
@@ -512,7 +521,7 @@ class WorkspaceService
     protected function sanitizeTaskbarItems(array $items): array
     {
         return collect(array_slice($items, 0, 12))
-            ->map(fn (array $item): array => Arr::except($this->sanitizeDesktopItem($item), ['x', 'y']))
+            ->map(fn (array $item): array => Arr::except($this->sanitizeDesktopItem($item), ['x', 'y', 'w', 'h', 'params']))
             ->values()
             ->all();
     }
@@ -527,6 +536,7 @@ class WorkspaceService
         // 所属桌面文件夹 id（文件夹子项）：仅允许安全字符；文件夹自身不允许再挂入文件夹
         $parentFolder = Str::limit(preg_replace('/[^A-Za-z0-9_-]/', '', (string) ($item['parent_folder'] ?? '')), 64, '');
         $widgetKey = '';
+        $widgetParams = [];
         $path = trim((string) ($item['path'] ?? ''));
         if ($kind === 'folder') {
             // 文件夹内容由前端浮层按 parent_folder 关系管理，path 不参与打开逻辑，强制置空
@@ -549,6 +559,8 @@ class WorkspaceService
             if ($widgetKey === '' || ! str_contains($widgetKey, ':')) {
                 throw new InvalidArgumentException('桌面小工具缺少有效的 widget_key');
             }
+            // 多实例实例参数：仅小工具携带，非小工具项一律不写
+            $widgetParams = $this->widgetParamsOf($item['params'] ?? null);
         } elseif ($path === '') {
             // 内置浏览器入口（id=webos-browser）path 为空：内容由前端管理、按 id 特判打开；其余入口仍必须是站内路径
             if ($id !== 'webos-browser') {
@@ -561,7 +573,7 @@ class WorkspaceService
         $icon = preg_replace('/[^A-Za-z0-9 _-]/', '', (string) ($item['icon'] ?? 'fa fa-cube'));
         $appId = preg_replace('/[^A-Za-z0-9_.-]/', '', (string) ($item['app_id'] ?? ''));
 
-        return [
+        $sanitized = [
             'id' => Str::limit($id, 80, ''),
             'menu_id' => isset($item['menu_id']) ? max(0, (int) $item['menu_id']) : null,
             'app_id' => Str::limit($appId, 100, ''),
@@ -575,6 +587,65 @@ class WorkspaceService
             'x' => min(99, max(0, (int) ($item['x'] ?? 0))),
             'y' => min(99, max(0, (int) ($item['y'] ?? 0))),
         ];
+
+        // 仅小工具卡片带占格数：1..2 档，非数字或越界回落 1（其它类型无尺寸概念）
+        if ($kind === 'widget') {
+            $sanitized['w'] = $this->widgetSpanOf($item['w'] ?? null);
+            $sanitized['h'] = $this->widgetSpanOf($item['h'] ?? null);
+            if ($widgetParams !== []) {
+                $sanitized['params'] = $widgetParams;
+            }
+        }
+
+        return $sanitized;
+    }
+
+    /**
+     * 小工具实例参数净化：键名小写字母开头、最多 MAX_WIDGET_PARAMS 个、值 ≤64 字符
+     *
+     * 非法键或超长值直接跳过，不影响其余参数。
+     *
+     * @return array<string,string>
+     */
+    protected function widgetParamsOf(mixed $value): array
+    {
+        if (! is_array($value)) {
+            return [];
+        }
+
+        $params = [];
+
+        foreach ($value as $key => $paramValue) {
+            if (count($params) >= self::MAX_WIDGET_PARAMS) {
+                break;
+            }
+
+            if (! is_string($key) || ! preg_match(self::WIDGET_PARAM_KEY_PATTERN, $key)) {
+                continue;
+            }
+
+            // 只接受字符串/整数，布尔与数组、对象一律视为非法
+            if (! is_string($paramValue) && ! is_int($paramValue)) {
+                continue;
+            }
+
+            $text = trim((string) $paramValue);
+            if (mb_strlen($text) > self::MAX_WIDGET_PARAM_VALUE_LENGTH) {
+                continue;
+            }
+
+            $params[$key] = $text;
+        }
+
+        return $params;
+    }
+
+    /** 小工具卡片占格数：非数字或越界（超出 1..2）一律回落单格 */
+    protected function widgetSpanOf(mixed $value): int
+    {
+        $span = is_numeric($value) ? (int) $value : 1;
+
+        return $span >= 1 && $span <= 2 ? $span : 1;
     }
 
     /** @return array<string,mixed> */

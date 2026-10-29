@@ -32,13 +32,21 @@
         small: { cellW: 86, cellH: 88, iconW: 72, iconH: 78 }
     };
 
-    // 桌面小工具状态文案：数据接口返回 status（running|stopped|warning|unknown），未知值统一按「未知」渲染
+    // 桌面小工具状态文案：数据接口返回 status（running|stopped|warning|unknown），未知值统一按「未知」渲染；
+    // disabled 为前端派生状态——注册表已加载但找不到声明（应用被停用/卸载），卡片置灰并停止轮询
     var WIDGET_STATUS_TEXT = {
         running: '运行中',
         stopped: '已停止',
         warning: '异常',
-        unknown: '未知'
+        unknown: '未知',
+        disabled: '已停用'
     };
+
+    // 小工具尺寸档位（列数x行数）：与后端 WidgetRegistryService::SIZE_WHITELIST 保持一致
+    var WIDGET_SIZE_WHITELIST = ['1x1', '2x1', '2x2'];
+
+    // 小工具卡片配色（2.1.109）：数据契约 color 仅接受以下枚举，其余（含缺省）按默认深蓝渲染
+    var WIDGET_TONE_WHITELIST = ['red', 'orange', 'green', 'blue', 'purple'];
 
     /** 当前桌面图标尺寸档位（非法值回退中图标默认档） */
     function desktopIconSize() {
@@ -121,6 +129,8 @@
         widgetRegistry: null,
         // 注册表请求去重：面板与轮询可能同时首启，共用一个在途 Promise
         widgetRegistryLoading: null,
+        // 注册表读取失败标记：与「注册表为空」区分——失败时卡片报读取失败，空表时卡片判为应用已停用
+        widgetRegistryFailed: false,
         widgetData: new Map(),
         widgetPollers: new Map(),
         wallpapers: null
@@ -859,7 +869,7 @@
     /** 桌面项提交载荷：工作区保存与「用户桌面」预设保存共用同一字段口径 */
     function desktopItemsPayload() {
         return state.workspace.desktop_items.map(function (item) {
-            return {
+            var payload = {
                 id: item.id,
                 menu_id: item.menu_id || null,
                 app_id: item.app_id || '',
@@ -875,6 +885,13 @@
                 x: Math.max(0, Math.min(99, Number(item.x) || 0)),
                 y: Math.max(0, Math.min(99, Number(item.y) || 0))
             };
+            // 小工具占格（1x1/2x1/2x2）：仅 widget 项提交，避免污染普通图标的保存载荷
+            if (item.kind === 'widget') {
+                var span = desktopItemSpan(item);
+                payload.w = span.w;
+                payload.h = span.h;
+            }
+            return payload;
         });
     }
 
@@ -1009,6 +1026,125 @@
      * （/api/ 接口）按 refresh 秒轮询获取，返回 {title,status,value,unit,items,updated_at}。
      * ==================================================================== */
 
+    /** 桌面项占格：普通图标恒为 1x1，小工具按 w/h 取 1..2（口径与后端 WorkspaceService::widgetSpanOf 一致） */
+    function desktopItemSpan(item) {
+        if (!item || item.kind !== 'widget') {
+            return { w: 1, h: 1 };
+        }
+        return { w: clampWidgetSpan(item.w), h: clampWidgetSpan(item.h) };
+    }
+
+    /** 占格数归一：仅允许 1 或 2，缺省与非法值回落 1 */
+    function clampWidgetSpan(value) {
+        return Math.floor(Number(value)) === 2 ? 2 : 1;
+    }
+
+    /** 小工具实例参数：仅小工具桌面项携带（后端 sanitizeDesktopItem 已净化），其余按空对象处理 */
+    function widgetParamsOf(item) {
+        return item && item.kind === 'widget' && item.params && typeof item.params === 'object'
+            ? item.params
+            : {};
+    }
+
+    /** 小工具数据接口地址拼参：实例参数按 query 传给应用接口，服务端据此返回对应实例数据 */
+    function widgetEntryUrl(entry, item) {
+        var url = String(entry || '');
+        var params = widgetParamsOf(item);
+        var query = Object.keys(params).map(function (key) {
+            return encodeURIComponent(key) + '=' + encodeURIComponent(params[key]);
+        }).join('&');
+        if (!query) {
+            return url;
+        }
+        return url + (url.indexOf('?') >= 0 ? '&' : '?') + query;
+    }
+
+    /** 实例是否已在桌面：无 picker 的小工具按 widget_key 判定，有 picker 的再比对参数值（同一小工具可贴多张） */
+    function widgetInstanceAdded(widget, params) {
+        // 有 picker 时必须落到具体候选才能判重（主列表只判断「是否可继续添加」）
+        if (widget.picker && !params) {
+            return false;
+        }
+        var value = widget.picker && params
+            ? String(params[widget.picker.param] || '')
+            : '';
+        return state.workspace.desktop_items.some(function (item) {
+            if (item.kind !== 'widget' || item.widget_key !== widget.widget_key) {
+                return false;
+            }
+            if (!widget.picker) {
+                return true;
+            }
+            return String(widgetParamsOf(item)[widget.picker.param] || '') === value;
+        });
+    }
+
+    /** 实例桌面项 id：注册表 desktop_id 追加参数值片段（仅 [A-Za-z0-9_-]，截 12 字符），总长受后端 80 上限约束；
+     *  后缀冲突时追加序号，保证同一桌面不出现重复 id（后端仅净化字符、不做去重） */
+    function widgetInstanceId(widget, params) {
+        var base = String(widget.desktop_id || '');
+        var slug = widget.picker
+            ? String((params || {})[widget.picker.param] || '').replace(/[^A-Za-z0-9_-]/g, '').slice(0, 12)
+            : '';
+        var stem = (slug ? base + '-' + slug : base).slice(0, 80);
+        var id = stem;
+        var index = 2;
+        while (findDesktopItem(id)) {
+            var suffix = '-' + index;
+            id = stem.slice(0, 80 - suffix.length) + suffix;
+            index += 1;
+        }
+        return id;
+    }
+
+    /** 尺寸档位解析：'2x1' → {w:2,h:1}，非白名单档位返回 null */
+    function parseWidgetSize(size) {
+        var text = String(size || '');
+        if (WIDGET_SIZE_WHITELIST.indexOf(text) < 0) {
+            return null;
+        }
+        return { w: Number(text.charAt(0)), h: Number(text.charAt(2)) };
+    }
+
+    /** 标记矩形占用：占用集合统一使用 'x,y' 复合键，小工具占多格时逐格标记 */
+    function markDesktopRect(occupied, x, y, w, h) {
+        for (var column = x; column < x + w; column += 1) {
+            for (var row = y; row < y + h; row += 1) {
+                occupied.add(column + ',' + row);
+            }
+        }
+    }
+
+    /** 矩形落位是否可用：不越出可视容量且与占用集合无交集（cols/rows 为 0 表示容器不可测量，不限边界） */
+    function desktopRectFree(occupied, x, y, w, h, cols, rows) {
+        if (x < 0 || y < 0) {
+            return false;
+        }
+        if ((cols > 0 && x + w > cols) || (rows > 0 && y + h > rows)) {
+            return false;
+        }
+        for (var column = x; column < x + w; column += 1) {
+            for (var row = y; row < y + h; row += 1) {
+                if (occupied.has(column + ',' + row)) {
+                    return false;
+                }
+            }
+        }
+        return true;
+    }
+
+    /** 列优先扫描占用集合中第一个放得下 w×h 的矩形（仅扫描可视容量内），返回 {x,y} 或 null */
+    function firstFreeDesktopRect(occupied, w, h, cols, rows) {
+        for (var column = 0; column < (cols > 0 ? cols : 100); column += 1) {
+            for (var row = 0; row < rows; row += 1) {
+                if (desktopRectFree(occupied, column, row, w, h, cols, rows)) {
+                    return { x: column, y: row };
+                }
+            }
+        }
+        return null;
+    }
+
     /** 注册表声明查找：widget_key 形如 {app_id}:{widget_id}，注册表由 WebOS 后端聚合 */
     function widgetDeclaration(widgetKey) {
         var key = String(widgetKey || '');
@@ -1032,17 +1168,29 @@
             return state.widgetRegistryLoading;
         }
         state.widgetRegistryLoading = api(webosApiUrl('widgets') + '?_t=' + Date.now())
-            .catch(function () { return []; })
             .then(function (list) {
                 state.widgetRegistry = Array.isArray(list) ? list : [];
-                state.widgetRegistryLoading = null;
+                state.widgetRegistryFailed = false;
                 return state.widgetRegistry;
+            })
+            .catch(function () {
+                // 读取失败不能等同于「没有任何小工具」：否则所有卡片会被误判为应用已停用
+                state.widgetRegistry = [];
+                state.widgetRegistryFailed = true;
+                return state.widgetRegistry;
+            })
+            .then(function (list) {
+                state.widgetRegistryLoading = null;
+                return list;
             });
         return state.widgetRegistryLoading;
     }
 
-    /** 卡片展示状态：尚无数据或读取失败按 unknown，其余取接口 status（未知值同样归 unknown） */
+    /** 卡片展示状态：停用派生态优先；尚无数据或读取失败按 unknown，其余取接口 status（未知值同样归 unknown） */
     function widgetStatusOf(record) {
+        if (record && record.status === 'disabled') {
+            return 'disabled';
+        }
         if (!record || record.status !== 'ready' || !record.data) {
             return 'unknown';
         }
@@ -1050,18 +1198,43 @@
         return Object.prototype.hasOwnProperty.call(WIDGET_STATUS_TEXT, status) ? status : 'unknown';
     }
 
-    /** 卡片主体：主值 + 单位 + 明细（最多 3 行），读取中/失败以占位文案呈现 */
+    /** 卡片标题：数据契约 title（后端已裁剪 40 字）优先，缺省取桌面项名称 */
+    function widgetTitleOf(item) {
+        var record = state.widgetData.get(item.id);
+        var data = record && record.status === 'ready' ? record.data : null;
+        var title = data && typeof data.title === 'string' ? data.title.trim() : '';
+        return title ? title.slice(0, 40) : item.title;
+    }
+
+    /** 卡片配色：数据契约 color 仅接受白名单枚举，其余（含缺省）回落 default 深蓝 */
+    function widgetToneOf(item) {
+        var record = state.widgetData.get(item.id);
+        var data = record && record.status === 'ready' ? record.data : null;
+        var tone = data && typeof data.color === 'string' ? data.color : '';
+        return WIDGET_TONE_WHITELIST.indexOf(tone) >= 0 ? tone : 'default';
+    }
+
+    /** 卡片主体：text 优先（保留换行，行数由尺寸档位 CSS 截断），否则主值 + 单位 + 明细（最多 3 行），
+     *  读取中/失败以占位文案呈现 */
     function desktopWidgetBody(item) {
         var record = state.widgetData.get(item.id);
         if (!record) {
             return '<span class="desktop-widget-value">—</span>'
                 + '<span class="desktop-widget-hint">读取中…</span>';
         }
+        if (record.status === 'disabled') {
+            return '<span class="desktop-widget-value">—</span>'
+                + '<span class="desktop-widget-hint">' + escapeHtml(record.error || '应用已停用') + '</span>';
+        }
         if (record.status !== 'ready') {
             return '<span class="desktop-widget-value">—</span>'
                 + '<span class="desktop-widget-hint" title="' + escapeHtml(record.error) + '">读取失败</span>';
         }
         var data = record.data || {};
+        var text = typeof data.text === 'string' ? data.text : '';
+        if (text.trim() !== '') {
+            return '<span class="desktop-widget-text">' + escapeHtml(text) + '</span>';
+        }
         var value = data.value === null || data.value === undefined || data.value === ''
             ? '—'
             : String(data.value);
@@ -1077,21 +1250,59 @@
             + (lines ? '<span class="desktop-widget-lines">' + lines + '</span>' : '');
     }
 
-    /** 小工具卡片 HTML（1x1）：与桌面图标同宿主同定位，样式由 .desktop-icon.is-widget 覆盖 */
-    function desktopWidgetMarkup(item, left, top) {
-        var status = widgetStatusOf(state.widgetData.get(item.id));
-        return '<button class="desktop-icon is-widget is-widget-' + status
-            + (state.desktopSelection.has(item.id) ? ' is-selected' : '') + '" type="button"'
-            + ' data-desktop-id="' + escapeHtml(item.id) + '"'
-            + ' style="left:' + left + 'px;top:' + top + 'px" title="' + escapeHtml(item.title) + '">'
-            + '<span class="desktop-widget-head">'
-            + '<span class="desktop-widget-icon"><i class="' + safeIcon(item.icon) + '"></i></span>'
-            + '<span class="desktop-widget-name">' + escapeHtml(item.title) + '</span>'
-            + '</span>'
-            + desktopWidgetBody(item)
+    /** 小工具声明的操作按钮（后端已裁剪为最多 2 项） */
+    function widgetActionsOf(item) {
+        var declaration = widgetDeclaration(item.widget_key);
+        return declaration && Array.isArray(declaration.actions) ? declaration.actions : [];
+    }
+
+    /** 卡片底部：状态文案 + 声明操作按钮（数据未就绪不渲染按钮，避免点击后才发现接口不可用） */
+    function widgetFooterMarkup(item, status) {
+        var record = state.widgetData.get(item.id);
+        var actions = record && record.status === 'ready' ? widgetActionsOf(item) : [];
+        var buttons = actions.map(function (action) {
+            return '<button class="desktop-widget-action" type="button"'
+                + ' data-widget-action="' + escapeHtml(action.id) + '"'
+                + ' title="' + escapeHtml(action.title) + '">'
+                + '<i class="' + safeIcon(action.icon) + '"></i>'
+                + '<span>' + escapeHtml(action.title) + '</span>'
+                + '</button>';
+        }).join('');
+        return '<span class="desktop-widget-foot">'
             + '<span class="desktop-widget-state"><i class="desktop-widget-dot"></i>'
             + WIDGET_STATUS_TEXT[status] + '</span>'
-            + '</button>';
+            + (buttons ? '<span class="desktop-widget-actions">' + buttons + '</span>' : '')
+            + '</span>';
+    }
+
+    /** 小工具卡片 HTML：按占格（1x1/2x1/2x2）渲染尺寸，底部为状态与操作按钮，右下角为调尺寸手柄，
+     *  右上角为关闭按钮（仅移除桌面卡片，不删除应用数据）。
+     *  宿主必须是 div 而非 button：按钮内不能嵌套操作按钮（invalid HTML，点击事件也会被宿主吞掉） */
+    function desktopWidgetMarkup(item, left, top) {
+        var status = widgetStatusOf(state.widgetData.get(item.id));
+        var grid = desktopItemSpan(item);
+        var size = desktopIconSize();
+        var tone = widgetToneOf(item);
+        var title = widgetTitleOf(item);
+        return '<div class="desktop-icon is-widget is-widget-' + status
+            + (tone !== 'default' ? ' is-widget-tone-' + tone : '')
+            + (state.desktopSelection.has(item.id) ? ' is-selected' : '') + '"'
+            + ' role="button" tabindex="0"'
+            + ' data-desktop-id="' + escapeHtml(item.id) + '"'
+            + ' data-widget-size="' + grid.w + 'x' + grid.h + '"'
+            + ' style="left:' + left + 'px;top:' + top + 'px;width:' + (grid.w * size.cellW - 6)
+            + 'px;height:' + (grid.h * size.cellH - 6) + 'px;min-height:0"'
+            + ' title="' + escapeHtml(title) + '">'
+            + '<span class="desktop-widget-head">'
+            + '<span class="desktop-widget-icon"><i class="' + safeIcon(item.icon) + '"></i></span>'
+            + '<span class="desktop-widget-name">' + escapeHtml(title) + '</span>'
+            + '<span class="desktop-widget-close" data-widget-close="1" role="button"'
+            + ' title="关闭（仅从桌面移除）"></span>'
+            + '</span>'
+            + desktopWidgetBody(item)
+            + widgetFooterMarkup(item, status)
+            + '<span class="desktop-widget-resize" data-widget-resize="1" title="拖拽调整大小"></span>'
+            + '</div>';
     }
 
     /** 局部替换单个小工具卡片：轮询返回后只刷该节点，避免整桌重绘打断拖拽/框选 */
@@ -1121,6 +1332,20 @@
         }
     }
 
+    /** 停止并移除单个轮询器：清定时器并置终止标记，数据缓存由调用方决定覆盖或删除 */
+    function stopWidgetPoller(id) {
+        var poller = state.widgetPollers.get(id);
+        if (!poller) {
+            return;
+        }
+        poller.stopped = true;
+        if (poller.timer) {
+            clearTimeout(poller.timer);
+            poller.timer = null;
+        }
+        state.widgetPollers.delete(id);
+    }
+
     /** 轮询器与桌面可见小工具对齐：新增项启动首拉、移除项停止并清缓存、widget_key 变更重启 */
     function syncWidgetPollers() {
         // 预设编辑会话渲染的是设置窗口内的预设网格，不做数据轮询
@@ -1137,11 +1362,7 @@
             if (visible.has(id)) {
                 return;
             }
-            poller.stopped = true;
-            if (poller.timer) {
-                clearTimeout(poller.timer);
-            }
-            state.widgetPollers.delete(id);
+            stopWidgetPoller(id);
             state.widgetData.delete(id);
         });
         if (!visible.size) {
@@ -1154,10 +1375,7 @@
                     return;
                 }
                 if (poller) {
-                    poller.stopped = true;
-                    if (poller.timer) {
-                        clearTimeout(poller.timer);
-                    }
+                    stopWidgetPoller(id);
                 }
                 var next = { timer: null, widgetKey: widgetKey, stopped: false };
                 state.widgetPollers.set(id, next);
@@ -1166,18 +1384,25 @@
         });
     }
 
-    /** 拉取单个小工具数据：成功/失败都按 refresh 续排下一次（失败保留占位文案，不弹 toast 打扰） */
+    /**
+     * 拉取单个小工具数据：成功/失败都按 refresh 续排下一次（失败保留占位文案，不弹 toast 打扰）。
+     * 声明缺失分两种情况：注册表读取失败 → 报读取失败并停止（可右键刷新重试）；
+     * 注册表正常但查不到声明 → 应用已停用/卸载，卡片置「已停用」并停止轮询。
+     */
     function refreshWidgetData(id, poller) {
         if (!poller || poller.stopped) {
             return;
         }
         var declaration = widgetDeclaration(poller.widgetKey);
         if (!declaration) {
-            state.widgetData.set(id, { status: 'error', error: '小工具声明已失效' });
+            state.widgetData.set(id, state.widgetRegistryFailed
+                ? { status: 'error', error: '小工具注册表读取失败' }
+                : { status: 'disabled', error: '应用已停用，暂不可用' });
             renderWidgetCard(id);
+            stopWidgetPoller(id);
             return;
         }
-        api(declaration.entry).then(function (data) {
+        api(widgetEntryUrl(declaration.entry, findDesktopItem(id))).then(function (data) {
             if (poller.stopped) {
                 return;
             }
@@ -1211,8 +1436,16 @@
         }, seconds * 1000);
     }
 
-    /** 右键「刷新数据」：丢弃已排队的一次性立即重拉 */
+    /** 右键「刷新数据」/操作成功后立即重拉：卡片处于停用或注册表读取失败时先重置注册表缓存，
+     *  使应用重新启用后无需刷新整页即可恢复 */
     function refreshWidgetOnce(id) {
+        var record = state.widgetData.get(id);
+        if ((record && record.status === 'disabled') || state.widgetRegistryFailed) {
+            state.widgetRegistry = null;
+            state.widgetRegistryLoading = null;
+            state.widgetRegistryFailed = false;
+            state.widgetPollers.delete(id);
+        }
         var poller = state.widgetPollers.get(id);
         if (!poller) {
             // 轮询器尚未建立（如刚添加的卡片）：交给统一同步逻辑启动首拉
@@ -1224,6 +1457,243 @@
             poller.timer = null;
         }
         refreshWidgetData(id, poller);
+    }
+
+    /** 卡片操作按钮入口：无输入的操作直接提交，声明了 input 的先弹输入框 */
+    function runWidgetAction(id, actionId) {
+        var item = findDesktopItem(id);
+        if (!item || item.kind !== 'widget') {
+            return;
+        }
+        var action = widgetActionsOf(item).filter(function (entry) {
+            return entry.id === actionId;
+        })[0];
+        if (!action) {
+            toast('该操作已失效，请刷新页面后重试', 'error');
+            return;
+        }
+        if (!action.input) {
+            submitWidgetAction(id, action, null);
+            return;
+        }
+        // 下拉选择（2.1.109）：选项由声明提供，选中值按 input.name 提交（空值表示「默认/无」）
+        if (action.input.type === 'select') {
+            promptWidgetActionSelect(action, function (value) {
+                submitWidgetAction(id, action, value);
+            });
+            return;
+        }
+        promptWidgetActionInput(action, function (value) {
+            submitWidgetAction(id, action, value);
+        });
+    }
+
+    /** 下拉选择输入：选项来自声明 input.options（2..8 项，后端已净化），以原生 select 承载并复用 layer 弹层 */
+    function promptWidgetActionSelect(action, onSubmit) {
+        var layer = layuiLayer();
+        if (!layer) {
+            toast('弹层组件未就绪，请刷新页面后重试', 'error');
+            return;
+        }
+        var options = Array.isArray(action.input.options) ? action.input.options : [];
+        if (!options.length) {
+            toast('该操作缺少可选项，请刷新页面后重试', 'error');
+            return;
+        }
+        var markup = '<div class="webos-widget-select">'
+            + '<select class="webos-widget-select-input">'
+            + options.map(function (option) {
+                return '<option value="' + escapeHtml(option.value) + '">'
+                    + escapeHtml(option.label) + '</option>';
+            }).join('')
+            + '</select>'
+            + '</div>';
+        layer.open({
+            type: 1,
+            title: escapeHtml(action.title),
+            area: ['300px', 'auto'],
+            shadeClose: true,
+            content: markup,
+            btn: ['确定', '取消'],
+            yes: function (index, layero) {
+                var value = String(layero.find('.webos-widget-select-input').val() || '');
+                layer.close(index);
+                onSubmit(value);
+            }
+        });
+    }
+
+    /** 操作输入框：单字段多行文本（formType:2），空内容不提交（与后端 required 校验口径一致） */
+    function promptWidgetActionInput(action, onSubmit) {
+        var layer = layuiLayer();
+        if (!layer) {
+            toast('弹层组件未就绪，请刷新页面后重试', 'error');
+            return;
+        }
+        var input = action.input || {};
+        var options = {
+            title: escapeHtml(action.title),
+            formType: 2,
+            value: '',
+            maxlength: Math.max(1, Number(input.maxlength) || 200)
+        };
+        if (input.placeholder) {
+            options.success = function (layero) {
+                layero.find('textarea').attr('placeholder', input.placeholder);
+            };
+        }
+        layer.prompt(options, function (value, index) {
+            var content = String(value || '').trim();
+            if (!content) {
+                layer.msg('内容不能为空', { icon: 0 });
+                return;
+            }
+            layer.close(index);
+            onSubmit(content);
+        });
+    }
+
+    /** 提交操作：字段名取声明 input.name（缺省 content），同时带上实例参数（如便签 note_id）；
+     *  实例参数优先，成功后立即重拉卡片数据 */
+    function submitWidgetAction(id, action, value) {
+        var body = {};
+        if (value !== null) {
+            body[(action.input && action.input.name) || 'content'] = value;
+        }
+        Object.assign(body, widgetParamsOf(findDesktopItem(id)));
+        api(action.entry, { method: 'POST', body: body }).then(function () {
+            toast('已' + action.title);
+            refreshWidgetOnce(id);
+        }).catch(function (error) {
+            toast(error && error.message ? error.message : '操作失败', 'error');
+        });
+    }
+
+    /** 声明允许的尺寸档位（缺省 1x1）：拖拽调尺寸时只吸附到这些档位 */
+    function widgetSizeOptions(item) {
+        var declaration = widgetDeclaration(item.widget_key);
+        var sizes = declaration && Array.isArray(declaration.sizes) ? declaration.sizes : [];
+        var options = [];
+        sizes.forEach(function (size) {
+            var parsed = parseWidgetSize(size);
+            if (parsed && !options.some(function (option) {
+                return option.w === parsed.w && option.h === parsed.h;
+            })) {
+                options.push(parsed);
+            }
+        });
+        return options.length ? options : [{ w: 1, h: 1 }];
+    }
+
+    /** 在允许档位中取与目标占格最接近者：距离优先，距离相同取面积小者（避免放大时抢占过多格子） */
+    function nearestWidgetSize(options, targetW, targetH) {
+        var best = options[0];
+        var bestScore = Infinity;
+        options.forEach(function (option) {
+            var score = (Math.abs(option.w - targetW) + Math.abs(option.h - targetH)) * 10 + option.w * option.h;
+            if (score < bestScore) {
+                best = option;
+                bestScore = score;
+            }
+        });
+        return best;
+    }
+
+    /** 除指定小工具自身外，目标矩形是否空闲（调尺寸落位校验） */
+    function widgetRectAvailable(item, x, y, w, h) {
+        var capacity = desktopGridCapacity();
+        var occupied = new Set();
+        assignedDesktopItems().forEach(function (entry) {
+            if (entry.id === item.id) {
+                return;
+            }
+            var span = desktopItemSpan(entry);
+            markDesktopRect(occupied, Math.max(0, Number(entry.x) || 0), Math.max(0, Number(entry.y) || 0), span.w, span.h);
+        });
+        return desktopRectFree(occupied, x, y, w, h, capacity.cols, capacity.rows);
+    }
+
+    /** 小工具拖拽调尺寸：按格子吸附并取最近合法档位，松手校验空间；空间不足回退原尺寸并提示 */
+    function resizeDesktopWidget(card, event) {
+        var item = findDesktopItem(card.getAttribute('data-desktop-id'));
+        if (!item || item.kind !== 'widget') {
+            return;
+        }
+        var start = desktopItemSpan(item);
+        var options = widgetSizeOptions(item);
+        var size = desktopIconSize();
+        var startX = event.clientX;
+        var startY = event.clientY;
+        var startWidth = card.offsetWidth;
+        var startHeight = card.offsetHeight;
+        var pending = { w: start.w, h: start.h };
+        var moved = false;
+        card.setPointerCapture(event.pointerId);
+        card.classList.add('is-resizing');
+
+        function preview(next) {
+            pending = next;
+            card.dataset.widgetSize = next.w + 'x' + next.h;
+            card.style.width = (next.w * size.cellW - 6) + 'px';
+            card.style.height = (next.h * size.cellH - 6) + 'px';
+        }
+
+        function project(value) {
+            return Math.max(1, Math.min(2, Math.round(value)));
+        }
+
+        function move(moveEvent) {
+            var deltaX = moveEvent.clientX - startX;
+            var deltaY = moveEvent.clientY - startY;
+            if (!moved && Math.abs(deltaX) + Math.abs(deltaY) > 3) {
+                moved = true;
+            }
+            preview(nearestWidgetSize(
+                options,
+                project((startWidth + deltaX) / size.cellW),
+                project((startHeight + deltaY) / size.cellH)
+            ));
+        }
+
+        function cleanup() {
+            card.classList.remove('is-resizing');
+            document.removeEventListener('pointermove', move);
+            document.removeEventListener('pointerup', finish);
+            document.removeEventListener('pointercancel', cancel);
+            try {
+                card.releasePointerCapture(event.pointerId);
+            } catch (error) {
+                // 指针捕获已随 pointercancel 释放，忽略
+            }
+        }
+
+        function finish() {
+            cleanup();
+            var changed = pending.w !== start.w || pending.h !== start.h;
+            if (!moved || !changed) {
+                preview(start);
+                return;
+            }
+            if (!widgetRectAvailable(item, Math.max(0, Number(item.x) || 0), Math.max(0, Number(item.y) || 0),
+                pending.w, pending.h)) {
+                preview(start);
+                toast('当前位置空间不足，无法调整到该尺寸', 'error');
+                return;
+            }
+            item.w = pending.w;
+            item.h = pending.h;
+            renderDesktop();
+            saveWorkspace(false);
+        }
+
+        function cancel() {
+            cleanup();
+            preview(start);
+        }
+
+        document.addEventListener('pointermove', move);
+        document.addEventListener('pointerup', finish);
+        document.addEventListener('pointercancel', cancel);
     }
 
     /**
@@ -2071,20 +2541,25 @@
     }
 
     /**
-     * 列优先扫描第一个空格子（Windows 桌面风格）：每列行数、总列数均由可视容量决定，
+     * 列优先扫描第一个放得下目标占格的空位（Windows 桌面风格）：每列行数、总列数均由可视容量决定，
      * 第一列放满后进入下一列，避免图标一直向下/向右落到任务栏下方或屏幕外的非可视区域。
+     * span 为目标占格（小工具 1x1/2x1/2x2，缺省按 1x1），需整块矩形无冲突。
      * 返回 null 表示可视格子全部占满（cols 为 0 表示容器不可测量，降级为不限制），调用方需提示整理。
      */
-    function findFreeDesktopSlot() {
+    function findFreeDesktopSlot(span) {
         // 预设网格为流式排布、不使用坐标：返回固定非空槽，避免因「无空位」拦截新增
         // （坐标在预设中无意义，播种到新用户桌面后由前台 normalizeDesktopLayout 归位）
         if (state.presetEditing) { return { x: 0, y: 0 }; }
+        var width = clampWidgetSpan(span && span.w);
+        var height = clampWidgetSpan(span && span.h);
         var capacity = desktopGridCapacity();
         var rows = capacity.rows || 1;
         // 找空位时仅统计可见图标：停用应用不再占位，新图标可以落在其格子
-        var occupied = new Set(assignedDesktopItems().map(function (item) {
-            return (Math.max(0, Number(item.x) || 0)) + ':' + (Math.max(0, Number(item.y) || 0));
-        }));
+        var occupied = new Set();
+        assignedDesktopItems().forEach(function (item) {
+            var grid = desktopItemSpan(item);
+            markDesktopRect(occupied, Math.max(0, Number(item.x) || 0), Math.max(0, Number(item.y) || 0), grid.w, grid.h);
+        });
         // 打开中的文件夹浮层覆盖的格子同样视为占用：浮层 z-index 高于桌面图标，
         // 新图标若落到浮层矩形后面会被完全遮住（拖出时视觉上「桌面没任何响应」），放置时避开
         var overlay = root.querySelector('.webos-folder-overlay');
@@ -2098,18 +2573,11 @@
             var ovLastRow = Math.floor((overlayRect.bottom - hostRect.top) / gridSize.cellH);
             for (var ovColumn = ovFirstColumn; ovColumn <= ovLastColumn; ovColumn += 1) {
                 for (var ovRow = ovFirstRow; ovRow <= ovLastRow; ovRow += 1) {
-                    occupied.add(ovColumn + ':' + ovRow);
+                    occupied.add(ovColumn + ',' + ovRow);
                 }
             }
         }
-        for (var column = 0; column < (capacity.cols > 0 ? capacity.cols : 100); column += 1) {
-            for (var row = 0; row < rows; row += 1) {
-                if (!occupied.has(column + ':' + row)) {
-                    return { x: column, y: row };
-                }
-            }
-        }
-        return null;
+        return firstFreeDesktopRect(occupied, width, height, capacity.cols, rows);
     }
 
     /** 桌面入口单条添加核心（不含提示/渲染/保存）：folder 为空时添加到桌面，否则归入文件夹。
@@ -2137,7 +2605,7 @@
             }
             // 入口不在桌面：新建并归入文件夹，坐标取当前空位（无空位存 0 兜底，
             // 移回桌面时 findFreeDesktopSlot 会重新计算，不占用桌面格子）
-            var slot = findFreeDesktopSlot();
+            var slot = findFreeDesktopSlot(desktopItemSpan(entry));
             state.workspace.desktop_items.push(Object.assign({}, entry, {
                 x: slot ? slot.x : 0,
                 y: slot ? slot.y : 0,
@@ -2151,7 +2619,7 @@
         if (state.workspace.desktop_items.length >= 200) {
             return 'limit';
         }
-        var freeSlot = findFreeDesktopSlot();
+        var freeSlot = findFreeDesktopSlot(desktopItemSpan(entry));
         if (!freeSlot) {
             return 'no-slot';
         }
@@ -3105,7 +3573,8 @@
         });
     }
 
-    /** 新建 > 小工具：按注册表列出可添加的桌面小工具，点击即加入桌面（已在桌面上的置灰标记） */
+    /** 新建 > 小工具：按注册表列出可添加的桌面小工具，点击即加入桌面（已在桌面上的置灰标记）。
+     *  声明了 picker 的小工具可贴多张：点击后先拉候选列表，再按选中项建立实例（2.1.109） */
     function openWidgetPickerDialog() {
         var layer = layuiLayer();
         if (!layer) {
@@ -3118,12 +3587,16 @@
                 return;
             }
             var markup = '<div class="webos-widget-picker">' + list.map(function (widget) {
-                var added = Boolean(findDesktopItem(widget.desktop_id));
+                // 有 picker 的小工具需选到具体实例才判重，主列表始终可点；无 picker 的按 widget_key 判重
+                var added = widgetInstanceAdded(widget, null);
+                var hint = widget.picker
+                    ? escapeHtml(widget.picker.label) + ' · 可添加多个'
+                    : '每 ' + (Number(widget.refresh) || 60) + ' 秒刷新';
                 return '<button class="webos-widget-pick-item' + (added ? ' is-added' : '') + '" type="button"'
                     + ' data-widget-key="' + escapeHtml(widget.widget_key) + '"' + (added ? ' disabled' : '') + '>'
                     + '<span class="webos-widget-pick-icon"><i class="' + safeIcon(widget.icon) + '"></i></span>'
                     + '<span class="webos-widget-pick-text"><strong>' + escapeHtml(widget.title) + '</strong>'
-                    + '<small>' + escapeHtml(widget.app_id) + ' · 每 ' + (Number(widget.refresh) || 60) + ' 秒刷新</small></span>'
+                    + '<small>' + escapeHtml(widget.app_id) + ' · ' + hint + '</small></span>'
                     + '<span class="webos-widget-pick-flag">' + (added ? '已添加' : '添加') + '</span>'
                     + '</button>';
             }).join('') + '</div>';
@@ -3142,20 +3615,77 @@
                             return;
                         }
                         layer.close(index);
-                        addDesktopWidget(widget);
+                        if (widget.picker) {
+                            openWidgetInstancePicker(widget);
+                        } else {
+                            addDesktopWidget(widget, null);
+                        }
                     });
                 }
             });
         });
     }
 
-    /** 添加桌面小工具：id 取注册表 desktop_id（后端桌面项 id 仅允许 [A-Za-z0-9_-]），widget_key 原样保存 */
-    function addDesktopWidget(widget) {
+    /** 带 picker 的小工具：拉候选列表（应用接口返回 {items:[{value,label,hint}]}），
+     *  每个候选对应一张卡片，已贴到桌面的候选置灰 */
+    function openWidgetInstancePicker(widget) {
+        var layer = layuiLayer();
+        if (!layer) {
+            toast('弹层组件未就绪，请刷新页面后重试', 'error');
+            return;
+        }
+        var picker = widget.picker;
+        api(picker.entry).then(function (data) {
+            var list = data && Array.isArray(data.items) ? data.items.slice(0, 50) : [];
+            if (!list.length) {
+                toast('暂无可添加的' + picker.label);
+                return;
+            }
+            var markup = '<div class="webos-widget-picker">' + list.map(function (candidate) {
+                var value = candidate && candidate.value !== null && candidate.value !== undefined
+                    ? String(candidate.value)
+                    : '';
+                var params = {};
+                params[picker.param] = value;
+                var added = widgetInstanceAdded(widget, params);
+                var label = candidate && candidate.label ? String(candidate.label) : (value || '未命名');
+                return '<button class="webos-widget-pick-item' + (added ? ' is-added' : '') + '" type="button"'
+                    + ' data-widget-value="' + escapeHtml(value) + '"' + (added ? ' disabled' : '') + '>'
+                    + '<span class="webos-widget-pick-icon"><i class="' + safeIcon(widget.icon) + '"></i></span>'
+                    + '<span class="webos-widget-pick-text"><strong>' + escapeHtml(label) + '</strong>'
+                    + '<small>' + escapeHtml(candidate && candidate.hint ? candidate.hint : widget.title) + '</small></span>'
+                    + '<span class="webos-widget-pick-flag">' + (added ? '已添加' : '添加') + '</span>'
+                    + '</button>';
+            }).join('') + '</div>';
+            var index = layer.open({
+                type: 1,
+                title: escapeHtml(picker.label),
+                area: ['420px', '440px'],
+                shadeClose: true,
+                content: markup,
+                success: function (layero) {
+                    layero.find('.webos-widget-pick-item').on('click', function () {
+                        var params = {};
+                        params[picker.param] = String(this.getAttribute('data-widget-value') || '');
+                        layer.close(index);
+                        addDesktopWidget(widget, params);
+                    });
+                }
+            });
+        }).catch(function (error) {
+            toast(error && error.message ? error.message : '候选列表读取失败', 'error');
+        });
+    }
+
+    /** 添加桌面小工具：id 取注册表 desktop_id（有实例参数时追加参数值片段保证唯一），widget_key 原样保存，
+     *  实例参数写入桌面项 params（后端按 widget 类型净化）；默认尺寸取应用声明的 default_size，非法/缺省回落 1x1 */
+    function addDesktopWidget(widget, params) {
         if (!widget) {
             return;
         }
-        addDesktopEntry({
-            id: widget.desktop_id,
+        var span = parseWidgetSize(widget.default_size) || { w: 1, h: 1 };
+        var entry = {
+            id: widgetInstanceId(widget, params),
             menu_id: null,
             app_id: widget.app_id,
             title: widget.title,
@@ -3163,8 +3693,14 @@
             icon: widget.icon,
             group_title: '小工具',
             kind: 'widget',
-            widget_key: widget.widget_key
-        }, '已添加「' + widget.title + '」');
+            widget_key: widget.widget_key,
+            w: span.w,
+            h: span.h
+        };
+        if (params) {
+            entry.params = params;
+        }
+        addDesktopEntry(entry, '已添加「' + widget.title + '」');
     }
 
     /** 新建 > 桌面入口：树结构展示可用菜单（与入口管理「可用菜单」树同构，应用分支默认收起），点选叶子即添加 */
@@ -11243,23 +11779,25 @@
         var overflow = [];
         var changed = false;
         items.forEach(function (item) {
+            var grid = desktopItemSpan(item);
+            // 小工具可能占 2 格，坐标为矩形左上角，越界与冲突都按整块矩形判断
             var x = Math.max(0, Math.min(99, Number(item.x) || 0));
             var y = Math.max(0, Math.min(99, Number(item.y) || 0));
-            // 超出可视容量（纵向越界或横向越界）的项：收集后统一列优先重排
-            if ((rows > 0 && y >= rows) || (cols > 0 && x >= cols)) {
+            // 超出可视容量（横向或纵向越界）的项：收集后统一列优先重排
+            if ((cols > 0 && x + grid.w > cols) || (rows > 0 && y + grid.h > rows)) {
                 overflow.push(item);
                 return;
             }
             var guard = 0;
-            while (occupied.has(x + ',' + y) && guard < 200) {
+            while (!desktopRectFree(occupied, x, y, grid.w, grid.h, cols, rows) && guard < 200) {
                 y += 1;
                 guard += 1;
             }
-            if (rows > 0 && y >= rows) {
+            if (!desktopRectFree(occupied, x, y, grid.w, grid.h, cols, rows)) {
                 overflow.push(item);
                 return;
             }
-            occupied.add(x + ',' + y);
+            markDesktopRect(occupied, x, y, grid.w, grid.h);
             if (item.x !== x || item.y !== y) {
                 item.x = x;
                 item.y = y;
@@ -11268,23 +11806,15 @@
         });
 
         overflow.forEach(function (item) {
-            for (var column = 0; column < 100; column += 1) {
-                // 可视格子已全部占满：保留原坐标不再强排（避免覆盖正常图标）
-                if (cols > 0 && column >= cols) { break; }
-                var placed = false;
-                for (var row = 0; row < rows; row += 1) {
-                    if (!occupied.has(column + ',' + row)) {
-                        occupied.add(column + ',' + row);
-                        if (item.x !== column || item.y !== row) {
-                            item.x = column;
-                            item.y = row;
-                            changed = true;
-                        }
-                        placed = true;
-                        break;
-                    }
-                }
-                if (placed) { break; }
+            var grid = desktopItemSpan(item);
+            var slot = firstFreeDesktopRect(occupied, grid.w, grid.h, cols, rows);
+            // 可视格子已全部占满：保留原坐标不再强排（避免覆盖正常图标）
+            if (!slot) { return; }
+            markDesktopRect(occupied, slot.x, slot.y, grid.w, grid.h);
+            if (item.x !== slot.x || item.y !== slot.y) {
+                item.x = slot.x;
+                item.y = slot.y;
+                changed = true;
             }
         });
 
@@ -11293,7 +11823,7 @@
 
     /**
      * 自动排列图标（桌面右键菜单）：全部可见图标按 (y,x) 顺序列优先紧凑重排，
-     * 落点规则与新增图标一致（行列数由可视容量决定），拖乱后一键恢复整齐。
+     * 落点规则与新增图标一致（行列数由可视容量决定，小工具按占据的整块矩形落位），拖乱后一键恢复整齐。
      * 未分配（隐藏）项不参与；图标数超过可视容量时超出的保留原坐标，避免挤到屏幕外。
      */
     function autoArrangeDesktopIcons() {
@@ -11304,17 +11834,17 @@
         var capacity = desktopGridCapacity();
         var rows = capacity.rows || 1;
         var cols = capacity.cols;
+        var occupied = new Set();
         var changed = false;
-        var slot = 0;
         items.forEach(function (item) {
-            var column = Math.floor(slot / rows);
-            var row = slot % rows;
+            var grid = desktopItemSpan(item);
+            var slot = firstFreeDesktopRect(occupied, grid.w, grid.h, cols, rows);
             // 可视格子已全部占满：剩余图标保留原坐标
-            if (cols > 0 && column >= cols) { return; }
-            slot += 1;
-            if (item.x !== column || item.y !== row) {
-                item.x = column;
-                item.y = row;
+            if (!slot) { return; }
+            markDesktopRect(occupied, slot.x, slot.y, grid.w, grid.h);
+            if (item.x !== slot.x || item.y !== slot.y) {
+                item.x = slot.x;
+                item.y = slot.y;
                 changed = true;
             }
         });
@@ -12228,11 +12758,13 @@
             }
             var deltaX = moveEvent.clientX - startX;
             var deltaY = moveEvent.clientY - startY;
-            var size = desktopIconSize();
             dragButtons.forEach(function (entryButton, index) {
                 var base = initialPositions[index];
-                entryButton.style.left = Math.max(4, Math.min(elements.desktopIcons.clientWidth - size.iconW, base.left + deltaX)) + 'px';
-                entryButton.style.top = Math.max(4, Math.min(elements.desktopIcons.clientHeight - size.iconH, base.top + deltaY)) + 'px';
+                // 边界按元素自身尺寸计算：小工具可能占 2 格（2x1/2x2），不能用固定单格图标宽高
+                var maxLeft = elements.desktopIcons.clientWidth - entryButton.offsetWidth;
+                var maxTop = elements.desktopIcons.clientHeight - entryButton.offsetHeight;
+                entryButton.style.left = Math.max(4, Math.min(maxLeft, base.left + deltaX)) + 'px';
+                entryButton.style.top = Math.max(4, Math.min(maxTop, base.top + deltaY)) + 'px';
             });
             // 悬停文件夹图标 / 打开中的浮层时高亮提示可移入（macOS 拖拽收纳反馈）
             setFolderTarget(folderUnderPointer(moveEvent.clientX, moveEvent.clientY));
@@ -12292,14 +12824,19 @@
                         return;
                     }
                 }
-                // 网格落点 + 冲突探测：占用集合为未参与拖动的可见图标（未分配入口不占位，可移入其原格子）
+                // 网格落点 + 冲突探测：占用集合为未参与拖动的可见图标（未分配入口不占位，可移入其原格子）；
+                // 小工具按整块矩形占位，落点需矩形内全部格子空闲
                 var selectedIds = new Set(dragItems.map(function (entry) { return entry.id; }));
-                var occupied = new Set(assignedDesktopItems().filter(function (entry) {
-                    return !selectedIds.has(entry.id);
-                }).map(function (entry) {
-                    return (Number(entry.x) || 0) + ',' + (Number(entry.y) || 0);
-                }));
+                var occupied = new Set();
+                assignedDesktopItems().forEach(function (entry) {
+                    if (selectedIds.has(entry.id)) {
+                        return;
+                    }
+                    var span = desktopItemSpan(entry);
+                    markDesktopRect(occupied, Math.max(0, Number(entry.x) || 0), Math.max(0, Number(entry.y) || 0), span.w, span.h);
+                });
                 var dropSize = desktopIconSize();
+                var capacity = desktopGridCapacity();
                 var placed = dragButtons.map(function (entryButton, index) {
                     return {
                         item: dragItems[index],
@@ -12310,14 +12847,24 @@
                     return a.gridY - b.gridY || a.gridX - b.gridX;
                 });
                 placed.forEach(function (place) {
+                    var span = desktopItemSpan(place.item);
                     var gridX = place.gridX;
                     var gridY = place.gridY;
                     var guard = 0;
-                    while (occupied.has(gridX + ',' + gridY) && guard < 200) {
+                    while (!desktopRectFree(occupied, gridX, gridY, span.w, span.h, capacity.cols, capacity.rows) && guard < 200) {
                         gridY += 1;
                         guard += 1;
                     }
-                    occupied.add(gridX + ',' + gridY);
+                    if (!desktopRectFree(occupied, gridX, gridY, span.w, span.h, capacity.cols, capacity.rows)) {
+                        // 纵向下移到边界仍放不下（小工具占多格时更易越界）：回退为列优先第一个可落位的矩形
+                        var fallback = firstFreeDesktopRect(occupied, span.w, span.h, capacity.cols, capacity.rows || 1);
+                        if (!fallback) {
+                            return;
+                        }
+                        gridX = fallback.x;
+                        gridY = fallback.y;
+                    }
+                    markDesktopRect(occupied, gridX, gridY, span.w, span.h);
                     place.item.x = gridX;
                     place.item.y = gridY;
                 });
@@ -12509,14 +13056,59 @@
         });
 
         elements.desktopIcons.addEventListener('pointerdown', function (event) {
+            // 小工具右下角尺寸手柄：独立于拖动/多选，按下即进入调尺寸流程
+            var resizeHandle = event.target.closest('[data-widget-resize]');
+            if (resizeHandle && event.button === 0) {
+                var resizeCard = resizeHandle.closest('[data-desktop-id]');
+                if (resizeCard) {
+                    event.preventDefault();
+                    resizeDesktopWidget(resizeCard, event);
+                }
+                return;
+            }
+            // 小工具卡片右上角关闭按钮：按下不启动拖动（点击交由下方 click 委托处理）
+            if (event.target.closest('[data-widget-close]')) {
+                return;
+            }
+            // 小工具卡片内操作按钮：按下不启动拖动（点击交由下方 click 委托处理）
+            if (event.target.closest('[data-widget-action]')) {
+                return;
+            }
             var button = event.target.closest('[data-desktop-id]');
             if (button && event.button === 0) {
                 dragDesktopIcon(button, event);
             }
         });
+        // 小工具卡片内操作按钮（manifest actions 声明）：调用应用接口后刷新该卡片数据
+        elements.desktopIcons.addEventListener('click', function (event) {
+            // 小工具卡片右上角关闭按钮：仅从桌面移除卡片，不删除应用数据
+            var closeButton = event.target.closest('[data-widget-close]');
+            if (closeButton) {
+                var closeCard = closeButton.closest('[data-desktop-id]');
+                if (closeCard) {
+                    event.stopPropagation();
+                    removeDesktopEntry(closeCard.dataset.desktopId);
+                }
+                return;
+            }
+            var actionButton = event.target.closest('[data-widget-action]');
+            if (!actionButton) {
+                return;
+            }
+            var card = actionButton.closest('[data-desktop-id]');
+            if (!card) {
+                return;
+            }
+            event.stopPropagation();
+            runWidgetAction(card.dataset.desktopId, actionButton.getAttribute('data-widget-action'));
+        });
         // 桌面空白处框选多个图标（Windows 桌面风格）
         bindDesktopMarquee();
         elements.desktopIcons.addEventListener('dblclick', function (event) {
+            // 卡片内操作按钮/尺寸手柄/关闭按钮的连击不触发打开入口
+            if (event.target.closest('[data-widget-action],[data-widget-resize],[data-widget-close]')) {
+                return;
+            }
             var button = event.target.closest('[data-desktop-id]');
             if (button && button.dataset.wasDragged !== '1') {
                 openEntry(findEntry(button.dataset.desktopId));

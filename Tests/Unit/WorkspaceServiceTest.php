@@ -135,6 +135,51 @@ class WorkspaceServiceTest extends WebosTestCase
         $this->assertSame(1, WebosWorkspace::query()->count());
     }
 
+    public function test_it_sanitizes_widget_instance_params(): void
+    {
+        $admin = $this->actingAdmin();
+
+        $workspace = app(WorkspaceService::class)->saveForAdmin($admin->id, [
+            'desktop_items' => [
+                [
+                    'id' => 'widget-cmspro_notepad-sticky-note-12',
+                    'title' => '桌面便签',
+                    'icon' => 'fa fa-sticky-note-o',
+                    'kind' => 'widget',
+                    'widget_key' => 'cmspro.notepad:sticky-note',
+                    'params' => [
+                        'note_id' => ' 12 ',
+                        'Bad Key' => '非法键',
+                        'extra_1' => 7,
+                        'long' => str_repeat('a', 65),
+                        'extra_2' => ['nested'],
+                        'extra_3' => 'third',
+                        'extra_4' => 'overflow',
+                    ],
+                    'x' => 1,
+                    'y' => 1,
+                ],
+                [
+                    'id' => 'menu-1',
+                    'title' => '普通入口',
+                    'path' => '/admin/content',
+                    'icon' => 'fa fa-cube',
+                    'params' => ['note_id' => '1'],
+                    'x' => 0,
+                    'y' => 0,
+                ],
+            ],
+        ]);
+
+        // 非法键、数组值、超长值被剔除；值统一 trim 后转字符串；最多保留 3 个键
+        $this->assertSame(
+            ['note_id' => '12', 'extra_1' => '7', 'extra_3' => 'third'],
+            $workspace->desktop_items[0]['params']
+        );
+        // 非小工具项不写实例参数
+        $this->assertArrayNotHasKey('params', $workspace->desktop_items[1]);
+    }
+
     public function test_it_rejects_desktop_items_beyond_limit_instead_of_truncating(): void
     {
         $admin = $this->actingAdmin();

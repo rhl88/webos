@@ -831,18 +831,21 @@ class WebosWorkspaceApiTest extends WebosTestCase
         // 可见桌面项统一出口：渲染/拖拽占用/找空行都基于已分配集合
         $this->assertStringContainsString('function assignedDesktopItems', $script);
         $this->assertMatchesRegularExpression('/return state\.workspace\.desktop_items\.filter\(function \(item\) \{\s*[\r\n]+\s*return entryAssigned\(item\.id\) && !item\.parent_folder;/', $script);
-        // 拖拽落点占用集合仅统计可见图标（未分配入口的格子可移入）
-        $this->assertStringContainsString('var occupied = new Set(assignedDesktopItems().filter(function (entry) {', $script);
+        // 拖拽落点占用集合仅统计未参与拖动的可见图标（未分配入口的格子可移入），小工具按整块矩形标记
+        $this->assertStringContainsString('var selectedIds = new Set(dragItems.map(function (entry) { return entry.id; }));', $script);
+        $this->assertStringContainsString('markDesktopRect(occupied, Math.max(0, Number(entry.x) || 0), Math.max(0, Number(entry.y) || 0), span.w, span.h);', $script);
         // 桌面网格可视容量：行列数按容器可视宽高与当前档位决定（窗口缩放/跨屏、任务栏移动、图标切档均会改变）
         $this->assertStringContainsString('function desktopGridCapacity', $script);
-        // 新增入口列优先找空位：行数、列数均由可视容量决定，第一列放满后进入下一列，全满时提示整理
-        $this->assertStringContainsString('if (!occupied.has(column + \':\' + row)) {', $script);
+        // 新增入口列优先找空位：行数、列数均由可视容量决定，第一列放满后进入下一列，全满时提示整理；
+        // 小工具占多格，落位要求矩形内全部格子空闲
+        $this->assertStringContainsString('function firstFreeDesktopRect', $script);
+        $this->assertStringContainsString('if (desktopRectFree(occupied, column, row, w, h, cols, rows)) {', $script);
         $this->assertStringContainsString("toast('桌面可视区域已满，请先整理或移除部分图标', 'error');", $script);
         // 布局归一化：坐标冲突的重新启用图标按 (y,x) 顺序下移到第一个空白格并静默保存；
         // 超出可视容量（纵向/横向越界）的图标按列优先规则放回第一个空格
         $this->assertStringContainsString('function normalizeDesktopLayout', $script);
-        $this->assertStringContainsString('while (occupied.has(x + \',\' + y) && guard < 200) {', $script);
-        $this->assertStringContainsString('if ((rows > 0 && y >= rows) || (cols > 0 && x >= cols)) {', $script);
+        $this->assertStringContainsString('while (!desktopRectFree(occupied, x, y, grid.w, grid.h, cols, rows) && guard < 200) {', $script);
+        $this->assertStringContainsString('if ((cols > 0 && x + grid.w > cols) || (rows > 0 && y + grid.h > rows)) {', $script);
         $this->assertStringContainsString('overflow.forEach(function (item) {', $script);
         $this->assertStringContainsString('if (changed) { saveWorkspace(false).catch(function () {}); }', $script);
         // 归一化触发点：目录刷新、首次渲染、窗口缩放自适应、任务栏移动、图标档位切换、内置浏览器补齐归位
@@ -1153,8 +1156,9 @@ class WebosWorkspaceApiTest extends WebosTestCase
         $this->assertStringContainsString('medium: { cellW: 102, cellH: 104, iconW: 88, iconH: 96 }', $script);
         $this->assertStringContainsString('small: { cellW: 86, cellH: 88, iconW: 72, iconH: 78 }', $script);
         $this->assertStringContainsString('function desktopIconSize', $script);
-        // 渲染、小工具局部刷新、网格容量、拖拽 move 四处按档位换算（新增找位/归一化经 desktopGridCapacity 间接取档位；拖拽落点用 dropSize）
-        $this->assertSame(4, substr_count($script, 'var size = desktopIconSize();'));
+        // 渲染、小工具卡片渲染/局部刷新、网格容量、小工具调尺寸五处按档位换算
+        // （新增找位/归一化经 desktopGridCapacity 间接取档位；拖拽 move 用元素实际尺寸，落点用 dropSize）
+        $this->assertSame(5, substr_count($script, 'var size = desktopIconSize();'));
         $this->assertStringContainsString('var dropSize = desktopIconSize();', $script);
         $this->assertStringContainsString('root.dataset.iconSize = ', $script);
         // 右键「查看」子菜单与切档动作（当前档位勾选）
@@ -2988,13 +2992,13 @@ class WebosWorkspaceApiTest extends WebosTestCase
         // 可见口径：桌面原生项（folder/url/widget）始终可见；文件夹子项不占桌面网格
         $this->assertMatchesRegularExpression("/desktopItem\.kind === 'folder' \|\| desktopItem\.kind === 'url'/", $script);
         $this->assertStringContainsString('return entryAssigned(item.id) && !item.parent_folder;', $script);
-        // 删除文件夹：子项移回桌面列优先找空格（findFreeDesktopSlot 抽取共用）
-        $this->assertStringContainsString('function findFreeDesktopSlot()', $script);
+        // 删除文件夹：子项移回桌面列优先找空格（findFreeDesktopSlot 抽取共用，按目标占格矩形避让）
+        $this->assertStringContainsString('function findFreeDesktopSlot(span)', $script);
         // 放置空格避开打开中的文件夹浮层（2.1.41）：浮层 z-index 高于桌面图标，
         // 第二次拖出若落到浮层矩形后面会被完全遮住（视觉上「桌面没任何响应」，接口已请求）
         $this->assertStringContainsString("var overlay = root.querySelector('.webos-folder-overlay');", $script);
         $this->assertStringContainsString('var overlayRect = overlay.getBoundingClientRect();', $script);
-        $this->assertStringContainsString('occupied.add(ovColumn + \':\' + ovRow);', $script);
+        $this->assertStringContainsString('occupied.add(ovColumn + \',\' + ovRow);', $script);
         // 连续保存竞态加固（2.1.41）：仅最新一次保存的响应可覆盖 state，晚到的旧响应丢弃防回滚
         $this->assertStringContainsString('var saveSeq = ++workspaceSaveSeq;', $script);
         $this->assertStringContainsString('if (saveSeq !== workspaceSaveSeq) {', $script);

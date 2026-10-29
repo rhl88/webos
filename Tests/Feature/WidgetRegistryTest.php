@@ -76,6 +76,10 @@ class WidgetRegistryTest extends WebosTestCase
             'icon' => 'fa fa-server',
             'entry' => '/api/admin/cmspro/localservice/widget/status',
             'refresh' => 30,
+            'sizes' => ['1x1'],
+            'default_size' => '1x1',
+            'actions' => [],
+            'picker' => null,
             'desktop_id' => 'widget-cmspro_localservice-service-status',
         ], $items[0]);
         // 桌面项 id 只允许 [A-Za-z0-9_-]，app_id 中的点号统一转为下划线
@@ -172,6 +176,162 @@ class WidgetRegistryTest extends WebosTestCase
         $this->assertSame(60, $items[0]['refresh']);
         // 刷新间隔低于 15 秒视为非法，回落默认 60 秒
         $this->assertSame(60, $items[1]['refresh']);
+    }
+
+    public function test_registry_normalizes_widget_sizes(): void
+    {
+        $this->makeApp('cmspro.localservice', [
+            // 非法档位与重复档位被剔除，保留声明顺序
+            $this->widget('a', ['sizes' => ['2x2', '3x3', '2x2', '1x1'], 'default_size' => '2x2']),
+            // 默认尺寸不在允许档位内时取首个允许档位
+            $this->widget('b', ['sizes' => ['2x1'], 'default_size' => '2x2']),
+            // 未声明尺寸一律回落 1x1
+            $this->widget('c', ['sizes' => 'not-an-array']),
+        ]);
+
+        $items = $this->registry()->list();
+
+        $this->assertSame(['2x2', '1x1'], $items[0]['sizes']);
+        $this->assertSame('2x2', $items[0]['default_size']);
+        $this->assertSame(['2x1'], $items[1]['sizes']);
+        $this->assertSame('2x1', $items[1]['default_size']);
+        $this->assertSame(['1x1'], $items[2]['sizes']);
+        $this->assertSame('1x1', $items[2]['default_size']);
+    }
+
+    public function test_registry_sanitizes_widget_actions(): void
+    {
+        $this->makeApp('cmspro.notepad', [
+            $this->widget('sticky-overview', ['actions' => [
+                [
+                    'id' => 'new-note',
+                    'title' => '新增便签',
+                    'icon' => 'fa fa-plus',
+                    'method' => 'GET',
+                    'entry' => '/api/admin/cmspro/notepad/widget/quick-note',
+                    'input' => ['label' => '便签内容', 'placeholder' => '随手记一条…', 'maxlength' => 500],
+                ],
+                // 非法 id、缺标题、非 /api/ 路径的声明被跳过
+                ['id' => 'Bad Id', 'title' => '非法 id', 'entry' => '/api/x'],
+                ['id' => 'no-title', 'entry' => '/api/x'],
+                ['id' => 'page', 'title' => '后台页面', 'entry' => '/admin/x'],
+            ]]),
+        ]);
+
+        $items = $this->registry()->list();
+
+        $this->assertCount(1, $items[0]['actions']);
+        $this->assertSame([
+            'id' => 'new-note',
+            'title' => '新增便签',
+            'icon' => 'fa fa-plus',
+            'method' => 'POST',
+            'entry' => '/api/admin/cmspro/notepad/widget/quick-note',
+            'input' => ['type' => 'text', 'label' => '便签内容', 'placeholder' => '随手记一条…', 'maxlength' => 500, 'name' => 'content'],
+        ], $items[0]['actions'][0]);
+    }
+
+    public function test_registry_sanitizes_action_input_name(): void
+    {
+        $this->makeApp('cmspro.notepad', [
+            $this->widget('sticky-overview', ['actions' => [
+                // 应用可自定义提交字段名
+                ['id' => 'a', 'title' => '自定义字段', 'entry' => '/api/a', 'input' => ['label' => '标题', 'name' => 'note_title']],
+                // 非法字段名回落 content（前端按此拼提交体）
+                ['id' => 'b', 'title' => '非法字段', 'entry' => '/api/b', 'input' => ['label' => '内容', 'name' => 'Bad Name']],
+            ]]),
+        ]);
+
+        $actions = $this->registry()->list()[0]['actions'];
+
+        $this->assertSame('note_title', $actions[0]['input']['name']);
+        $this->assertSame('content', $actions[1]['input']['name']);
+    }
+
+    public function test_registry_keeps_at_most_two_actions_and_drops_duplicate_ids(): void
+    {
+        $this->makeApp('cmspro.notepad', [
+            $this->widget('sticky-overview', ['actions' => [
+                ['id' => 'new-note', 'title' => '新增便签', 'entry' => '/api/a'],
+                ['id' => 'new-note', 'title' => '重复按钮', 'entry' => '/api/b'],
+                ['id' => 'refresh', 'title' => '刷新', 'entry' => '/api/c'],
+                ['id' => 'third', 'title' => '第三个', 'entry' => '/api/d'],
+            ]]),
+        ]);
+
+        $actions = $this->registry()->list()[0]['actions'];
+
+        $this->assertSame(['新增便签', '刷新'], array_column($actions, 'title'));
+        // 无输入框声明的按钮 input 为 null（点击直接提交）
+        $this->assertNull($actions[1]['input']);
+    }
+
+    public function test_registry_sanitizes_widget_picker(): void
+    {
+        $this->makeApp('cmspro.notepad', [
+            // 合法声明：label 缺省回落「选择数据」
+            $this->widget('a', ['picker' => ['entry' => '/api/admin/cmspro/notepad/widget/notes', 'param' => 'note_id']]),
+            // 非 /api/ 路径、param 非法、非数组：整段丢弃（小工具退化为单实例）
+            $this->widget('b', ['picker' => ['entry' => '/admin/notes', 'param' => 'note_id']]),
+            $this->widget('c', ['picker' => ['entry' => '/api/x', 'param' => 'Note Id']]),
+            $this->widget('d', ['picker' => 'not-an-array']),
+        ]);
+
+        $items = $this->registry()->list();
+
+        $this->assertSame([
+            'entry' => '/api/admin/cmspro/notepad/widget/notes',
+            'param' => 'note_id',
+            'label' => '选择数据',
+        ], $items[0]['picker']);
+        $this->assertNull($items[1]['picker']);
+        $this->assertNull($items[2]['picker']);
+        $this->assertNull($items[3]['picker']);
+    }
+
+    public function test_registry_sanitizes_select_action_input(): void
+    {
+        $this->makeApp('cmspro.notepad', [
+            $this->widget('a', ['actions' => [
+                [
+                    'id' => 'mark-color',
+                    'title' => '标记颜色',
+                    'entry' => '/api/admin/cmspro/notepad/widget/note-color',
+                    'input' => [
+                        'type' => 'select',
+                        'label' => '颜色',
+                        'name' => 'color',
+                        'options' => [
+                            ['value' => '', 'label' => '默认'],
+                            ['value' => '#ff5722', 'label' => '红'],
+                            // 重复 label 与超长值被剔除
+                            ['value' => '#00ff00', 'label' => '红'],
+                            ['value' => str_repeat('#', 33), 'label' => '超长'],
+                        ],
+                    ],
+                ],
+                // 选项不足 2 项：整条操作丢弃，避免渲染空下拉
+                [
+                    'id' => 'too-few',
+                    'title' => '选项不足',
+                    'entry' => '/api/b',
+                    'input' => ['type' => 'select', 'label' => '颜色', 'options' => [['value' => 'x', 'label' => 'X']]],
+                ],
+            ]]),
+        ]);
+
+        $actions = $this->registry()->list()[0]['actions'];
+
+        $this->assertCount(1, $actions);
+        $this->assertSame([
+            'type' => 'select',
+            'label' => '颜色',
+            'name' => 'color',
+            'options' => [
+                ['value' => '', 'label' => '默认'],
+                ['value' => '#ff5722', 'label' => '红'],
+            ],
+        ], $actions[0]['input']);
     }
 
     public function test_registry_falls_back_to_disk_manifest_when_snapshot_has_no_widgets(): void

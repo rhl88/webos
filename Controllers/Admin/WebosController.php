@@ -410,6 +410,11 @@ class WebosController extends Controller
             'desktop_items.*.group_title' => ['nullable', 'string', 'max:60'],
             'desktop_items.*.x' => ['required', 'integer', 'between:0,99'],
             'desktop_items.*.y' => ['required', 'integer', 'between:0,99'],
+            // 小工具卡片占格数（1x1 / 2x1 / 2x2）：仅 kind=widget 携带，缺省由服务层回落 1
+            'desktop_items.*.w' => ['nullable', 'integer', 'between:1,2'],
+            'desktop_items.*.h' => ['nullable', 'integer', 'between:1,2'],
+            // 小工具实例参数（2.1.109 多实例）：仅 kind=widget 携带，键名与值长度由服务层净化
+            'desktop_items.*.params' => ['nullable', 'array'],
         ];
     }
 

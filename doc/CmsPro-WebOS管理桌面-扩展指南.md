@@ -1,7 +1,7 @@
 # CmsPro WebOS 管理桌面 · 扩展指南
 
-> 文档版本：2.1.107 | 更新日期：2026-10-29
-> 应用版本：2.1.107 | 应用 ID：`cmspro.webos`
+> 文档版本：2.1.109 | 更新日期：2026-10-29
+> 应用版本：2.1.109 | 应用 ID：`cmspro.webos`
 
 ## 一、概述
 
@@ -30,27 +30,44 @@
 | 通知中心待办聚合 | HookManager filter `admin.notifications.todos` | 注册 filter 回调 |
 | 应用设置弹窗 | manifest `config_groups` | 声明配置组 |
 | WebOS 个人工作区 API | 工作区/壁纸/日历/全量待办接口（见第五章） | 可选，属用户个人数据，不建议应用直写 |
-| 桌面小工具（2.1.106） | manifest `widgets` + 应用侧 `/api/` 数据接口（见本章「桌面小工具接入」） | 声明清单 + 实现一个只读数据接口 |
+| 桌面小工具（2.1.106 新增，2.1.109 支持尺寸、卡片操作、多实例参数、文本/配色渲染与关闭按钮） | manifest `widgets` + 应用侧 `/api/` 接口（见本章「桌面小工具接入」） | 声明清单 + 实现数据接口（可选候选列表与操作接口） |
 
 WebOS 没有面向第三方应用的桌面右键菜单、任务栏或开始菜单扩展点；这些区域全部由系统菜单目录与工作区数据驱动。桌面小工具是唯一的桌面内容扩展点：应用只声明数据源，卡片渲染、轮询与右键「小工具」添加入口均由 WebOS 统一提供（见下节）。
 
-### 桌面小工具接入（2.1.106 新增）
+### 桌面小工具接入（2.1.106 新增，2.1.109 支持尺寸、卡片操作、多实例与文本/配色渲染）
 
-小工具是 1x1 的桌面卡片，由应用在 `manifest.json` 中声明、由用户经桌面右键「小工具」面板手动添加。WebOS 从 `apps` 表的 `manifest` 快照聚合注册表，因此**应用安装/升级后即生效，无需调用任何 WebOS 接口**。
+小工具是桌面卡片，由应用在 `manifest.json` 中声明、由用户经桌面右键「小工具」面板手动添加。WebOS 从 `apps` 表的 `manifest` 快照聚合注册表，因此**应用安装/升级后即生效，无需调用任何 WebOS 接口**；**应用停用或卸载后注册表不再返回该项，桌面上已添加的卡片显示「应用已停用」失效态并停止轮询**（重新启用后自动恢复），即小工具完全随应用安装状态增减，而非 WebOS 内置固定清单。
 
 > 2.1.107 起：`apps.manifest` 是安装/升级时写入的全量快照，老应用后续版本新增的 `widgets` 段不会自动回写。注册表在快照缺少 `widgets` 声明时**回退读取应用目录下的 `manifest.json`**（以 `realpath` 校验文件必须位于 `app/Apps/` 内，防路径穿越）；快照中已声明 `widgets` 时仍以快照为准。因此应用发布新版本带小工具后，无需重新安装即可被聚合，但仍需通过「应用中心 → 更新」把新版本文件同步到站内。
 
-清单声明示例：
+清单声明示例（2.1.109 完整形态之一，取自 `cmspro.notepad` 的 `sticky-overview`；多实例形态见下文「多实例与实例参数」）：
 
 ```json
 {
     "widgets": [
         {
-            "id": "service-status",
-            "title": "本地服务状态",
-            "icon": "fa fa-server",
-            "entry": "/api/admin/cmspro/localservice/widget/status",
-            "refresh": 60
+            "id": "sticky-overview",
+            "title": "便签概览",
+            "icon": "fa fa-sticky-note",
+            "entry": "/api/admin/cmspro/notepad/widget/summary",
+            "refresh": 60,
+            "sizes": ["1x1", "2x1", "2x2"],
+            "default_size": "1x1",
+            "actions": [
+                {
+                    "id": "new-note",
+                    "title": "新增便签",
+                    "icon": "fa fa-plus",
+                    "method": "POST",
+                    "entry": "/api/admin/cmspro/notepad/widget/quick-note",
+                    "input": {
+                        "label": "便签内容",
+                        "placeholder": "随手记一条…",
+                        "maxlength": 500,
+                        "name": "content"
+                    }
+                }
+            ]
         }
     ]
 }
@@ -65,8 +82,12 @@ WebOS 没有面向第三方应用的桌面右键菜单、任务栏或开始菜�
 | `icon` | 否 | 字体图标类名，缺省 `fa fa-cube` |
 | `entry` | 是 | 数据接口地址，必须以 `/api/` 开头（同源站内接口），≤500 字符 |
 | `refresh` | 否 | 轮询间隔秒数，缺省 60，有效区间 15–3600（越界按缺省处理） |
+| `sizes` | 否 | 允许的尺寸档位数组，取值 `1x1` / `2x1` / `2x2`；缺省 `["1x1"]`，非数组或全部非法时按缺省处理，重复项去重（2.1.108 新增） |
+| `default_size` | 否 | 默认档位，必须命中 `sizes`，否则取 `sizes` 首项（2.1.108 新增） |
+| `actions` | 否 | 卡片内操作按钮，最多 2 项，见下方「卡片操作契约」（2.1.108 新增） |
+| `picker` | 否 | 多实例添加前的候选列表，声明后每次添加先弹列表由用户选定一条，见下方「多实例与实例参数」（2.1.109 新增） |
 
-聚合规则：仅聚合 `status` 启用的应用；单个应用最多 5 条；`id`/`title`/`entry` 不合法的声明直接跳过；注册表项额外输出 `widget_key`、`app_id`、`desktop_id`（`widget-{app_id 点转下划线}-{id}`，桌面项 id 仅允许 `[A-Za-z0-9_-]`）。
+聚合规则：仅聚合 `status` 启用的应用；单个应用最多 5 条；`id`/`title`/`entry` 不合法的声明直接跳过；注册表项额外输出 `widget_key`、`app_id`、`desktop_id`（`widget-{app_id 点转下划线}-{id}`，桌面项 id 仅允许 `[A-Za-z0-9_-]`），未声明的尺寸与操作分别回落 `sizes=["1x1"]`、`default_size="1x1"`、`actions=[]`、`picker=null`。
 
 数据接口契约（`entry` 必须返回统一响应结构，`data` 字段按「有则渲染」消费）：
 
@@ -86,16 +107,98 @@ WebOS 没有面向第三方应用的桌面右键菜单、任务栏或开始菜�
 ```
 
 - `status`：`running` / `stopped` / `warning` / `unknown`，决定卡片状态点颜色与文案。
+- `title`：可选，覆盖卡片标题（取 `trim` 后 ≤40 字符，缺省用清单 `title`）。
+- `text`：可选，纯文本正文（前端截 2000 字符），**非空时优先于** `value` / `unit` / `items` 渲染，保留换行，行数按尺寸档位截断（1x1 → 3 行、2x1 → 5 行、2x2 → 9 行）（2.1.109 新增）。
+- `color`：可选，卡片配色 tone，仅接受 `default` / `red` / `orange` / `green` / `blue` / `purple`，其余值（含缺省）回落 `default`（2.1.109 新增）。
 - `value` + `unit`：主值，缺省时前端显示 `—`。
 - `items`：次要明细，最多渲染 3 条。
 - `updated_at`：必须为 `Y-m-d H:i:s` 格式。
 - 接口鉴权按应用自身路由中间件执行（WebOS 以当前会话调用，`auth:admin` 保护的接口可直接复用）；轮询失败不弹提示，卡片显示「读取失败」，下一次轮询自动重试。
 
+#### 卡片操作契约（2.1.108 新增）
+
+卡片底部按 `actions` 声明渲染操作按钮（与卡片点击互不干扰），按钮点击后按 `input` 声明决定「弹输入框后提交」或「直接提交」，提交成功即刷新卡片数据。
+
+`actions` 每项字段：
+
+| 字段 | 必填 | 说明 |
+|---|---|---|
+| `id` | 是 | 操作标识，`[a-z0-9][a-z0-9-]{0,31}`；同一小工具内唯一（重复只保留首个） |
+| `title` | 是 | 按钮文案，≤20 字符 |
+| `icon` | 否 | 字体图标类名，缺省不显示图标 |
+| `method` | 否 | 缺省 `POST`；声明为其它方法时该操作被跳过（WebOS 只以 POST 提交） |
+| `entry` | 是 | 提交地址，必须 `/api/` 开头（同源站内接口），≤500 字符 |
+| `input` | 否 | 声明后在点击时弹输入框；缺省则点击直接提交 |
+
+`input` 每项字段：
+
+| 字段 | 必填 | 说明 |
+|---|---|---|
+| `label` | 是 | 输入框标签，≤30 字符；缺失则该操作按「无输入框」处理 |
+| `placeholder` | 否 | 占位文案，≤60 字符 |
+| `maxlength` | 否 | 最大长度，缺省 200，有效区间 1–1000（越界按缺省处理） |
+| `name` | 否 | 提交字段名，`[a-z][a-z0-9_]{0,31}`，缺省 `content`；非法值回落 `content` |
+| `type` | 否 | 输入形态，缺省 `text`（单行文本）；声明为 `select` 时渲染下拉选择框，须同时提供 `options`，否则该操作按「无输入框」处理（2.1.109 新增） |
+| `options` | 否 | `type=select` 时的选项数组，2–8 项；每项 `{ "value": "提交值（允许空串，≤32 字符）", "label": "显示文案（≤20 字符）" }`；`label` 重复只保留首个，去重后不足 2 项则整条操作丢弃（2.1.109 新增） |
+
+提交约定：
+
+- 请求体为 JSON，字段名取 `input.name`（如 `{"content": "用户输入"}`）；无输入框的操作提交空对象 `{}`；`type=select` 时提交选中项的 `value`（空串原样提交，不做剔除）。
+- 多实例卡片的请求体自动合并该桌面项的实例参数（如 `{"note_id": "12", "color": "#ff5722"}`），应用接口据此定位具体实例（2.1.109 新增）。
+- 请求自动携带当前会话 CSRF Token；鉴权按应用自身路由中间件执行，建议要求写入权限（如 `permission:create`）。
+- 响应按统一响应结构判断：`code === 0` 时前端提示 `message`（缺省「操作已完成」）并立即刷新卡片；非 0 或非 2xx 时提示 `message`（缺省「操作失败」）。
+- 操作成功后不改变轮询节奏，卡片随后仍按 `refresh` 秒正常轮询。
+
+#### 多实例与实例参数（2.1.109 新增）
+
+同一小工具声明若需支持「一份数据一张卡片」（如桌面便签：每条便签独立贴到桌面），声明 `picker` 即可由用户在添加时选定实例。**不声明 `picker` 的小工具行为完全不变**（一点即添加一张固定卡片）。
+
+`picker` 字段：
+
+| 字段 | 必填 | 说明 |
+|---|---|---|
+| `entry` | 是 | 候选列表接口，必须 `/api/` 开头且 ≤500 字符；不合法则整段 `picker` 丢弃 |
+| `param` | 是 | 实例参数名，`[a-z][a-z0-9_]{0,31}`；同时作为候选接口返回值的字段名与数据接口的 query 参数名 |
+| `label` | 否 | 候选弹层标题，≤20 字符，缺省「选择数据」 |
+
+候选接口契约（`entry` 返回统一响应结构）：
+
+```json
+{
+    "items": [
+        { "value": "12", "label": "周会待办", "hint": "待办 · 2026-10-29 18:00:00" }
+    ]
+}
+```
+
+- `value`：实例参数取值（字符串，≤64 字符），作为 `params[param]` 落库；`label`：候选项主文案；`hint`：可选的次要说明（前端单行省略）。
+- WebOS 只取前 50 项渲染，超出由应用侧自行收敛（建议在接口内 `limit`）。
+- 用户选定后新增一张卡片，桌面项形如：
+
+```json
+{
+    "kind": "widget",
+    "widget_key": "cmspro.notepad:sticky-note",
+    "id": "widget-cmspro_notepad-sticky-note-12",
+    "params": { "note_id": "12" }
+}
+```
+
+- `id`（桌面项 id）：`desktop_id` + `-` + 实例值（仅保留字母数字下划线短横、截 12 字符），整体截 80 字符，与已有项冲突时追加 `-2`、`-3`。
+- `params`：≤3 个键，键名 `[a-z][a-z0-9_]{0,31}`，值 ≤64 字符；非对象或全空时按空对象处理。任务栏固定项不保留 `params`（与 `x`/`y`/`w`/`h` 一并剔除）。
+- 同一实例重复添加会被忽略（按 `params[param]` 比对）；实例参数的增删改随工作区保存，不需要应用侧参与。
+- 数据接口请求时 WebOS 会自动把 `params` 拼成 query 串（`{entry}?note_id=12`，保留 `entry` 已有的 query 参数），应用接口按该参数返回对应实例数据。
+- 卡片右上角提供统一关闭按钮（悬停显现，`×`），点击**只从桌面移除该卡片**，不调用应用任何接口，便签等业务数据不受影响；重新添加即恢复。
+
+完整声明与方法见 `CmsproNotepad/doc/CmsPro-记事本-扩展指南.md` 第 8.2 节（`sticky-note`：picker 选便签 + 改色下拉 + 编辑内容 + 关闭）。
+
 注意事项：
 
-1. 卡片只读展示，**点击不打开窗口**（不承载跳转，`path` 强制为空）；需要详情请让用户从开始菜单进入应用页面。
-2. 轮询按 `refresh` 秒串行排队，桌面无该小工具时立即停止，不会长期占用请求。
-3. 小工具不参与用户桌面预设同步与角色预设推送，属用户手动添加的桌面项；删除沿用桌面项右键「删除」。
+1. 卡片默认只读展示，**点击卡片不打开窗口**（不承载跳转，`path` 强制为空）；需要详情请让用户从开始菜单进入应用页面。声明了 `actions` 的卡片可在卡片内完成轻量写入操作。
+2. 尺寸档位：卡片严格按桌面格子吸附，用户在 `sizes` 声明的档位之间通过右下角拖拽手柄调整；尺寸随桌面项保存（`desktop_items` 的 `w`/`h`），应用侧无需任何处理。
+3. 轮询按 `refresh` 秒串行排队，桌面无该小工具时立即停止，不会长期占用请求。
+4. 小工具不参与用户桌面预设同步与角色预设推送，属用户手动添加的桌面项；移除方式：卡片右上角关闭按钮（悬停显现，仅从桌面移除卡片、不调应用接口）或桌面项右键「删除」。
+5. 应用停用或卸载后注册表不再返回该项，桌面卡片转为失效态并停止轮询；重新启用后自动恢复数据。
 
 ## 二、菜单接入
 
@@ -287,7 +390,7 @@ $wallpapers = app(WallpaperService::class)->listFor($adminUserId);
 | DELETE | `/admin/cmspro/webos/api/wallpaper` | JSON 字段 `url`（≤200） | 删除自定义壁纸；非本人或非法路径返回业务码 `40302` |
 | GET | `/admin/cmspro/webos/api/calendar` | 查询参数 `month`（`YYYY-MM` 格式，正则 `^\d{4}-(0[1-9]|1[0-2])$`） | 返回当月日历数据（含农历与二十四节气换算） |
 | GET | `/admin/cmspro/webos/api/all-todos` | — | 全量待办（含已读）：聚合系统待办 hook（含权限过滤/去重/归零过滤），附加 `seen` 与 `is_read`（`seen_count ≥ count` 视为已读）；数据源见第七章 |
-| GET | `/admin/cmspro/webos/api/widgets` | — | 桌面小工具注册表（2.1.106 新增）：聚合全部启用应用 `manifest.widgets`，返回 `data` 为数组，每项含 `widget_key`（`{app_id}:{id}`）、`app_id`、`id`、`title`、`icon`、`entry`、`refresh`（秒）、`desktop_id`（桌面项 id）；右键「小工具」面板与前端轮询均以此为唯一数据源 |
+| GET | `/admin/cmspro/webos/api/widgets` | — | 桌面小工具注册表（2.1.106 新增，2.1.108 扩展尺寸与操作）：聚合全部启用应用 `manifest.widgets`，返回 `data` 为数组，每项含 `widget_key`（`{app_id}:{id}`）、`app_id`、`id`、`title`、`icon`、`entry`、`refresh`（秒）、`desktop_id`（桌面项 id）、`sizes`（尺寸档位数组，缺省 `["1x1"]`）、`default_size`（默认档位）、`actions`（操作声明数组，最多 2 项）；右键「小工具」面板与前端轮询均以此为唯一数据源 |
 | GET | `/admin/cmspro/webos/api/user-desktop-preset` | — | 读取全局用户桌面预设（`data.desktop_items`）及用户端可选菜单/应用目录（`data.catalog.menus`、`data.catalog.applications`）；仅后台端可用（用户端路由不存在）。2.1.88 新增；2.1.89 起该预设按差异化增量同步下发到前台用户桌面 |
 | PUT | `/admin/cmspro/webos/api/user-desktop-preset` | JSON：`desktop_items`（≤48，校验同工作区 `desktopItemsRules()`） | 保存全局用户桌面预设，成功返回 `message='用户桌面预设已保存'`；仅后台端可用。2.1.88 新增；2.1.94 起预设网格支持拖动排序，请求体 `desktop_items` 的**数组顺序即预设排列顺序**（前端把拖动后的顶层项顺序回填数组，用户端同步时按该顺序列优先落位），接口与校验无变更 |
 | GET | `/admin/cmspro/webos/api/admin-desktop-preset` | 查询参数 `role_id`（可选，缺省取第一个启用角色） | 读取后台角色桌面预设及该角色可选目录（2.1.98 新增）：`data.role_id`（本次读取的角色）、`data.roles`（启用角色列表 `id`/`name`，按 `sort` 升序）、`data.desktop_items`（该角色预设图标）、`data.catalog.menus`（该角色被分配的后台菜单树，含祖先链补全；未分配/停用/隐藏菜单不出现）、`data.catalog.applications`（该角色菜单涉及的应用清单，含 `icon_url`）；仅后台端可用（用户端路由不存在） |
@@ -363,6 +466,8 @@ WebOS 不新增应用管理接口，应用中心的数据与操作全部复用�
 | `kind` | 可空，`folder` / `url` / `widget` | 桌面项类型：文件夹、URL 链接、桌面小工具；空值为普通入口 |
 | `widget_key` | `kind=widget` 时必填，格式 `{app_id}:{widget_id}`（`[A-Za-z0-9_.-]+:[a-z0-9][a-z0-9-]{0,31}`），≤100 字符 | 小工具标识，指向应用 `manifest.widgets` 注册表项；widget 项 `path` 与 `parent_folder` 强制为空，点击不打开窗口（2.1.106 新增） |
 | `x` / `y` | 整数 0–99 | 桌面网格坐标（仅桌面项） |
+| `w` / `h` | 仅 `kind=widget` 输出，整数 1–2 | 小工具占格宽高，对应尺寸档位 `1x1` / `2x1` / `2x2`；非数字或越界回落 1，其它类型不写该字段；任务栏项统一剔除坐标与占格（2.1.108 新增） |
+| `params` | 仅 `kind=widget` 且非空时输出，对象 ≤3 键，键名 `[a-z][a-z0-9_]{0,31}`，值 ≤64 字符 | 小工具实例参数（如多实例便签的 `note_id`），随桌面项保存；非对象或全部无效键按空对象处理（不写该字段），任务栏项统一剔除（2.1.109 新增） |
 
 数量与统计约束：
 
@@ -513,10 +618,59 @@ app(HookManager::class)->registerFilter(
 6. **通知 link 必须真实**：推送通知与待办的 `link` 必须是 `admin_menus` 表中已存在的路径，避免点击退化为新标签页。
 7. **静态资源本地化**：应用页面资源不通过 CDN 加载；`_component` 片段不重复引入主框架资源。
 
-## 十一、版本与更新日志
+## 十一、桌面小工具扩展机制验收结论
+
+本章以记事本 1.2.0 的「桌面便签」为验收样例，核验「第三方应用能否在不修改 WebOS 的前提下，把小工具做成符合自身业务的自定义形态」，并作为后续应用接入小工具的判定基线。
+
+### 验收口径
+
+用户需求拆为四项可验证目标：
+
+| 编号 | 目标 | 判定标准 |
+|---|---|---|
+| A1 | 单条便签贴到桌面 | 同一个小工具可在桌面存在多张卡片，每张指向不同便签，互不覆盖 |
+| A2 | 可从桌面关闭 | 卡片右上角关闭后仅移除桌面项，便签数据仍可在应用内查到 |
+| A3 | 可调整标记颜色 | 卡片操作改色后，桌面卡片底色即时变化且刷新后保持 |
+| A4 | 可作为扩展机制验收样例 | 应用侧只依赖公开扩展点（manifest 声明 + 自有接口），WebOS 无应用专属硬编码 |
+
+### 扩展点闭环核查
+
+| 扩展点 | 应用侧声明 | WebOS 侧实现 | 证据 | 结论 |
+|---|---|---|---|---|
+| 自主注册小工具 | `manifest.widgets[]` | `WidgetRegistryService::list()` 聚合启用应用的声明 | `WidgetRegistryTest` | 通过：应用停用/未安装即不出现，WebOS 无写死清单 |
+| 多实例 | `picker{entry,param,label}` | `openWidgetInstancePicker()` → `widgetInstanceId()` 生成 `desktop_id` 实例后缀 | 记事本 `sticky-note` + `WidgetDesktopItemTest` | 通过：同一小工具可挂多条，重复添加被忽略 |
+| 实例参数透传 | 桌面项 `params`（≤3 键，值 ≤64） | 拉数据与提交操作时自动拼 query / 合并请求体 | `WorkspaceServiceTest`、`WidgetNoteTest` | 通过：应用接口按 `note_id` 定位单条便签 |
+| 卡片自定义操作 | `actions[]`（`method` / `entry` / `input`） | 卡片底部按钮 + 输入弹层（`type=text` / `type=select`） | `WidgetRegistryTest`、前端源码断言 | 通过：改色、编辑内容均走应用自有接口 |
+| 自定义数据展示 | `status` / `value` / `unit` / `items` / `title` / `text` / `color` | `desktopWidgetBody()` 与 `widgetToneOf()` 按契约渲染 | 全量前端回归 | 通过：文本便签形态由应用数据驱动，非 WebOS 内置业务 |
+| 尺寸档位 | `sizes` / `default_size` | 占格渲染 + 右下角拖拽吸附 | `WidgetDesktopItemTest` | 通过：1x1 / 2x1 / 2x2 可调 |
+| 卡片关闭 | 无需声明 | `.desktop-widget-close` → `removeDesktopEntry()` | 前端断言 | 通过：不占 `actions` 名额，不调应用接口 |
+| 权限控制 | 应用路由自带中间件 | 请求沿用应用路由 | `WidgetNoteTest` | 通过：读用 `manage`、写用 `create`，越权 403 |
+
+### 四项需求达成情况
+
+- **A1 达标**：桌面右键「小工具」选择「桌面便签」后弹出候选便签列表（上限 50 条），选中即生成一张绑定该便签的卡片；重复选择同一条便签不会重复添加。
+- **A2 达标**：卡片右上角关闭按钮悬停显现，点击只从 `desktop_items` 移除该实例，应用侧便签数据零影响；桌面项右键「删除」行为一致。
+- **A3 达标**：卡片操作「标记颜色」提供六色下拉（默认 / 红 / 橙 / 绿 / 蓝 / 紫），提交后 `Note.color` 落库，卡片按 `is-widget-tone-{tone}` 立即换色，刷新后保持。
+- **A4 达标**：记事本接入只新增 `manifest.widgets` 声明与 4 条应用内路由，未修改 WebOS 任何应用专属逻辑；WebOS 侧新增能力（`picker`、`params`、`select`、`title`/`text`/`color`、关闭按钮）均为通用契约，其他应用可直接复用。
+
+### 已知边界（不影响本次验收，接入前需知悉）
+
+1. `params` 仅支持最多 3 个键、值 ≤64 字符串，不支持结构化参数；需要复杂上下文的场景应让应用侧以单个业务 ID 收敛。
+2. `picker` 候选上限 50 条且无搜索分页，数据量大时应由应用侧按「最近/置顶」裁剪候选集。
+3. 卡片只有 `actions` 操作，双击卡片仍按桌面项语义打开应用窗口，不提供「点击卡片直达业务详情」的独立通道。
+4. 各实例独立轮询，WebOS 不提供实例间联动事件；应用侧写操作后的数据变化需等待本实例下一次刷新（操作成功时 WebOS 会立即局部刷新当前卡片）。
+5. 卡片不持久化应用侧编辑中间态，刷新页面按最新接口数据重建。
+
+### 验收结论
+
+**通过。** WebOS 桌面小工具的扩展机制已足以支撑第三方应用自定义小工具：注册、多实例、参数、操作、展示、尺寸、关闭、权限八个扩展点全部由公开契约驱动，记事本「桌面便签」以零 WebOS 业务硬编码的方式实现了 macOS 风格桌面便签的四项需求。上述五条边界属于契约设计取舍，后续如需支持可在不破坏现有声明的前提下扩展。
+
+## 十二、版本与更新日志
 
 | 版本 | 日期 | 更新人 | 说明 |
 |---|---|---|---|
+| 2.1.109 | 2026-10-29 | CmsPro | **桌面小工具三期：多实例便签 + 文本/配色渲染 + 卡片关闭（用户需求：macOS 式桌面便签；同时作为 WebOS 扩展机制验收样例）**：① 需求——把单条便签贴到桌面（可多条）、可关闭（仅移除卡片不删数据）、可改标记颜色，并验证扩展机制能否支撑第三方应用自定义。三项裁定（经用户确认）：实现形态 = 通用实例参数（小工具带参数多实例 + 数据契约扩展，其他应用可复用）；卡片操作 = 改色 + 编辑内容（关闭按钮由 WebOS 提供，不占 `actions` 名额）；验收口径 = 实现后输出验收结论。② `Services/WidgetRegistryService.php`——新增 `picker` 声明（`entry` 必须 `/api/` 前缀且 ≤500、`param` 沿用 `INPUT_NAME_PATTERN`、`label` ≤20 缺省「选择数据」，不合法整段丢弃，注册表 `picker=null`）；新增常量 `MAX_PICKER_ITEMS=50`、`MIN_ACTION_OPTIONS=2`、`MAX_ACTION_OPTIONS=8`、`MAX_OPTION_VALUE_LENGTH=32`；`actionInputOf()` 支持 `type=select` + `options`（`value` 允许空串、`label` ≤20 且去重，去重后不足 2 项则整条操作丢弃）。③ `Services/WorkspaceService.php`——新增 `MAX_WIDGET_PARAMS=3`、`WIDGET_PARAM_KEY_PATTERN`、`MAX_WIDGET_PARAM_VALUE_LENGTH=64`；`sanitizeDesktopItem()` 对 `kind=widget` 写入 `params`（`widgetParamsOf()` 收敛键名/长度并剔除空值），`sanitizeTaskbarItems()` 的 `Arr::except` 扩展为 `['x','y','w','h','params']`；`WebosController::desktopItemsRules()` 新增 `desktop_items.*.params => nullable|array`。④ 前端 `webos.js`——新增 `WIDGET_TONE_WHITELIST`；新增 `widgetParamsOf()`、`widgetEntryUrl()`（实例参数拼 query 并保留 `entry` 既有 query）、`widgetInstanceAdded()`（按 `params[picker.param]` 防重复添加）、`widgetInstanceId()`（`desktop_id` + `-` + 实例值 slug，截 80，冲突追加 `-2`）、`openWidgetInstancePicker()`（候选弹层，最多 50 项）；`widgetTitleOf()`（`data.title` ≤40 覆盖清单标题）、`widgetToneOf()`（白名单校验，否则 `default`）、`desktopWidgetBody()` 增 `text` 分支（`escapeHtml` + `pre-wrap`，非空时优先于 value/items）；`desktopWidgetMarkup()` 输出 `is-widget-tone-{tone}` 与右上角 `.desktop-widget-close[data-widget-close]`；`submitWidgetAction()` 合并实例参数进请求体；新增 select 面板渲染；事件层 `pointerdown` 拦截 resize/close/action 不启动拖动、`click` 委托处理关闭（`removeDesktopEntry`）与 action、`dblclick` 排除三类元素。⑤ 样式 `webos.css`——`.is-widget` 改用 `--widget-surface*` 三变量 + 5 条 tone 仅覆盖变量；`.desktop-widget-close`（14px 圆形、默认 `opacity:0`、hover 变红、`pointer-events:auto`）；`.desktop-widget-text`（1x1 三行 / 2x1 五行 / 2x2 九行）；`.webos-widget-select*` 面板。⑥ 记事本 1.2.0 试点——`manifest.json` 的 `widgets` 追加 `sticky-note`（`picker` → `GET /widget/notes`，`param=note_id`；`actions` = `mark-color` 六色下拉 + `edit-content` 文本编辑）；`Routes/admin_api.php` 新增 4 条路由（`notes`/`note` 用 `manage`，`note-color`/`note-content` 用 `create`）；`DashboardController` 新增 `WIDGET_PICKER_LIMIT=50`、`WIDGET_NOTE_TONES` 六色映射与 `widgetNotes()`/`widgetNote()`/`widgetNoteColor()`/`widgetNoteContent()`，写操作复用 `NoteService::updateNote()`，错误按业务码映射 HTTP 400/403/404。⑦ 测试——WebOS 253 passed / 2498 assertions（`WidgetRegistryTest` 18、`WorkspaceServiceTest` 22 及全量回归），Notepad 82 passed / 315 assertions（新增 `WidgetNoteTest` 19 用例）。⑧ 验收结论见第十一章「桌面小工具扩展机制验收结论」。 |
+| 2.1.108 | 2026-10-29 | CmsPro | **桌面小工具二期：卡片操作 + 尺寸档位 + 停用失效态（用户需求）**：① 需求——用户反馈三点：小工具卡片只能看不能操作（希望便签卡上直接新增便签，类似 macOS/Windows 桌面便签）、尺寸固定 1x1 不能调整、小工具是否随应用启用状态增减（担心是 WebOS 写死的清单）。三项裁定（经用户确认）：交互 = manifest 声明 `actions` + 卡片内操作按钮 + 弹输入框提交；尺寸 = `1x1`/`2x1`/`2x2` 三档按桌面格子吸附 + 右下角拖拽手柄；节奏 = 一次全部完成。**关于「是否写死」——注册表本就只遍历 `AppModel::enabled()` 并聚合各应用 `manifest.widgets`，未声明 `widgets` 的应用零输出，故小工具天然随应用安装/启用而增减；本次补的是「应用停用/卸载后已添加卡片的失效提示」，非新增数据源。** ② `Services/WidgetRegistryService.php`——新增 `SIZES = ['1x1','2x1','2x2']`；`sizes` 仅接受白名单值、去重、非数组或全部非法时回落 `["1x1"]`；`default_size` 必须命中 `sizes` 否则取首项；新增 `actions`（最多 2 项，`id` 沿用 widget id 正则、`title` 必填 ≤20、`icon` 可选、`method` 缺省 `POST` 其余跳过、`entry` 必须站内 `/api/` 前缀且 ≤500、`input` 见下）；新增常量 `INPUT_NAME_PATTERN = '/^[a-z][a-z0-9_]{0,31}$/'`，`actionInputOf()` 返回 `['label','placeholder','maxlength','name']`（`label` 必填 ≤30 缺失则整段 input 丢弃、`placeholder` ≤60、`maxlength` 缺省 200 区间 1–1000、`name` 不匹配正则或缺失回落 `content`）；注册表每项输出扩为 `widget_key`/`app_id`/`id`/`title`/`icon`/`entry`/`refresh`/`desktop_id`/`sizes`/`default_size`/`actions`。③ `Services/WorkspaceService.php`——`sanitizeDesktopItem()` 对 `kind=widget` 追加 `w`/`h`（`widgetSpanOf()` 收敛 1..2，非数字或越界回落 1），其它类型不写该字段；`sanitizeTaskbarItems()` 统一 `Arr::except(..., ['x','y','w','h'])` 剔除坐标与占格。④ 前端 `Assets/js/webos.js`——新增 `desktopItemSpan()`/`clampWidgetSpan()`/`parseWidgetSize()` 占格换算；`desktopWidgetMarkup()` 按 `w*h` 渲染（宽 `w*cellW-6`、高 `h*cellH-6`、`min-height:0` 覆盖 1x1 固定高度），卡片底部渲染 `actions` 按钮（`pointer-events:auto` 穿透 `.desktop-icon span{pointer-events:none}`）；新增 `runWidgetAction()`（分发）、`promptWidgetActionInput()`（`layer.prompt` `formType:2`，按 `input` 的 label/placeholder/maxlength 渲染）、`submitWidgetAction()`（`body[(action.input && action.input.name) || 'content'] = value`，自动带 CSRF，`code===0` 提示 message 并立即局部刷新卡片）；新增 `widgetSizeOptions()`/`nearestWidgetSize()`/`widgetRectAvailable()`/`resizeDesktopWidget()`（右下角手柄 `pointerdown` 拖拽，按指针位置吸附最近档位，落位被占用则回退原尺寸）；矩形占用键统一 `'x,y'`（`markDesktopRect`/`desktopRectFree`/`firstFreeDesktopRect`/`findFreeDesktopSlot(span)`，取代原「单格 boolean」口径，支持 2x1/2x2 落位）；停用失效态——`widgetStatusOf()` 在注册表正常但查不到声明时返回 `{ status:'disabled', error:'应用已停用，暂不可用' }`，`WIDGET_STATUS_TEXT.disabled = '已停用'`，注册表**读取失败**（网络/接口异常）与**注册表为空**严格区分（前者卡片报「读取失败」，后者才判停用），失效卡片停止轮询、应用重新启用后自动恢复。⑤ 样式 `Assets/css/webos.css`——resize 手柄（右下角 12×12、`cursor:nwse-resize`）、卡片操作按钮区、`is-widget-disabled` 失效态（降透明度 + 灰化）。⑥ 记事本 1.1.2 试点——`CmsproNotepad/manifest.json` 的 `sticky-overview` 补 `sizes:["1x1","2x1","2x2"]`、`default_size:"1x1"`、`actions:[{id:'new-note',title:'新增便签',icon:'fa fa-plus',method:'POST',entry:'/api/admin/cmspro/notepad/widget/quick-note',input:{label:'便签内容',placeholder:'随手记一条…',maxlength:500}}]`；新增 `POST /widget/quick-note`（`cmspro.notepad.permission:create`、`content required|string|max:500`、trim 后标题取首行）与 `WidgetQuickNoteTest` 5 用例。⑦ 测试——WebOS 250 passed / 2490 assertions，Notepad 61 passed / 242 assertions；`WebosWorkspaceApiTest` 同步矩形占用键、`desktopIconSize()` 调用点数量、`findFreeDesktopSlot(span)` 签名等静态断言。 |
 | 2.1.107 | 2026-10-29 | CmsPro | **小工具注册表快照回退（问题修复）**：① 现象——桌面右键「小工具」面板为空，本机 31 个启用应用的 `apps.manifest` 快照中 `widgets` 计数均为 0（含已声明小工具的 `cmspro.localservice`）。② 根因——`apps.manifest` 是安装/升级时由 `AppInstallerService` 写入的**全量快照**，应用后续版本在磁盘 `manifest.json` 新增的 `widgets` 段不会自动回写数据库，`WidgetRegistryService::widgetsOf()` 只读快照故返回空。③ 修复（经用户确认：注册表回退读 manifest.json，仅改应用内代码、零框架改动）——`list()` 的查询列由 `['app_id', 'manifest']` 扩为 `['app_id', 'path', 'manifest']`；`widgetsOf()` 在快照 `widgets` 非数组时调用新增的 `readManifestFromDisk()` 回退读取应用目录 `manifest.json` 的 `widgets`（快照已声明时仍以快照为准）；`readManifestFromDisk()` 以 `realpath` 解析 `base_path('app/Apps')` 与应用目录，`is_file` 校验后以 `strncasecmp` 断言文件路径前缀位于 `app/Apps/` 内（Windows 路径大小写不敏感），越界或文件缺失返回空数组，防路径穿越；JSON 解析失败同样返回空数组。④ 测试——`Tests/Fixtures/WidgetApp/manifest.json` 新增磁盘声明夹具（`disk-widget` / `磁盘声明小工具` / `fa fa-hdd` / `refresh=30`）；`WidgetRegistryTest` 新增 3 用例（快照无 widgets 时回退磁盘声明、应用目录缺失时返回空、快照声明优先于磁盘声明），共 12 用例 29 断言通过。**快照与磁盘均无 `widgets` 的应用行为不变（跳过），既有小工具声明与桌面项数据零影响。** |
 | 2.1.106 | 2026-10-29 | CmsPro | **桌面小工具机制一期（用户需求：应用桌面能力扩展）**：应用（如本地服务、便签、KylinIDProxy）可将业务指标以 1x1 数据卡片挂到 WebOS 桌面。三项设计裁定（经用户确认）：① 尺寸——先 1x1 打通，二期再上 2x1；② 添加入口——桌面右键新增「小工具」面板；③ 落地范围——先 WebOS + Localservice 试点。一期不做：2x1/2x2 布局、Notepad 与 KylinIDProxy 接入、框架 `AppInstallerService` 清单校验、widget 级权限、用户端 `/widgets` 路由。① 注册表（**零新表、零框架改动**）——新建 `Services/WidgetRegistryService.php`，以 `apps` 表原有 `manifest` JSON 快照为注册源（`AppModel::$casts['manifest']='array'`），聚合所有启用应用的 `manifest.widgets`；常量 `MAX_PER_APP=5`、`DESKTOP_ID_LIMIT=80`、`DEFAULT_REFRESH=60`、`MIN_REFRESH=15`、`MAX_REFRESH=3600`；每项输出 `widget_key`（`{app_id}:{widget_id}`，落库口径）/`app_id`/`id`/`title`/`icon`/`entry`/`refresh`/`desktop_id`（`widget-{app_id 点转下划线}-{widget_id}`）；非法 id（不匹配 `/^[a-z0-9][a-z0-9-]{0,31}$/`）、entry 非站内 API 路径、`desktop_id` 超长、应用停用或未安装一律跳过；`refresh` 缺失或越界时收敛到 `[15, 3600]`、`icon` 缺省 `fa fa-cube`。② 接口与校验——`WebosController::widgets()` + `Routes/admin.php` 注册 `GET /api/widgets` 返回聚合清单；`desktopItemsRules()` 的 `kind` 白名单由 `folder,url` 扩为 `in:folder,url,widget`，新增 `widget_key nullable|string|max:100`；因 Laravel 通配符规则在字段缺失时不展开，「`kind=widget` 却漏传 `widget_key`」改由 `validateWorkspacePayload()` 内的 `Validator::after()` 补校验（5 处调用点统一入口），`widget_key` 格式 `/^[A-Za-z0-9_.-]+:[a-z0-9][a-z0-9-]{0,31}$/`。③ 服务端桌面项——`WorkspaceService::sanitizeDesktopItem()` 的 kind 收敛扩为三值（`folder`/`url`/`widget`），widget 项 path 强制置空、保留 `widget_key`；widget 与 folder/url 同属「桌面原生项」始终可见，不依赖菜单目录。④ 前端 `webos.js`——`WIDGET_STATUS_TEXT` 状态文案表（running/stopped/warning/unknown）；`loadWidgetRegistry()` 拉注册表（URL 追加 `_t` 防缓存，失败缓存空数组、不阻断桌面渲染）；`widgetDeclaration()`/`widgetStatusOf()`/`desktopWidgetBody()`（明细最多 3 行，读取中/读取失败各有占位文案）；`desktopWidgetMarkup()` 渲染 `.desktop-icon.is-widget.is-widget-{status}` 卡片（头部图标+名称、主值+单位、明细行、状态点）；`renderWidgetCard()` 数据到达后按 `[data-desktop-id]` 定位并 `replaceWith` **局部替换**，不整盘重绘；`syncWidgetPollers()` 统一维护轮询器（预设编辑态整体跳过、项被移除时 `stopped=true`+`clearTimeout`+清缓存、`widget_key` 变更时重启）；`refreshWidgetData()` 在声明失效时写 error 态；`scheduleWidgetRefresh()` 周期取 `Math.max(15, refresh || 60)` 秒（服务端下限的前端兜底）；`refreshWidgetOnce()` 供右键「刷新数据」即时拉取；`normalizeDesktopItems()` 放行 `kind === 'widget'`；桌面右键新增「小工具」面板项（`new-widget`），widget 项右键菜单新增「刷新数据」（`widget-refresh`）；`openWidgetPickerDialog()` 按应用分组列出注册表项，`addDesktopWidget()` 落位后即时拉数并局部渲染。⑤ 样式 `webos.css`——`.desktop-icon.is-widget` 卡片基样式（深色半透明底、左对齐纵向布局，覆盖图标按钮的居中纵向布局）+ medium 96×98 / large 120×124 / small 80×82 三档覆盖（特异性高于档位通用规则）；`.desktop-widget-head|icon|name|value|hint|lines|line|state|dot` 系列；状态点四色（running 绿 / stopped 灰 / warning 橙 / unknown 蓝）；`.webos-widget-picker` 面板样式。⑥ Localservice 1.4.0 试点——`manifest.json` 新增 `widgets` 声明「本地服务状态」（`id=service-status`、`icon=fa fa-server`、`entry=/api/admin/cmspro/localservice/widget/status`、`refresh=60`）；`Routes/admin_api.php` 新增只读 `GET /widget/status`；`ServiceApiController::widgetStatus()` 输出小工具契约（`status` 依在线/离线但二进制存在/二进制缺失映射 `running/stopped/warning`，`value` 为服务版本，`items` 为端口/累计任务/成功率（无任务时 `—`），`updated_at` 固定 `Y-m-d H:i:s`）。⑦ 测试——新增 `WidgetRegistryTest` 9 用例（聚合口径、停用/未安装/无 widgets/非法 id/非 API entry 跳过、单应用上限、`desktop_id` 超长跳过、icon/refresh 默认值、注册表接口鉴权）与 `WidgetDesktopItemTest` 5 用例（widget 项保存成功、缺 `widget_key`/`path` 非空/非法 `widget_key`/未知 kind 均拒绝且 `code=40201`），Localservice 新增 `WidgetStatusTest` 3 用例 14 断言；`WebosWorkspaceApiTest` 四处既有源码断言同步（`desktopIconSize()` 调用点 3→4、加载过滤正则纳入 widget 分支、kind 白名单三值、可见性注释口径）。239 测试 2450 断言通过。测试基类修复——此前 8 个失败（`WebosLaunchParamTest` 7 + `WebosUserTerminalTest` 1，报 "The response is not a view."）根因为 `.env` 的 `APP_DEV_MODE=true` 触发全局中间件 `DevViewPathBanner` 对完整 HTML 响应调用 `setContent()`，把 `Response::$original` 由 View 对象覆盖为渲染后字符串，`viewData()`/`assertViewHas()` 随之失效（开发期调试功能，生产 `APP_DEV_MODE` 未开启时零影响）；现已在 `Tests/WebosTestCase::setUp()` 内 `config(['app.dev_mode' => false])` 关闭提示条，业务代码与框架零改动。 |
 | 2.1.105 | 2026-10-27 | CmsPro | **应用窗口前进/后退按钮（用户需求）**：① 需求——在应用窗口标题栏刷新按钮左侧增加后退「<」、右侧增加前进「>」按钮，用于前进/后退 iframe 内的链接。② 设计决策（经用户确认）——生效范围为「所有应用窗口」（普通应用窗口标题栏均渲染，不含内置浏览器窗口）；不可用时「直接隐藏」（跨域外链窗口、`_component` 组件页面无 iframe 时不显示，非置灰）。③ 前端 `webos.js`——`windowMarkup()` 内新增 `hasPageHost`（非应用中心 / OS 设置 / 通知中心 / 官网动态 / 内置浏览器）判定，在标题栏 `brand` 之后注入后退按钮、`windowTabsEnabled()` 刷新按钮三元之后注入前进按钮（均带 `data-window-action="history-back|history-forward"` 与 `hidden` 初始态）；新增 `isSameOriginUrl(path)`（仅 `path` 以 `/` 开头视为同源，兼容子目录部署）、`windowHistoryNavigable(entry)`（排除 `open_type='_component'` + 同源判定）、`syncWindowHistoryButtons(windowState, entry)`（`querySelectorAll('.window-history')` 批量设置 `hidden`）、`stepWindowHistory(key, direction)`（`state.windows.get(key)` → 按 `windowActiveTab` 定位当前激活页 `[data-window-page]` → iframe `contentWindow.history.back()/forward()`，跨域 `try/catch` 静默忽略）；`renderWindowPage()` 开头与 `closeWindowTab()` 空状态分支接入显隐同步；窗口动作委托新增两个 `dataset.windowAction` 分支。④ 样式 `webos.css`——新增 `.window-history { margin-left: 4px; }` 与 `.window-history[hidden] { display: none !important; }`（flex 布局下显式兜底）；三按钮采用紧凑宽度 `.window-control.window-refresh, .window-control.window-history { width: 20px; }`（双类选择器提升特异性覆盖 `.window-control` 的 48px，使三者相互靠拢，最小化/最大化/关闭等按钮保持 48px 不受影响）。⑤ 测试——新增 `Tests/Feature/WebosWindowHistoryButtonsTest` 6 用例（源码静态断言：后退 < 刷新 < 前进 字符串顺序、`window-action` 分发、`stepWindowHistory` 取激活选项卡 iframe 历史、三个函数齐备 + `button.hidden = !navigable` + 组件排除、CSS `[hidden]` 兜底、导航按钮紧凑宽度且基础窗口按钮宽度不被覆盖）。225 测试 2404 断言通过。 |
