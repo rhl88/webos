@@ -1,0 +1,16 @@
+{
+    "id": "cmspro.widgetfixture",
+    "name": "小工具回退测试应用",
+    "description": "仅用于 WidgetRegistryService 磁盘回退读取用例的 manifest 夹具",
+    "version": "1.0.0",
+    "author": "CmsPro",
+    "widgets": [
+        {
+            "id": "disk-widget",
+            "title": "磁盘声明小工具",
+            "icon": "fa fa-hdd",
+            "entry": "/api/admin/cmspro/widgetfixture/widget/status",
+            "refresh": 30
+        }
+    ]
+}

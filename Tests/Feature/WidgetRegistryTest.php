@@ -12,12 +12,19 @@ use App\Models\AppModel;
  */
 class WidgetRegistryTest extends WebosTestCase
 {
+    /** 含 widgets 声明的磁盘 manifest 夹具目录（相对项目根） */
+    private const FIXTURE_APP_PATH = 'app/Apps/CmsproWebos/Tests/Fixtures/WidgetApp';
+
+    /** 不带 manifest.json 的目录，用于回退读取失败的场景 */
+    private const MISSING_APP_PATH = 'app/Apps/CmsproWebos/Tests/Fixtures/MissingApp';
+
     /**
      * 造一条应用记录：apps.manifest 是安装器写入的全量快照，widgets 段即小工具声明来源。
      *
      * @param mixed $widgets 传入 null 表示 manifest 中不含 widgets 段
+     * @param string|null $path 应用目录（相对项目根），null 时按 app/Apps/{appId} 推导
      */
-    private function makeApp(string $appId, mixed $widgets = null, int $status = 1): AppModel
+    private function makeApp(string $appId, mixed $widgets = null, int $status = 1, ?string $path = null): AppModel
     {
         $manifest = ['id' => $appId, 'name' => $appId];
         if ($widgets !== null) {
@@ -28,7 +35,7 @@ class WidgetRegistryTest extends WebosTestCase
             'app_id' => $appId,
             'name' => $appId,
             'version' => '1.0.0',
-            'path' => 'app/Apps/' . $appId,
+            'path' => $path ?? 'app/Apps/' . $appId,
             'status' => $status,
             'manifest' => $manifest,
         ]);
@@ -165,6 +172,42 @@ class WidgetRegistryTest extends WebosTestCase
         $this->assertSame(60, $items[0]['refresh']);
         // 刷新间隔低于 15 秒视为非法，回落默认 60 秒
         $this->assertSame(60, $items[1]['refresh']);
+    }
+
+    public function test_registry_falls_back_to_disk_manifest_when_snapshot_has_no_widgets(): void
+    {
+        // 老应用快照不含 widgets 段：回退读取应用目录下的 manifest.json
+        $this->makeApp('cmspro.widgetfixture', null, 1, self::FIXTURE_APP_PATH);
+
+        $items = $this->registry()->list();
+
+        $this->assertCount(1, $items);
+        $this->assertSame('disk-widget', $items[0]['id']);
+        $this->assertSame('磁盘声明小工具', $items[0]['title']);
+        $this->assertSame('fa fa-hdd', $items[0]['icon']);
+        $this->assertSame('widget-cmspro_widgetfixture-disk-widget', $items[0]['desktop_id']);
+    }
+
+    public function test_registry_returns_empty_when_app_manifest_file_missing(): void
+    {
+        // 目录不存在时回退读取失败：返回空清单，不抛异常、不影响其它应用
+        $this->makeApp('cmspro.missingapp', null, 1, self::MISSING_APP_PATH);
+
+        $this->assertSame([], $this->registry()->list());
+    }
+
+    public function test_registry_prefers_snapshot_widgets_over_disk_manifest(): void
+    {
+        // 快照中已有 widgets 段：以快照为准，不再读磁盘文件
+        $this->makeApp('cmspro.widgetfixture', [
+            $this->widget('snapshot-widget', ['title' => '快照声明小工具']),
+        ], 1, self::FIXTURE_APP_PATH);
+
+        $items = $this->registry()->list();
+
+        $this->assertCount(1, $items);
+        $this->assertSame('snapshot-widget', $items[0]['id']);
+        $this->assertSame('快照声明小工具', $items[0]['title']);
     }
 
     public function test_widgets_api_returns_registry_for_admin(): void

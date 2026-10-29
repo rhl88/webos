@@ -9,7 +9,8 @@ use Illuminate\Support\Str;
  * 桌面小工具注册表（2.1.106）
  *
  * 聚合已启用应用 manifest.widgets 声明，供桌面右键「小工具」面板展示与添加。
- * manifest 由安装器写入 apps.manifest（全量快照），因此注册表无需新增表结构，
+ * manifest 由安装器写入 apps.manifest（全量快照），快照缺少 widgets 时回退读取
+ * 应用目录下的 manifest.json（2.1.107）；因此注册表无需新增表结构，
  * 应用启用后其小工具自动出现在面板中，禁用/卸载后自动消失。
  *
  * widgets 段声明格式（数组，单应用最多 5 项）：
@@ -43,7 +44,7 @@ class WidgetRegistryService
     {
         $widgets = [];
 
-        foreach (AppModel::query()->enabled()->orderBy('id')->get(['app_id', 'manifest']) as $app) {
+        foreach (AppModel::query()->enabled()->orderBy('id')->get(['app_id', 'path', 'manifest']) as $app) {
             foreach ($this->widgetsOf($app) as $widget) {
                 $widgets[] = $widget;
             }
@@ -61,6 +62,12 @@ class WidgetRegistryService
     {
         $manifest = is_array($app->manifest) ? $app->manifest : [];
         $declarations = $manifest['widgets'] ?? null;
+
+        // apps.manifest 是安装/升级时写入的全量快照，应用后续版本新增的 widgets 段
+        // 不会自动回写；快照缺省时回退读取磁盘 manifest.json，避免老应用小工具永久缺失
+        if (! is_array($declarations)) {
+            $declarations = $this->readManifestFromDisk($app)['widgets'] ?? null;
+        }
 
         if (! is_array($declarations)) {
             return [];
@@ -81,6 +88,41 @@ class WidgetRegistryService
         }
 
         return $widgets;
+    }
+
+    /**
+     * 读取应用目录下的 manifest.json（快照缺省 widgets 时的回退数据源）
+     *
+     * 解析结果必须真实存在于 app/Apps/ 之内，防止 apps.path 异常值造成路径穿越；
+     * 文件缺失、读取失败或 JSON 非法时一律返回空数组，不影响其它应用聚合。
+     *
+     * @return array<string,mixed>
+     */
+    protected function readManifestFromDisk(AppModel $app): array
+    {
+        $baseDir = realpath(base_path('app/Apps'));
+        if ($baseDir === false) {
+            return [];
+        }
+
+        $file = realpath($app->resolvePath() . DIRECTORY_SEPARATOR . 'manifest.json');
+        if ($file === false || ! is_file($file)) {
+            return [];
+        }
+
+        // Windows 路径大小写不敏感，前缀比较统一按不区分大小写处理
+        if (strncasecmp($file, $baseDir . DIRECTORY_SEPARATOR, strlen($baseDir) + 1) !== 0) {
+            return [];
+        }
+
+        $contents = file_get_contents($file);
+        if ($contents === false || $contents === '') {
+            return [];
+        }
+
+        $manifest = json_decode($contents, true);
+
+        return is_array($manifest) ? $manifest : [];
     }
 
     /**
