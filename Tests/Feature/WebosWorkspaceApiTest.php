@@ -1863,6 +1863,20 @@ class WebosWorkspaceApiTest extends WebosTestCase
         $this->assertStringContainsString("asset('apps/cmspro.webos/js/webos.js') }}?v={{ \$webosAssetVersion }}", $view);
     }
 
+    public function test_start_menu_search_is_reset_each_time_panel_opens(): void
+    {
+        $script = file_get_contents(dirname(__DIR__, 2) . '/Assets/js/webos.js');
+
+        $this->assertIsString($script);
+        // 再次打开系统菜单时必须清空上次搜索关键词，避免只显示上一次的搜索结果
+        $anchor = strpos($script, "if (opening && name === 'start') {");
+        $this->assertNotFalse($anchor);
+
+        $snippet = substr($script, (int) $anchor, 300);
+        $this->assertStringContainsString("elements.startSearch.value = '';", $snippet);
+        $this->assertStringContainsString('renderStartMenu();', $snippet);
+    }
+
     public function test_default_window_entry_skips_blank_and_layer_menus(): void
     {
         $script = file_get_contents(dirname(__DIR__, 2) . '/Assets/js/webos.js');

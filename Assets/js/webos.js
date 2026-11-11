@@ -12596,6 +12596,8 @@
             loadNotifications();
         }
         if (opening && name === 'start') {
+            // 每次打开系统菜单都重置搜索框：避免沿用上次关键词，导致只看到上一次的搜索结果
+            elements.startSearch.value = '';
             renderStartMenu();
             window.setTimeout(function () { elements.startSearch.focus(); }, 20);
         }
