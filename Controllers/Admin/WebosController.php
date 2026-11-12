@@ -360,7 +360,8 @@ class WebosController extends Controller
     protected function desktopItemsRules(): array
     {
         return [
-            'desktop_items' => ['sometimes', 'array', 'max:48'],
+            // 数量上限复用服务层常量，避免与 sanitizeDesktopItems 的 200 上限再次漂移（2.1.111 前误留 48）
+            'desktop_items' => ['sometimes', 'array', 'max:' . WorkspaceService::DESKTOP_ITEM_LIMIT],
             'desktop_items.*.id' => ['required', 'string', 'max:80'],
             'desktop_items.*.menu_id' => ['nullable', 'integer', 'min:0'],
             'desktop_items.*.app_id' => ['nullable', 'string', 'max:100', 'regex:/^[A-Za-z0-9_.-]*$/'],

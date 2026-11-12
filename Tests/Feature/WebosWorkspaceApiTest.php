@@ -219,6 +219,47 @@ class WebosWorkspaceApiTest extends WebosTestCase
             ->assertJsonPath('data.desktop_items.0.title', '用户管理');
     }
 
+    /**
+     * 桌面项数量上限与前端、服务层统一为 200（2.1.111）：
+     * 2.1.63 已把服务层与前端上限由 48 提至 200，但接口校验规则漏改，
+     * 导致桌面项超过 48 个时保存工作区报 40201「请求参数不合法」。
+     */
+    public function test_workspace_api_accepts_desktop_items_beyond_the_legacy_48_limit(): void
+    {
+        $this->actingAdmin();
+
+        $this->putJson('/admin/cmspro/webos/api/workspace', [
+            'desktop_items' => $this->makeDesktopItems(60),
+        ])->assertOk()
+            ->assertJsonPath('code', 0)
+            ->assertJsonCount(60, 'data.desktop_items');
+
+        // 超过 200 仍然按参数校验拒绝，避免写入无上限
+        $this->putJson('/admin/cmspro/webos/api/workspace', [
+            'desktop_items' => $this->makeDesktopItems(201),
+        ])->assertUnprocessable()
+            ->assertJsonPath('code', 40201);
+    }
+
+    /** 构造指定数量的合法桌面项，用于验证数量上限口径 */
+    private function makeDesktopItems(int $count): array
+    {
+        $items = [];
+
+        for ($i = 1; $i <= $count; $i++) {
+            $items[] = [
+                'id' => 'menu-' . $i,
+                'title' => '入口' . $i,
+                'path' => '/admin/content',
+                'icon' => 'fa fa-cube',
+                'x' => 0,
+                'y' => 0,
+            ];
+        }
+
+        return $items;
+    }
+
     public function test_workspace_api_rejects_an_unknown_taskbar_position(): void
     {
         $this->actingAdmin();

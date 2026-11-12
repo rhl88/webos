@@ -465,8 +465,8 @@ class WorkspaceService
         return false;
     }
 
-    /** 桌面项保存上限（含文件夹子项）：与前端添加入口的容量预检查一致 */
-    protected const DESKTOP_ITEM_LIMIT = 200;
+    /** 桌面项保存上限（含文件夹子项）：与前端添加入口的容量预检查、控制器校验规则共用同一口径 */
+    public const DESKTOP_ITEM_LIMIT = 200;
 
     /**
      * @param array{desktop_items?:array<int,array<string,mixed>>,taskbar_items?:array<int,array<string,mixed>>,preferences?:array<string,mixed>} $payload
