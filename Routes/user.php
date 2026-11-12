@@ -28,6 +28,9 @@ Route::prefix('api')->name('api.')->group(function () {
     Route::get('/csrf-token', [WebosController::class, 'csrfToken'])->name('csrf-token');
     // 内置浏览器页面元信息（title/favicon 代抓，跨域 iframe 读不到；不依赖身份，按端共用实现）
     Route::get('/page-meta', [WebosController::class, 'pageMeta'])->name('page-meta');
+    // 桌面小工具注册表（2.1.112）：与 admin 端同接口实现，按 terminal=user 过滤，
+    // 仅返回 manifest.widgets 中显式声明 user 终端的小工具
+    Route::get('/widgets', [WebosController::class, 'widgets'])->name('widgets');
     // 会话心跳/恢复层轮询登录态（轻量接口，仅判断登录是否有效）
     Route::get('/identity', [WebosController::class, 'identity'])->name('identity');
 });

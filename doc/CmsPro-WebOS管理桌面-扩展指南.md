@@ -1,7 +1,7 @@
 # CmsPro WebOS 管理桌面 · 扩展指南
 
-> 文档版本：2.1.109 | 更新日期：2026-10-29
-> 应用版本：2.1.109 | 应用 ID：`cmspro.webos`
+> 文档版本：2.1.112 | 更新日期：2026-11-12
+> 应用版本：2.1.112 | 应用 ID：`cmspro.webos`
 
 ## 一、概述
 
@@ -80,14 +80,15 @@ WebOS 没有面向第三方应用的桌面右键菜单、任务栏或开始菜�
 | `id` | 是 | 小工具标识，`[a-z0-9][a-z0-9-]{0,31}`；与 `app_id` 组成 `widget_key`（`{app_id}:{id}`），**发布后不可变更**（用户桌面项按它关联） |
 | `title` | 是 | 卡片标题，≤40 字符 |
 | `icon` | 否 | 字体图标类名，缺省 `fa fa-cube` |
-| `entry` | 是 | 数据接口地址，必须以 `/api/` 开头（同源站内接口），≤500 字符 |
+| `entry` | 是 | 数据接口地址，必须以 `/api/` 或 `/user/` 开头（同源站内接口；`/user/` 前缀面向用户端应用 API，2.1.112 起放行），≤500 字符 |
 | `refresh` | 否 | 轮询间隔秒数，缺省 60，有效区间 15–3600（越界按缺省处理） |
 | `sizes` | 否 | 允许的尺寸档位数组，取值 `1x1` / `2x1` / `2x2`；缺省 `["1x1"]`，非数组或全部非法时按缺省处理，重复项去重（2.1.108 新增） |
 | `default_size` | 否 | 默认档位，必须命中 `sizes`，否则取 `sizes` 首项（2.1.108 新增） |
 | `actions` | 否 | 卡片内操作按钮，最多 2 项，见下方「卡片操作契约」（2.1.108 新增） |
 | `picker` | 否 | 多实例添加前的候选列表，声明后每次添加先弹列表由用户选定一条，见下方「多实例与实例参数」（2.1.109 新增） |
+| `terminal` | 否 | 可见终端，字符串或数组，取值 `admin` / `user`；缺省视为仅 admin（存量应用行为不变），非法值剔除、全部非法回落仅 admin。用户端桌面仅聚合显式声明了 `user` 的声明项，后台桌面聚合缺省与声明 `admin` 的声明项（2.1.112 新增） |
 
-聚合规则：仅聚合 `status` 启用的应用；单个应用最多 5 条；`id`/`title`/`entry` 不合法的声明直接跳过；注册表项额外输出 `widget_key`、`app_id`、`desktop_id`（`widget-{app_id 点转下划线}-{id}`，桌面项 id 仅允许 `[A-Za-z0-9_-]`），未声明的尺寸与操作分别回落 `sizes=["1x1"]`、`default_size="1x1"`、`actions=[]`、`picker=null`。
+聚合规则：仅聚合 `status` 启用的应用；单个应用最多 5 条；`id`/`title`/`entry` 不合法的声明直接跳过；注册表按请求终端过滤（`terminal` 声明，2.1.112 起）——后台端 `GET /api/admin/cmspro/webos/api/widgets` 聚合缺省与声明 `admin` 的声明项，用户端 `GET /user/cmspro/webos/api/widgets` 仅聚合显式声明 `user` 的声明项；注册表项额外输出 `widget_key`、`app_id`、`desktop_id`（`widget-{app_id 点转下划线}-{id}`，桌面项 id 仅允许 `[A-Za-z0-9_-]`），未声明的尺寸与操作分别回落 `sizes=["1x1"]`、`default_size="1x1"`、`actions=[]`、`picker=null`。
 
 数据接口契约（`entry` 必须返回统一响应结构，`data` 字段按「有则渲染」消费）：
 
@@ -111,7 +112,7 @@ WebOS 没有面向第三方应用的桌面右键菜单、任务栏或开始菜�
 - `text`：可选，纯文本正文（前端截 2000 字符），**非空时优先于** `value` / `unit` / `items` 渲染，保留换行，行数按尺寸档位截断（1x1 → 3 行、2x1 → 5 行、2x2 → 9 行）（2.1.109 新增）。
 - `color`：可选，卡片配色 tone，仅接受 `default` / `red` / `orange` / `green` / `blue` / `purple`，其余值（含缺省）回落 `default`（2.1.109 新增）。
 - `value` + `unit`：主值，缺省时前端显示 `—`。
-- `items`：次要明细，最多渲染 3 条。
+- `items`：次要明细，按占格行数渲染（高 1 格卡片 3 行、高 2 格卡片 6 行，2.1.112 起）；每项 `{ "label": "…", "value": "…" }`，可再带 `action` 对象把该行声明为可点击行，见下方「行级操作契约」（2.1.112 新增）。
 - `updated_at`：必须为 `Y-m-d H:i:s` 格式。
 - 接口鉴权按应用自身路由中间件执行（WebOS 以当前会话调用，`auth:admin` 保护的接口可直接复用）；轮询失败不弹提示，卡片显示「读取失败」，下一次轮询自动重试。
 
@@ -148,6 +149,23 @@ WebOS 没有面向第三方应用的桌面右键菜单、任务栏或开始菜�
 - 请求自动携带当前会话 CSRF Token；鉴权按应用自身路由中间件执行，建议要求写入权限（如 `permission:create`）。
 - 响应按统一响应结构判断：`code === 0` 时前端提示 `message`（缺省「操作已完成」）并立即刷新卡片；非 0 或非 2xx 时提示 `message`（缺省「操作失败」）。
 - 操作成功后不改变轮询节奏，卡片随后仍按 `refresh` 秒正常轮询。
+
+#### 行级操作契约（2.1.112 新增）
+
+数据接口 `items` 每项可带 `action` 对象，声明后该明细行渲染为**可点击行**（高亮底色、指针手势、悬停与键盘焦点反馈，`role`/`tabindex` 无障碍支持），点击后按声明执行操作；未声明 `action` 的行保持纯展示，行为与之前版本完全一致。
+
+`action` 字段：
+
+| 字段 | 必填 | 说明 |
+|---|---|---|
+| `entry` | 是 | 提交地址，必须以 `/api/` 或 `/user/` 开头（同源站内接口），≤500 字符；不合法则该行退化为纯展示 |
+| `params` | 否 | 提交参数对象（如 `{"user_id": 1}`）；非对象按空对象处理 |
+| `confirm` | 否 | 确认文案；非空时点击先弹确认框，取消则不提交；不声明或为空则直接提交 |
+| `reload` | 否 | 是否整页刷新：`true` 时操作成功后 `window.location.reload()` 拉取新会话（用于切换账号等改写登录态的场景）；缺省仅提示结果并立即局部刷新卡片 |
+
+提交约定：POST JSON 携带 `params`（自动带当前会话 CSRF Token），鉴权按应用自身路由中间件执行；响应 `code === 0` 视为成功——`reload=true` 整页刷新，否则提示 `message` 并局部刷新卡片；非 0 或非 2xx 提示 `message`。行节点不参与拖动与双击误触防护。
+
+典型样例：多账号管理 1.0.5 的「账号切换」小工具（`entry` 返回当前账号 + 可切换目标行，目标行带 `action` 免密切换、`reload=true` 切换后整页刷新），声明与接口实现见 `CmsproAltaccount/doc/CmsPro-多账号管理-扩展指南.md`。
 
 #### 多实例与实例参数（2.1.109 新增）
 
@@ -391,6 +409,7 @@ $wallpapers = app(WallpaperService::class)->listFor($adminUserId);
 | GET | `/admin/cmspro/webos/api/calendar` | 查询参数 `month`（`YYYY-MM` 格式，正则 `^\d{4}-(0[1-9]|1[0-2])$`） | 返回当月日历数据（含农历与二十四节气换算） |
 | GET | `/admin/cmspro/webos/api/all-todos` | — | 全量待办（含已读）：聚合系统待办 hook（含权限过滤/去重/归零过滤），附加 `seen` 与 `is_read`（`seen_count ≥ count` 视为已读）；数据源见第七章 |
 | GET | `/admin/cmspro/webos/api/widgets` | — | 桌面小工具注册表（2.1.106 新增，2.1.108 扩展尺寸与操作）：聚合全部启用应用 `manifest.widgets`，返回 `data` 为数组，每项含 `widget_key`（`{app_id}:{id}`）、`app_id`、`id`、`title`、`icon`、`entry`、`refresh`（秒）、`desktop_id`（桌面项 id）、`sizes`（尺寸档位数组，缺省 `["1x1"]`）、`default_size`（默认档位）、`actions`（操作声明数组，最多 2 项）；右键「小工具」面板与前端轮询均以此为唯一数据源 |
+| GET | `/user/cmspro/webos/api/widgets` | — | 用户端桌面小工具注册表（2.1.112 新增）：与 admin 端同接口实现，`auth:web` + `front_user_status` 保护（未登录 401），按 `terminal=user` 过滤，仅返回 `manifest.widgets` 中显式声明 `user` 终端的小工具 |
 | GET | `/admin/cmspro/webos/api/user-desktop-preset` | — | 读取全局用户桌面预设（`data.desktop_items`）及用户端可选菜单/应用目录（`data.catalog.menus`、`data.catalog.applications`）；仅后台端可用（用户端路由不存在）。2.1.88 新增；2.1.89 起该预设按差异化增量同步下发到前台用户桌面 |
 | PUT | `/admin/cmspro/webos/api/user-desktop-preset` | JSON：`desktop_items`（≤48，校验同工作区 `desktopItemsRules()`） | 保存全局用户桌面预设，成功返回 `message='用户桌面预设已保存'`；仅后台端可用。2.1.88 新增；2.1.94 起预设网格支持拖动排序，请求体 `desktop_items` 的**数组顺序即预设排列顺序**（前端把拖动后的顶层项顺序回填数组，用户端同步时按该顺序列优先落位），接口与校验无变更 |
 | GET | `/admin/cmspro/webos/api/admin-desktop-preset` | 查询参数 `role_id`（可选，缺省取第一个启用角色） | 读取后台角色桌面预设及该角色可选目录（2.1.98 新增）：`data.role_id`（本次读取的角色）、`data.roles`（启用角色列表 `id`/`name`，按 `sort` 升序）、`data.desktop_items`（该角色预设图标）、`data.catalog.menus`（该角色被分配的后台菜单树，含祖先链补全；未分配/停用/隐藏菜单不出现）、`data.catalog.applications`（该角色菜单涉及的应用清单，含 `icon_url`）；仅后台端可用（用户端路由不存在） |
@@ -669,6 +688,7 @@ app(HookManager::class)->registerFilter(
 
 | 版本 | 日期 | 更新人 | 说明 |
 |---|---|---|---|
+| 2.1.112 | 2026-11-12 | CmsPro | **用户端桌面小工具 + 卡片行级操作（用户需求「在 user 的 webos 增加桌面小工具，用于切换账号功能」）**：① 注册表终端过滤——`Services/WidgetRegistryService.php` 新增 `TERMINAL_WHITELIST=['admin','user']` 常量与 `terminalsOf()` 解析（manifest `widgets[]` 新增可选 `terminal` 字段，字符串或数组皆可、非法值剔除、全空回落仅 admin），`list(?string $terminal)` 按声明的 `terminals` 过滤后 `unset` 内部键，缺省 `terminal` 视为仅 admin（存量应用行为不变）。② entry 校验放宽——`sanitizeWidget()` 的 entry 正则由 `#^/api/[^\s]*$#` 放宽为 `#^/(api|user)/[^\s]*$#`，放行用户端应用 API 的 `/user/` 前缀（外链与 `/admin/` 页面路径仍拒）。③ 用户端注册表路由——`Routes/user.php` 新增 `GET /user/cmspro/webos/api/widgets`（复用父类 `widgets()`，经 `User\WebosController::terminalOf()` 覆写按 `terminal=user` 过滤，`auth:web` + `front_user_status` 保护）。④ 卡片行级操作（items[].action 契约）——数据接口 `items[]` 每项可带 `action` 对象：`entry`（必填，`/api/` 或 `/user/` 前缀，非法该行退化为纯展示）、`params`（提交参数对象）、`confirm`（确认文案，非空先弹确认）、`reload`（布尔，true 时操作成功后整页刷新拉取新会话）；前端 `webos.js` 新增 `widgetLineActionOf()` 契约解析、`runWidgetLineAction()` 行点击执行（`layer.confirm` 确认 → POST JSON → 成功按 reload 分流整页刷新或 `refreshWidgetOnce()` 局部刷新）、行渲染输出 `data-widget-line-action`/`data-action-*` data 属性与 `is-clickable` 类（`role`/`tabindex`/`title` 无障碍）；`desktopWidgetBody()` 明细行数按占格高扩展（1x1 → 3 行，h≥2 → 6 行）；事件层三处接线——`pointerdown` 行节点不启动拖动、`click` 委托命中行节点 `stopPropagation` 后执行操作、`dblclick` 防误触选择器并入 `[data-widget-line-action]`。⑤ 样式——`webos.css` 新增 `.desktop-widget-line.is-clickable` 系列（内边距底色、指针手势、hover/focus-visible 反馈、`b` 值高亮）。⑥ 测试——`WidgetRegistryTest` 新增 5 用例（缺省 terminal 回落 admin、terminal 声明解析、`/user/` entry 放行、用户端 widgets API 401/过滤/admin 端回归、行级操作前端接线断言），260 测试 2539 断言通过。多账号管理 1.0.5 为首个接入样例（「账号切换」小工具）。 |
 | 2.1.111 | 2026-11-11 | CmsPro | **工作区保存误报 40201 修复（问题修复）**：① 现象——桌面项超过 48 个时保存工作区报 `40201 请求参数不合法`，`data.desktop_items` 为「The desktop items field must not have more than 48 items.」，导致 48 个以上图标无法持久化。② 根因——2.1.63 把桌面项上限由 48 提至 200 时，同步改了前端添加入口容量预检查与 `WorkspaceService::DESKTOP_ITEM_LIMIT`，但 `WebosController::desktopItemsRules()` 的 `desktop_items` 校验规则仍误留 `max:48`，请求在进入服务层前即被参数校验拒绝。③ 修复——校验规则改为 `'max:' . WorkspaceService::DESKTOP_ITEM_LIMIT`，`DESKTOP_ITEM_LIMIT` 由 `protected const` 提为 `public const`；前端预检查、接口校验、服务层超限文案三处口径统一取同一常量，杜绝再次漂移。该规则同时服务工作区保存、用户桌面预设保存与管理桌面预设保存。④ 测试——`WebosWorkspaceApiTest` 新增回归用例（60 项保存成功且响应回显 60 项、201 项仍按 40201 拒绝，锁死「上限 200 而非无限制」语义）；`WebosWorkspaceApiTest` + `WorkspaceServiceTest` 132 测试 1785 断言通过。 |
 | 2.1.110 | 2026-11-11 | CmsPro | **开始菜单搜索框每次打开重置（问题修复）**：① 现象——在开始菜单搜索应用后关闭菜单，再次点击任务栏 CMSPRO 标志打开，搜索框仍保留上次关键词，列表停留在上次的搜索结果。② 根因——`Assets/js/webos.js` 的 `togglePanel()` 打开 `start` 面板时只调用 `renderStartMenu()` 按输入框当前值渲染，从未重置 `elements.startSearch.value`，面板关闭时也不清空。③ 修复——`start` 打开分支在 `renderStartMenu()` 前清空搜索框，每次重新打开都回到当前分组的完整列表；面板保持展开期间切换分组、输入搜索词的既有行为不变。`Assets/js/webos.js` 与 `public/apps/cmspro.webos/js/webos.js` 为同一硬链接文件，资源无需二次发布，`assetVersion()` 依据文件 mtime 自动刷新浏览器缓存。④ 测试——`WebosWorkspaceApiTest` 新增 `test_start_menu_search_is_reset_each_time_panel_opens` 源码断言用例。 |
 | 2.1.109 | 2026-10-29 | CmsPro | **桌面小工具三期：多实例便签 + 文本/配色渲染 + 卡片关闭（用户需求：macOS 式桌面便签；同时作为 WebOS 扩展机制验收样例）**：① 需求——把单条便签贴到桌面（可多条）、可关闭（仅移除卡片不删数据）、可改标记颜色，并验证扩展机制能否支撑第三方应用自定义。三项裁定（经用户确认）：实现形态 = 通用实例参数（小工具带参数多实例 + 数据契约扩展，其他应用可复用）；卡片操作 = 改色 + 编辑内容（关闭按钮由 WebOS 提供，不占 `actions` 名额）；验收口径 = 实现后输出验收结论。② `Services/WidgetRegistryService.php`——新增 `picker` 声明（`entry` 必须 `/api/` 前缀且 ≤500、`param` 沿用 `INPUT_NAME_PATTERN`、`label` ≤20 缺省「选择数据」，不合法整段丢弃，注册表 `picker=null`）；新增常量 `MAX_PICKER_ITEMS=50`、`MIN_ACTION_OPTIONS=2`、`MAX_ACTION_OPTIONS=8`、`MAX_OPTION_VALUE_LENGTH=32`；`actionInputOf()` 支持 `type=select` + `options`（`value` 允许空串、`label` ≤20 且去重，去重后不足 2 项则整条操作丢弃）。③ `Services/WorkspaceService.php`——新增 `MAX_WIDGET_PARAMS=3`、`WIDGET_PARAM_KEY_PATTERN`、`MAX_WIDGET_PARAM_VALUE_LENGTH=64`；`sanitizeDesktopItem()` 对 `kind=widget` 写入 `params`（`widgetParamsOf()` 收敛键名/长度并剔除空值），`sanitizeTaskbarItems()` 的 `Arr::except` 扩展为 `['x','y','w','h','params']`；`WebosController::desktopItemsRules()` 新增 `desktop_items.*.params => nullable|array`。④ 前端 `webos.js`——新增 `WIDGET_TONE_WHITELIST`；新增 `widgetParamsOf()`、`widgetEntryUrl()`（实例参数拼 query 并保留 `entry` 既有 query）、`widgetInstanceAdded()`（按 `params[picker.param]` 防重复添加）、`widgetInstanceId()`（`desktop_id` + `-` + 实例值 slug，截 80，冲突追加 `-2`）、`openWidgetInstancePicker()`（候选弹层，最多 50 项）；`widgetTitleOf()`（`data.title` ≤40 覆盖清单标题）、`widgetToneOf()`（白名单校验，否则 `default`）、`desktopWidgetBody()` 增 `text` 分支（`escapeHtml` + `pre-wrap`，非空时优先于 value/items）；`desktopWidgetMarkup()` 输出 `is-widget-tone-{tone}` 与右上角 `.desktop-widget-close[data-widget-close]`；`submitWidgetAction()` 合并实例参数进请求体；新增 select 面板渲染；事件层 `pointerdown` 拦截 resize/close/action 不启动拖动、`click` 委托处理关闭（`removeDesktopEntry`）与 action、`dblclick` 排除三类元素。⑤ 样式 `webos.css`——`.is-widget` 改用 `--widget-surface*` 三变量 + 5 条 tone 仅覆盖变量；`.desktop-widget-close`（14px 圆形、默认 `opacity:0`、hover 变红、`pointer-events:auto`）；`.desktop-widget-text`（1x1 三行 / 2x1 五行 / 2x2 九行）；`.webos-widget-select*` 面板。⑥ 记事本 1.2.0 试点——`manifest.json` 的 `widgets` 追加 `sticky-note`（`picker` → `GET /widget/notes`，`param=note_id`；`actions` = `mark-color` 六色下拉 + `edit-content` 文本编辑）；`Routes/admin_api.php` 新增 4 条路由（`notes`/`note` 用 `manage`，`note-color`/`note-content` 用 `create`）；`DashboardController` 新增 `WIDGET_PICKER_LIMIT=50`、`WIDGET_NOTE_TONES` 六色映射与 `widgetNotes()`/`widgetNote()`/`widgetNoteColor()`/`widgetNoteContent()`，写操作复用 `NoteService::updateNote()`，错误按业务码映射 HTTP 400/403/404。⑦ 测试——WebOS 253 passed / 2498 assertions（`WidgetRegistryTest` 18、`WorkspaceServiceTest` 22 及全量回归），Notepad 82 passed / 315 assertions（新增 `WidgetNoteTest` 19 用例）。⑧ 验收结论见第十一章「桌面小工具扩展机制验收结论」。 |

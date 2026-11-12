@@ -132,11 +132,15 @@ class WebosController extends Controller
 
     /**
      * 桌面小工具注册表（2.1.106）：聚合已启用应用 manifest.widgets 声明，
-     * 供桌面右键「小工具」面板选择添加。小工具内容接口（entry）由各应用自行提供（/api/ 开头）。
+     * 供桌面右键「小工具」面板选择添加。小工具内容接口（entry）由各应用自行提供。
+     * 2.1.112 起按请求终端过滤（terminalOf：admin 端仅缺省与声明 admin 的声明项，
+     * 用户端仅声明 user 的声明项）。
      */
-    public function widgets(): JsonResponse
+    public function widgets(Request $request): JsonResponse
     {
-        return response()->json(ApiResponse::success(app(WidgetRegistryService::class)->list()));
+        return response()->json(ApiResponse::success(
+            app(WidgetRegistryService::class)->list($this->terminalOf($request))
+        ));
     }
 
     /**

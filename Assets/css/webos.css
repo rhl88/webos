@@ -6144,6 +6144,30 @@ textarea:focus-visible,
     font-weight: 600;
 }
 
+/* 明细行操作（2.1.112）：entry 响应 items[].action 声明的行可点击（站内 POST + 可选确认 + 声明 reload 时成功后整页刷新） */
+.desktop-widget-line.is-clickable {
+    margin: 0 -3px;
+    padding: 1px 3px;
+    border-radius: 4px;
+    background: rgba(255, 255, 255, 0.08);
+    cursor: pointer;
+    transition: background 0.15s ease;
+}
+
+.desktop-widget-line.is-clickable:hover,
+.desktop-widget-line.is-clickable:focus-visible {
+    background: rgba(255, 255, 255, 0.22);
+}
+
+.desktop-widget-line.is-clickable b {
+    color: #bfe0ff;
+}
+
+.desktop-widget-line.is-clickable:hover b,
+.desktop-widget-line.is-clickable:focus-visible b {
+    color: #fff;
+}
+
 .desktop-widget-state {
     display: flex;
     align-items: center;

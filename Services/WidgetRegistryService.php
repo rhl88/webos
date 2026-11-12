@@ -30,6 +30,13 @@ use Illuminate\Support\Str;
  * - picker 声明（可选）让小工具支持多实例：{entry,param,label}，entry 返回候选数据源，
  *   用户选中某项后以 param 作为实例参数写入桌面项 params，desktop_id 追加实例后缀。
  * - actions[].input.type 新增 select（下拉选项，options 2~8 项），用于「标记颜色」这类枚举操作。
+ *
+ * 2.1.112 起：
+ * - terminal 声明（可选，字符串或数组，取值 admin/user）：小工具在哪个桌面端可见。
+ *   缺省视为仅 admin（存量应用全为 admin 小工具，行为不变）；用户端桌面（user 终端）
+ *   仅聚合显式声明了 user 的声明项，entry 接口不受本注册表鉴权（仍按各端登录态可用性区分）。
+ * - entry 校验放宽：/api/ 之外放行 /user/ 前缀（用户端应用的 API 挂载位置，如多账号
+ *   管理的用户端小工具），外链与后台页面路径（/admin/...）仍然拒绝。
  */
 class WidgetRegistryService
 {
@@ -49,6 +56,9 @@ class WidgetRegistryService
 
     /** 小工具允许的尺寸档位（宽x高，单位：桌面格子） */
     public const SIZE_WHITELIST = ['1x1', '2x1', '2x2'];
+
+    /** 小工具声明允许的可见终端 */
+    public const TERMINAL_WHITELIST = ['admin', 'user'];
 
     /** 单个小工具最多声明的操作按钮数量 */
     public const MAX_ACTIONS = 2;
@@ -76,14 +86,19 @@ class WidgetRegistryService
     /**
      * 全部可用小工具清单
      *
+     * @param  string|null  $terminal  传入 admin/user 时按声明的 terminal 过滤（缺省不过滤，返回全量）
      * @return array<int,array{widget_key:string,app_id:string,id:string,title:string,icon:string,entry:string,refresh:int,desktop_id:string}>
      */
-    public function list(): array
+    public function list(?string $terminal = null): array
     {
         $widgets = [];
 
         foreach (AppModel::query()->enabled()->orderBy('id')->get(['app_id', 'path', 'manifest']) as $app) {
             foreach ($this->widgetsOf($app) as $widget) {
+                if ($terminal !== null && ! in_array($terminal, $widget['terminals'], true)) {
+                    continue;
+                }
+                unset($widget['terminals']);
                 $widgets[] = $widget;
             }
         }
@@ -184,9 +199,10 @@ class WidgetRegistryService
             return null;
         }
 
-        // 小工具数据接口：必须站内 /api/ 路径，外链与后台页面路径一律拒绝
+        // 小工具数据接口：允许站内 /api/（系统与后台 API）或 /user/（用户端应用 API）路径，
+        // 外链与后台页面路径（/admin/...）一律拒绝
         $entry = trim((string) ($declaration['entry'] ?? ''));
-        if (mb_strlen($entry) > 500 || ! preg_match('#^/api/[^\s]*$#', $entry)) {
+        if (mb_strlen($entry) > 500 || ! preg_match('#^/(api|user)/[^\s]*$#', $entry)) {
             return null;
         }
 
@@ -204,15 +220,39 @@ class WidgetRegistryService
             'app_id' => $appId,
             'id' => $id,
             'title' => $title,
-            'icon' => Str::limit($icon ?: 'fa fa-cube', 100, ''),
+            'icon' => $icon !== '' ? Str::limit($icon, 100, '') : 'fa fa-cube',
             'entry' => $entry,
             'refresh' => $this->refreshOf($declaration['refresh'] ?? null),
             'sizes' => $sizes,
             'default_size' => $this->defaultSizeOf($declaration['default_size'] ?? null, $sizes),
             'actions' => $this->actionsOf($declaration['actions'] ?? null),
             'picker' => $this->pickerOf($declaration['picker'] ?? null),
+            'terminals' => $this->terminalsOf($declaration['terminal'] ?? null),
             'desktop_id' => $desktopId,
         ];
+    }
+
+    /**
+     * 声明可见终端（2.1.112）：terminal 字符串或数组皆可，取值白名单 admin/user；
+     * 缺省或解析结果为空一律回落仅 admin（存量应用行为不变），用户端桌面仅
+     * 聚合显式声明了 user 的声明项。
+     *
+     * @return array<int,string>
+     */
+    protected function terminalsOf(mixed $value): array
+    {
+        $values = is_array($value) ? $value : [$value];
+        $terminals = [];
+
+        foreach ($values as $terminal) {
+            if (is_string($terminal)
+                && in_array($terminal, self::TERMINAL_WHITELIST, true)
+                && ! in_array($terminal, $terminals, true)) {
+                $terminals[] = $terminal;
+            }
+        }
+
+        return $terminals === [] ? ['admin'] : $terminals;
     }
 
     /**

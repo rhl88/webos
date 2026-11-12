@@ -384,4 +384,110 @@ class WidgetRegistryTest extends WebosTestCase
             ->assertJsonPath('data.0.widget_key', 'cmspro.localservice:service-status')
             ->assertJsonPath('data.0.desktop_id', 'widget-cmspro_localservice-service-status');
     }
+
+    /**
+     * 缺省 terminal（2.1.112）：存量应用视为仅 admin 桌面可见，行为不变；
+     * user 桌面不聚合未显式声明 user 的声明项。
+     */
+    public function test_registry_defaults_terminal_to_admin_when_undeclared(): void
+    {
+        $this->makeApp('cmspro.localservice', [$this->widget('service-status')]);
+
+        $this->assertSame(['service-status'], array_column($this->registry()->list('admin'), 'id'));
+        $this->assertSame([], $this->registry()->list('user'), '缺省 terminal 的存量小工具不得出现在用户桌面');
+
+        // 无参调用不过滤：返回全量，且不暴露内部 terminals 键
+        $items = $this->registry()->list();
+        $this->assertSame(['service-status'], array_column($items, 'id'));
+        $this->assertArrayNotHasKey('terminals', $items[0]);
+    }
+
+    /** terminal 声明解析：字符串与数组等价、非法值剔除、全非法回落仅 admin */
+    public function test_registry_declares_user_terminal_widgets(): void
+    {
+        $this->makeApp('cmspro.terminaldemo', [
+            $this->widget('switch', ['entry' => '/user/cmspro/terminaldemo/api/widget', 'terminal' => 'user']),
+            $this->widget('both', ['terminal' => ['user', 'admin']]),
+            $this->widget('mixed', ['terminal' => ['root', 'user']]),
+            $this->widget('fallback', ['terminal' => ['root', 'super']]),
+        ]);
+
+        $this->assertSame(['switch', 'both', 'mixed'], array_column($this->registry()->list('user'), 'id'));
+        $this->assertSame(['both', 'fallback'], array_column($this->registry()->list('admin'), 'id'));
+        $this->assertCount(4, $this->registry()->list());
+    }
+
+    /** entry 校验放宽（2.1.112）：/user/ 前缀（用户端应用 API）放行，无前导斜杠仍拒绝 */
+    public function test_registry_allows_user_prefix_entry(): void
+    {
+        $this->makeApp('cmspro.terminaldemo', [
+            $this->widget('switch', ['entry' => '/user/cmspro/terminaldemo/api/widget']),
+            $this->widget('relative', ['entry' => 'user/cmspro/terminaldemo/api/widget']),
+            $this->widget('bare', ['entry' => '/user']),
+        ]);
+
+        $items = $this->registry()->list();
+
+        $this->assertSame(['switch'], array_column($items, 'id'));
+        $this->assertSame('/user/cmspro/terminaldemo/api/widget', $items[0]['entry']);
+    }
+
+    /** 用户端 widgets API（2.1.112）：auth:web 保护，按 terminal=user 过滤；admin 端回归互不串扰 */
+    public function test_user_widgets_api_returns_only_user_terminal_widgets(): void
+    {
+        $this->makeApp('cmspro.terminaldemo', [
+            $this->widget('switch', [
+                'entry' => '/user/cmspro/terminaldemo/api/widget',
+                'terminal' => 'user',
+            ]),
+            $this->widget('legacy-status'),
+        ]);
+
+        $this->getJson('/user/cmspro/webos/api/widgets')->assertUnauthorized();
+
+        $this->actingUser();
+
+        $data = $this->getJson('/user/cmspro/webos/api/widgets')
+            ->assertOk()
+            ->assertJsonPath('code', 0)
+            ->json('data');
+
+        $this->assertCount(1, $data);
+        $this->assertSame('switch', $data[0]['id']);
+        $this->assertSame('widget-cmspro_terminaldemo-switch', $data[0]['desktop_id']);
+        $this->assertArrayNotHasKey('terminals', $data[0], '输出契约不携带内部 terminals 键');
+
+        // admin 端回归：缺省（仅 admin）小工具仍可见，user 专属小工具不出现
+        $this->actingAdmin();
+
+        $this->getJson('/admin/cmspro/webos/api/widgets')
+            ->assertOk()
+            ->assertJsonPath('code', 0)
+            ->assertJsonPath('data.0.id', 'legacy-status');
+    }
+
+    /** 卡片行级操作（items[].action，2.1.112）：契约解析、行渲染、点击执行与样式接线齐备 */
+    public function test_widget_line_action_binds_frontend_wiring(): void
+    {
+        // 脚本：action 契约解析、行渲染 data 属性、点击执行与三处事件委托
+        $script = file_get_contents(dirname(__DIR__, 2) . '/Assets/js/webos.js');
+        $this->assertIsString($script);
+        $this->assertStringContainsString('function widgetLineActionOf(line) {', $script);
+        $this->assertStringContainsString('function runWidgetLineAction(card, lineNode) {', $script);
+        $this->assertStringContainsString('function refreshWidgetOnce(id) {', $script);
+        $this->assertStringContainsString('data-widget-line-action', $script);
+        $this->assertStringContainsString('data-action-entry', $script);
+        $this->assertStringContainsString('data-action-reload', $script);
+        // 行点击执行路径：confirm 确认后提交，reload 时整页刷新拉取新会话
+        $this->assertStringContainsString("var lineAction = event.target.closest('[data-widget-line-action]');", $script);
+        $this->assertStringContainsString('runWidgetLineAction(lineCard, lineAction);', $script);
+        // dblclick 防误触：行级操作节点并入既有防护选择器
+        $this->assertStringContainsString('[data-widget-close],[data-widget-line-action]', $script);
+
+        // 样式：可点击行视觉反馈（背景/指针/hover/focus）
+        $css = file_get_contents(dirname(__DIR__, 2) . '/Assets/css/webos.css');
+        $this->assertIsString($css);
+        $this->assertStringContainsString('.desktop-widget-line.is-clickable {', $css);
+        $this->assertStringContainsString('.desktop-widget-line.is-clickable:hover,', $css);
+    }
 }

@@ -1214,7 +1214,28 @@
         return WIDGET_TONE_WHITELIST.indexOf(tone) >= 0 ? tone : 'default';
     }
 
-    /** 卡片主体：text 优先（保留换行，行数由尺寸档位 CSS 截断），否则主值 + 单位 + 明细（最多 3 行），
+    /** 明细行操作（2.1.112）：entry 响应 items[].action 声明让行可点击（站内 POST）；
+     *  entry 仅接受站内 /api/ 或 /user/ 开头路径，params 为普通对象（提交为 POST body），
+     *  confirm 为可选确认文案，reload 声明该操作会改写登录会话（如账号切换），成功后整页刷新 */
+    function widgetLineActionOf(line) {
+        var action = line && typeof line === 'object' ? line.action : null;
+        if (!action || typeof action !== 'object' || typeof action.entry !== 'string'
+            || !/^(\/api\/|\/user\/)/.test(action.entry)) {
+            return null;
+        }
+        var params = action.params;
+        if (!params || typeof params !== 'object' || Array.isArray(params)) {
+            params = {};
+        }
+        return {
+            entry: action.entry,
+            params: params,
+            confirm: typeof action.confirm === 'string' ? action.confirm : '',
+            reload: action.reload === true
+        };
+    }
+
+    /** 卡片主体：text 优先（保留换行，行数由尺寸档位 CSS 截断），否则主值 + 单位 + 明细（占格高 1 格取 3 行、2 格取 6 行），
      *  读取中/失败以占位文案呈现 */
     function desktopWidgetBody(item) {
         var record = state.widgetData.get(item.id);
@@ -1239,12 +1260,24 @@
             ? '—'
             : String(data.value);
         var unit = data.unit ? '<small>' + escapeHtml(data.unit) + '</small>' : '';
-        var lines = Array.isArray(data.items) ? data.items.slice(0, 3).map(function (line) {
+        var lineLimit = desktopItemSpan(item).h >= 2 ? 6 : 3;
+        var lines = Array.isArray(data.items) ? data.items.slice(0, lineLimit).map(function (line) {
             if (!line || typeof line !== 'object') {
                 return '';
             }
-            return '<span class="desktop-widget-line"><span>' + escapeHtml(line.label)
-                + '</span><b>' + escapeHtml(line.value) + '</b></span>';
+            var action = widgetLineActionOf(line);
+            var attrs = '';
+            if (action) {
+                attrs = ' data-widget-line-action="1"'
+                    + ' data-action-entry="' + escapeHtml(action.entry) + '"'
+                    + ' data-action-confirm="' + escapeHtml(action.confirm) + '"'
+                    + (action.reload ? ' data-action-reload="1"' : '')
+                    + ' data-action-params="' + escapeHtml(JSON.stringify(action.params)) + '"'
+                    + ' role="button" tabindex="0"'
+                    + ' title="' + escapeHtml(action.confirm !== '' ? action.confirm : '点击执行') + '"';
+            }
+            return '<span class="desktop-widget-line' + (action ? ' is-clickable' : '') + '"' + attrs + '><span>'
+                + escapeHtml(line.label) + '</span><b>' + escapeHtml(line.value) + '</b></span>';
         }).join('') : '';
         return '<span class="desktop-widget-value">' + escapeHtml(value) + unit + '</span>'
             + (lines ? '<span class="desktop-widget-lines">' + lines + '</span>' : '');
@@ -1486,6 +1519,50 @@
         promptWidgetActionInput(action, function (value) {
             submitWidgetAction(id, action, value);
         });
+    }
+
+    /** 明细行操作（2.1.112）：确认（可选）后 POST 到行声明的站内接口；
+     *  声明 reload 的操作（改写登录会话类，如账号切换）成功后整页刷新以拉取新身份，
+     *  其余操作刷新该卡片数据 */
+    function runWidgetLineAction(card, lineNode) {
+        var entry = lineNode.getAttribute('data-action-entry') || '';
+        if (!entry) {
+            return;
+        }
+        var params = {};
+        try {
+            params = JSON.parse(lineNode.getAttribute('data-action-params') || '{}');
+        } catch (error) {
+            params = {};
+        }
+        var confirmText = lineNode.getAttribute('data-action-confirm') || '';
+        var shouldReload = lineNode.hasAttribute('data-action-reload');
+        var submit = function () {
+            api(entry, { method: 'POST', body: params }).then(function () {
+                if (shouldReload) {
+                    window.location.reload();
+                    return;
+                }
+                refreshWidgetOnce(card.dataset.desktopId);
+            }).catch(function (error) {
+                toast(error && error.message ? error.message : '操作失败', 'error');
+            });
+        };
+        if (confirmText === '') {
+            submit();
+            return;
+        }
+        var layer = layuiLayer();
+        if (layer) {
+            layer.confirm(confirmText, { title: '确认操作' }, function (index) {
+                layer.close(index);
+                submit();
+            });
+            return;
+        }
+        if (window.confirm(confirmText)) {
+            submit();
+        }
     }
 
     /** 下拉选择输入：选项来自声明 input.options（2..8 项，后端已净化），以原生 select 承载并复用 layer 弹层 */
@@ -13076,6 +13153,10 @@
             if (event.target.closest('[data-widget-action]')) {
                 return;
             }
+            // 小工具卡片内明细行操作（2.1.112）：按下不启动拖动（点击交由下方 click 委托处理）
+            if (event.target.closest('[data-widget-line-action]')) {
+                return;
+            }
             var button = event.target.closest('[data-desktop-id]');
             if (button && event.button === 0) {
                 dragDesktopIcon(button, event);
@@ -13093,6 +13174,16 @@
                 }
                 return;
             }
+            // 小工具卡片内明细行操作（2.1.112）：entry 响应 items[].action 声明的站内操作
+            var lineAction = event.target.closest('[data-widget-line-action]');
+            if (lineAction) {
+                var lineCard = lineAction.closest('[data-desktop-id]');
+                if (lineCard) {
+                    event.stopPropagation();
+                    runWidgetLineAction(lineCard, lineAction);
+                }
+                return;
+            }
             var actionButton = event.target.closest('[data-widget-action]');
             if (!actionButton) {
                 return;
@@ -13107,8 +13198,8 @@
         // 桌面空白处框选多个图标（Windows 桌面风格）
         bindDesktopMarquee();
         elements.desktopIcons.addEventListener('dblclick', function (event) {
-            // 卡片内操作按钮/尺寸手柄/关闭按钮的连击不触发打开入口
-            if (event.target.closest('[data-widget-action],[data-widget-resize],[data-widget-close]')) {
+            // 卡片内操作按钮/明细行操作/尺寸手柄/关闭按钮的连击不触发打开入口
+            if (event.target.closest('[data-widget-action],[data-widget-resize],[data-widget-close],[data-widget-line-action]')) {
                 return;
             }
             var button = event.target.closest('[data-desktop-id]');
