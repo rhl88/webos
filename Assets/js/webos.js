@@ -42,8 +42,22 @@
         disabled: '已停用'
     };
 
-    // 小工具尺寸档位（列数x行数）：与后端 WidgetRegistryService::SIZE_WHITELIST 保持一致
-    var WIDGET_SIZE_WHITELIST = ['1x1', '2x1', '2x2'];
+    // 小工具尺寸档位（列数x行数）：与后端 WidgetRegistryService::SIZE_WHITELIST 保持一致；
+    // 2x3 / 4x2 为表单卡片档位（2.1.113），容纳卡片内联渲染的常见表单控件
+    var WIDGET_SIZE_WHITELIST = ['1x1', '2x1', '2x2', '2x3', '4x2'];
+
+    // 小工具卡片占格上限（宽x高）：与后端 WorkspaceService::MAX_WIDGET_SPAN_WIDTH/HEIGHT 一致
+    var WIDGET_SPAN_MAX_WIDTH = 4;
+    var WIDGET_SPAN_MAX_HEIGHT = 3;
+
+    // 卡片表单控件类型（2.1.113）：数据契约 form.fields[].type 仅接受以下取值，未知类型字段直接丢弃；
+    // button 为卡片内按钮（点击 POST 自身 action.entry），static 为只读说明文本，二者不产生提交值
+    var WIDGET_FIELD_TYPES = ['text', 'textarea', 'number', 'select', 'radio', 'checkbox',
+        'switch', 'date', 'datetime', 'button', 'static'];
+
+    // 表单字段数与单字段选项数上限：卡片空间有限，超出截断（内联与弹窗口径一致）
+    var WIDGET_FORM_MAX_FIELDS = 8;
+    var WIDGET_FORM_MAX_OPTIONS = 20;
 
     // 小工具卡片配色（2.1.109）：数据契约 color 仅接受以下枚举，其余（含缺省）按默认深蓝渲染
     var WIDGET_TONE_WHITELIST = ['red', 'orange', 'green', 'blue', 'purple'];
@@ -888,8 +902,21 @@
             // 小工具占格（1x1/2x1/2x2）：仅 widget 项提交，避免污染普通图标的保存载荷
             if (item.kind === 'widget') {
                 var span = desktopItemSpan(item);
-                payload.w = span.w;
-                payload.h = span.h;
+                // 网格字段上限与后端校验一致（像素尺寸可向上取整超过 4/3 格，落库仍钳回上限）
+                payload.w = Math.min(WIDGET_SPAN_MAX_WIDTH, span.w);
+                payload.h = Math.min(WIDGET_SPAN_MAX_HEIGHT, span.h);
+                // 像素尺寸/像素位置（2.1.115）：记录后按像素级自由尺寸渲染；
+                // px_left/px_top 仅在左/上缘不在格子线上时存在（西/北边拖拽产生）
+                if (widgetPixelValue(item.px_width) > 0 && widgetPixelValue(item.px_height) > 0) {
+                    payload.px_width = Math.round(widgetPixelValue(item.px_width));
+                    payload.px_height = Math.round(widgetPixelValue(item.px_height));
+                }
+                if (Number(item.px_left) >= 0 && item.px_left !== null && item.px_left !== undefined) {
+                    payload.px_left = Math.round(Number(item.px_left));
+                }
+                if (Number(item.px_top) >= 0 && item.px_top !== null && item.px_top !== undefined) {
+                    payload.px_top = Math.round(Number(item.px_top));
+                }
             }
             return payload;
         });
@@ -998,12 +1025,12 @@
         // 桌面「应用中心」角标口径与「应用更新」Tab 一致：过滤被忽略（本次版本）的更新
         var visibleUpdates = visibleUpdateApps();
         elements.desktopIcons.innerHTML = assignedDesktopItems().map(function (item) {
+            // 桌面小工具：按像素矩形（px_* 优先，未记录时按格子换算）定位与定尺
+            if (item.kind === 'widget') {
+                return desktopWidgetMarkup(item, desktopItemPixelRect(item, size));
+            }
             var left = 4 + Math.max(0, Number(item.x) || 0) * size.cellW;
             var top = 4 + Math.max(0, Number(item.y) || 0) * size.cellH;
-            // 桌面小工具：1x1 数据卡片（图标 + 名称 + 主值 + 状态），内容由数据接口轮询刷新
-            if (item.kind === 'widget') {
-                return desktopWidgetMarkup(item, left, top);
-            }
             // 桌面「应用中心」图标右上角显示可更新应用数量（无更新时不渲染）
             var updateBadge = item.id === 'webos-app-center' && visibleUpdates.length
                 ? '<span class="desktop-update-badge">' + visibleUpdates.length + '</span>'
@@ -1026,17 +1053,61 @@
      * （/api/ 接口）按 refresh 秒轮询获取，返回 {title,status,value,unit,items,updated_at}。
      * ==================================================================== */
 
-    /** 桌面项占格：普通图标恒为 1x1，小工具按 w/h 取 1..2（口径与后端 WorkspaceService::widgetSpanOf 一致） */
+    /** 桌面项占格：普通图标恒为 1x1；小工具优先按像素宽高向上取整换算占格（用于网格定位/碰撞），
+     *  未记录像素尺寸时按 w/h 取宽 1..4、高 1..3（口径与后端 WorkspaceService::widgetSpanOf 一致） */
     function desktopItemSpan(item) {
         if (!item || item.kind !== 'widget') {
             return { w: 1, h: 1 };
         }
-        return { w: clampWidgetSpan(item.w), h: clampWidgetSpan(item.h) };
+        var size = desktopIconSize();
+        var pxWidth = widgetPixelValue(item.px_width);
+        var pxHeight = widgetPixelValue(item.px_height);
+        return {
+            w: pxWidth > 0 ? Math.max(1, Math.ceil(pxWidth / size.cellW)) : clampWidgetSpan(item.w, WIDGET_SPAN_MAX_WIDTH),
+            h: pxHeight > 0 ? Math.max(1, Math.ceil(pxHeight / size.cellH)) : clampWidgetSpan(item.h, WIDGET_SPAN_MAX_HEIGHT)
+        };
     }
 
-    /** 占格数归一：仅允许 1 或 2，缺省与非法值回落 1 */
-    function clampWidgetSpan(value) {
-        return Math.floor(Number(value)) === 2 ? 2 : 1;
+    /** 占格数归一：仅允许 1..max，缺省与非法值回落 1 */
+    function clampWidgetSpan(value, max) {
+        var span = Math.floor(Number(value));
+        return span >= 1 && span <= max ? span : 1;
+    }
+
+    /** 小工具像素尺寸取值：非数值或非正数返回 0（视为未记录，回落到格子尺寸） */
+    function widgetPixelValue(value) {
+        var pixel = Number(value);
+        return isFinite(pixel) && pixel > 0 ? pixel : 0;
+    }
+
+    /** 桌面项像素矩形（相对桌面图标容器）：小工具优先取 px_left/px_top/px_width/px_height，
+     *  未记录时按格子换算；普通图标即整格矩形。用于像素级碰撞判定与卡片渲染 */
+    function desktopItemPixelRect(item, size) {
+        var span = desktopItemSpan(item);
+        var pxLeft = Number(item.px_left);
+        var pxTop = Number(item.px_top);
+        var hasLeft = item.px_left !== null && item.px_left !== undefined && isFinite(pxLeft) && pxLeft >= 0;
+        var hasTop = item.px_top !== null && item.px_top !== undefined && isFinite(pxTop) && pxTop >= 0;
+        var left = hasLeft ? pxLeft : 4 + Math.max(0, Number(item.x) || 0) * size.cellW;
+        var top = hasTop ? pxTop : 4 + Math.max(0, Number(item.y) || 0) * size.cellH;
+        var width = widgetPixelValue(item.px_width) || (span.w * size.cellW - 6);
+        var height = widgetPixelValue(item.px_height) || (span.h * size.cellH - 6);
+        return { left: left, top: top, width: width, height: height };
+    }
+
+    /** 两个像素矩形是否相交（严格相交，边缘相接不算冲突） */
+    function desktopRectsOverlap(a, b) {
+        return a.left < b.left + b.width && b.left < a.left + a.width
+            && a.top < b.top + b.height && b.top < a.top + a.height;
+    }
+
+    /** 网格坐标变更（拖拽落位/自动排列/越界归一化）：同时清除像素位置，
+     *  保证位置始终整格对齐；像素尺寸 px_width/px_height 保留 */
+    function moveDesktopItemToGrid(item, x, y) {
+        item.x = x;
+        item.y = y;
+        delete item.px_left;
+        delete item.px_top;
     }
 
     /** 小工具实例参数：仅小工具桌面项携带（后端 sanitizeDesktopItem 已净化），其余按空对象处理 */
@@ -1235,8 +1306,325 @@
         };
     }
 
+    /** 卡片表单声明（2.1.113）：manifest.widgets[].form（后端已净化 entry/mode/submit），未声明返回 null */
+    function widgetFormDeclaration(item) {
+        var declaration = widgetDeclaration(item ? item.widget_key : '');
+        return declaration && declaration.form && typeof declaration.form === 'object' ? declaration.form : null;
+    }
+
+    /** 卡片表单字段（2.1.113）：控件结构与当前值由数据接口 entry 的 form.fields 动态下发，逐字段净化后使用 */
+    function widgetFormFields(item) {
+        var record = state.widgetData.get(item.id);
+        var data = record && record.status === 'ready' && record.data ? record.data : null;
+        var fields = data && data.form && Array.isArray(data.form.fields) ? data.form.fields : [];
+        return fields.map(sanitizeWidgetField).filter(Boolean).slice(0, WIDGET_FORM_MAX_FIELDS);
+    }
+
+    /** 字段净化：类型未知一律丢弃；需要提交值的字段必须带合法字段名（与后端 input.name 规则一致），
+     *  button 字段的 action 非法同样丢弃（避免渲染出点击无效的按钮） */
+    function sanitizeWidgetField(field) {
+        if (!field || typeof field !== 'object') {
+            return null;
+        }
+        var type = String(field.type || '');
+        if (WIDGET_FIELD_TYPES.indexOf(type) < 0) {
+            return null;
+        }
+        var name = String(field.name || '');
+        var submitsValue = type !== 'button' && type !== 'static';
+        if (submitsValue && !/^[a-z][a-z0-9_]{0,31}$/.test(name)) {
+            return null;
+        }
+        var action = type === 'button' ? widgetLineActionOf(field) : null;
+        if (type === 'button' && !action) {
+            return null;
+        }
+        return {
+            type: type,
+            name: name,
+            label: String(field.label || '').slice(0, 30),
+            value: field.value,
+            placeholder: String(field.placeholder || '').slice(0, 60),
+            required: field.required === true,
+            options: sanitizeWidgetFieldOptions(field.options),
+            rows: Math.min(6, Math.max(2, Math.floor(Number(field.rows)) || 3)),
+            maxlength: Math.min(2000, Math.max(1, Math.floor(Number(field.maxlength))
+                || (type === 'textarea' ? 500 : 100))),
+            min: isFinite(Number(field.min)) && field.min !== '' && field.min !== null ? Number(field.min) : null,
+            max: isFinite(Number(field.max)) && field.max !== '' && field.max !== null ? Number(field.max) : null,
+            step: isFinite(Number(field.step)) && Number(field.step) > 0 ? Number(field.step) : null,
+            action: action
+        };
+    }
+
+    /** 选项净化：{value,label} 之外的形状丢弃，数量超上限截断（radio/checkbox/select 共用） */
+    function sanitizeWidgetFieldOptions(options) {
+        if (!Array.isArray(options)) {
+            return [];
+        }
+        return options.slice(0, WIDGET_FORM_MAX_OPTIONS).map(function (option) {
+            if (!option || typeof option !== 'object') {
+                return null;
+            }
+            var value = option.value === null || option.value === undefined ? '' : String(option.value);
+            var label = String(option.label || '').slice(0, 40);
+            return { value: value.slice(0, 64), label: label === '' ? value.slice(0, 40) : label };
+        }).filter(Boolean);
+    }
+
+    /** 字段当前值的字符串形态（text/number/select/radio/date 等单值控件） */
+    function widgetFieldText(field) {
+        var value = field.value;
+        if (value === null || value === undefined || typeof value === 'boolean') {
+            return value === true ? '1' : '';
+        }
+        return String(value).slice(0, 2000);
+    }
+
+    /** 字段当前值的数组形态（checkbox 多选） */
+    function widgetFieldList(field) {
+        if (!Array.isArray(field.value)) {
+            return [];
+        }
+        return field.value.map(function (value) {
+            return String(value);
+        });
+    }
+
+    /** 日期时间控件取值：数据契约统一 Y-m-d H:i:s（禁止 ISO 8601），
+     *  datetime-local 控件需要 T 分隔且不含秒，此处做双向换算 */
+    function widgetDateTimeInputValue(value) {
+        var matched = String(value || '').trim().match(/^(\d{4}-\d{2}-\d{2})[ T](\d{2}:\d{2})/);
+        return matched ? matched[1] + 'T' + matched[2] : '';
+    }
+
+    /** 单控件 HTML：值一律转义，radio/checkbox 分组名带桌面项 id 前缀避免多卡片同名互相干扰 */
+    function widgetFieldControlMarkup(field, groupId) {
+        var common = ' data-widget-field="' + escapeHtml(field.name) + '"'
+            + (field.required ? ' data-widget-required="1"' : '');
+        var text = widgetFieldText(field);
+        var list = widgetFieldList(field);
+
+        if (field.type === 'text' || field.type === 'number') {
+            var range = field.type === 'number'
+                ? (field.min === null ? '' : ' min="' + field.min + '"')
+                + (field.max === null ? '' : ' max="' + field.max + '"')
+                + (field.step === null ? '' : ' step="' + field.step + '"')
+                : '';
+            return '<input class="webos-widget-input" type="' + field.type + '"' + common + range
+                + ' value="' + escapeHtml(text) + '" maxlength="' + field.maxlength + '"'
+                + (field.placeholder ? ' placeholder="' + escapeHtml(field.placeholder) + '"' : '') + '>';
+        }
+        if (field.type === 'textarea') {
+            return '<textarea class="webos-widget-input" rows="' + field.rows + '"' + common
+                + ' maxlength="' + field.maxlength + '"'
+                + (field.placeholder ? ' placeholder="' + escapeHtml(field.placeholder) + '"' : '') + '>'
+                + escapeHtml(text) + '</textarea>';
+        }
+        if (field.type === 'select') {
+            return '<select class="webos-widget-input"' + common + '>'
+                + field.options.map(function (option) {
+                    return '<option value="' + escapeHtml(option.value) + '"'
+                        + (option.value === text ? ' selected' : '') + '>'
+                        + escapeHtml(option.label) + '</option>';
+                }).join('') + '</select>';
+        }
+        if (field.type === 'radio' || field.type === 'checkbox') {
+            var inputType = field.type === 'radio' ? 'radio' : 'checkbox';
+            var nameAttr = field.type === 'radio' ? ' name="' + escapeHtml(groupId + '-' + field.name) + '"' : '';
+            return '<span class="webos-widget-choices">' + field.options.map(function (option) {
+                var checked = field.type === 'radio'
+                    ? option.value === text
+                    : list.indexOf(option.value) >= 0;
+                return '<label class="webos-widget-choice"><input type="' + inputType + '"' + common + nameAttr
+                    + ' value="' + escapeHtml(option.value) + '"' + (checked ? ' checked' : '') + '>'
+                    + '<span>' + escapeHtml(option.label) + '</span></label>';
+            }).join('') + '</span>';
+        }
+        if (field.type === 'switch') {
+            return '<label class="webos-widget-switch"><input type="checkbox"' + common
+                + ' data-widget-field-switch="1"'
+                + (field.value === true || field.value === 1 || field.value === '1' ? ' checked' : '') + '>'
+                + '<span class="webos-widget-switch-track"></span></label>';
+        }
+        if (field.type === 'date' || field.type === 'datetime') {
+            var dateValue = field.type === 'date'
+                ? (/^\d{4}-\d{2}-\d{2}$/.test(text) ? text : '')
+                : widgetDateTimeInputValue(text);
+            return '<input class="webos-widget-input" type="'
+                + (field.type === 'date' ? 'date' : 'datetime-local') + '"' + common
+                + (field.type === 'datetime' ? ' data-widget-field-datetime="1"' : '')
+                + ' value="' + escapeHtml(dateValue) + '">';
+        }
+        if (field.type === 'button') {
+            // 复用明细行操作的 data-action-* 契约与点击委托（确认文案、POST、reload 口径一致）
+            var action = field.action;
+            return '<button class="desktop-widget-action" type="button" data-widget-line-action="1"'
+                + ' data-action-entry="' + escapeHtml(action.entry) + '"'
+                + ' data-action-confirm="' + escapeHtml(action.confirm) + '"'
+                + (action.reload ? ' data-action-reload="1"' : '')
+                + ' data-action-params="' + escapeHtml(JSON.stringify(action.params)) + '"'
+                + ' title="' + escapeHtml(action.confirm !== '' ? action.confirm : '点击执行') + '">'
+                + '<span>' + escapeHtml(field.label === '' ? '执行' : field.label) + '</span>'
+                + '</button>';
+        }
+        return '<span class="webos-widget-field-static">' + escapeHtml(text.slice(0, 200)) + '</span>';
+    }
+
+    /** 单字段 HTML：标签 + 控件（button/static 不渲染标签，static 直接给说明文本） */
+    function widgetFieldMarkup(field, groupId) {
+        var label = field.label !== '' && field.type !== 'button' && field.type !== 'static'
+            ? '<span class="webos-widget-field-label">' + escapeHtml(field.label)
+            + (field.required ? '<i>*</i>' : '') + '</span>'
+            : '';
+        return '<span class="webos-widget-form-field is-' + field.type + '">' + label
+            + widgetFieldControlMarkup(field, groupId) + '</span>';
+    }
+
+    /** 卡片内联表单 HTML：字段区 + 提交按钮（无提交声明时只渲染控件，由 button 字段自行触发操作） */
+    function widgetFormMarkup(item, fields) {
+        if (!fields.length) {
+            return '';
+        }
+        var declaration = widgetFormDeclaration(item);
+        var rows = fields.map(function (field) {
+            return widgetFieldMarkup(field, item.id);
+        }).join('');
+        var submit = declaration
+            ? '<span class="webos-widget-form-foot"><button class="desktop-widget-action is-primary"'
+            + ' type="button" data-widget-form-submit="1">' + escapeHtml(declaration.submit) + '</button></span>'
+            : '';
+        return '<span class="desktop-widget-form" data-widget-form="1">' + rows + submit + '</span>';
+    }
+
+    /** 读取表单当前值：checkbox 聚合为数组（未勾选提交空数组）、switch 为布尔、datetime 还原 Y-m-d H:i:s */
+    function widgetFormValues(scope) {
+        var values = {};
+        Array.prototype.forEach.call(scope.querySelectorAll('[data-widget-field]'), function (control) {
+            var name = control.getAttribute('data-widget-field');
+            if (!name) {
+                return;
+            }
+            if (control.hasAttribute('data-widget-field-switch')) {
+                values[name] = control.checked;
+                return;
+            }
+            if (control.type === 'checkbox') {
+                if (!Array.isArray(values[name])) {
+                    values[name] = [];
+                }
+                if (control.checked) {
+                    values[name].push(control.value);
+                }
+                return;
+            }
+            if (control.type === 'radio') {
+                if (control.checked) {
+                    values[name] = control.value;
+                }
+                return;
+            }
+            values[name] = control.hasAttribute('data-widget-field-datetime')
+                ? (control.value ? control.value.replace('T', ' ') + ':00' : '')
+                : control.value;
+        });
+        return values;
+    }
+
+    /** 必填校验：返回首个未填写控件的标签文案（全部合规返回空串） */
+    function widgetFormMissingLabel(scope) {
+        var missing = '';
+        Array.prototype.some.call(scope.querySelectorAll('[data-widget-required]'), function (control) {
+            var name = control.getAttribute('data-widget-field');
+            var empty = control.type === 'radio' || control.type === 'checkbox'
+                ? !scope.querySelector('[data-widget-field="' + name + '"]:checked')
+                : String(control.value || '').trim() === '';
+            if (empty) {
+                var field = control.closest('.webos-widget-form-field');
+                var label = field ? field.querySelector('.webos-widget-field-label') : null;
+                missing = label ? label.textContent.replace('*', '') : '必填项';
+                control.focus();
+                return true;
+            }
+            return false;
+        });
+        return missing;
+    }
+
+    /** 提交表单：字段值 + 实例参数（参数优先，与 submitWidgetAction 口径一致）POST 到声明的 form.entry */
+    function submitWidgetForm(values, declaration, id) {
+        var body = Object.assign({}, values);
+        Object.assign(body, widgetParamsOf(findDesktopItem(id)));
+        api(declaration.entry, { method: 'POST', body: body }).then(function () {
+            toast(declaration.submit + '成功');
+            refreshWidgetOnce(id);
+        }).catch(function (error) {
+            toast(error && error.message ? error.message : declaration.submit + '失败', 'error');
+        });
+    }
+
+    /** 卡片内联表单提交（含必填校验） */
+    function submitInlineWidgetForm(card) {
+        var item = findDesktopItem(card.dataset.desktopId);
+        var declaration = item ? widgetFormDeclaration(item) : null;
+        if (!item || !declaration) {
+            toast('表单已失效，请刷新页面后重试', 'error');
+            return;
+        }
+        var scope = card.querySelector('[data-widget-form]');
+        if (!scope) {
+            return;
+        }
+        var missing = widgetFormMissingLabel(scope);
+        if (missing !== '') {
+            toast('请填写' + missing, 'error');
+            return;
+        }
+        submitWidgetForm(widgetFormValues(scope), declaration, item.id);
+    }
+
+    /** 弹窗表单（mode=modal）：卡片仅显示入口按钮，点击后在 layer 内渲染同一套字段并提交 */
+    function openWidgetFormDialog(item) {
+        var declaration = widgetFormDeclaration(item);
+        var fields = widgetFormFields(item);
+        if (!declaration || !fields.length) {
+            toast('表单内容不可用，请稍后重试', 'error');
+            return;
+        }
+        var layer = layuiLayer();
+        if (!layer) {
+            toast('弹层组件未就绪，请刷新页面后重试', 'error');
+            return;
+        }
+        var content = '<div class="webos-widget-form" data-widget-form="1">' + fields.map(function (field) {
+            return widgetFieldMarkup(field, item.id);
+        }).join('') + '</div>';
+        layer.open({
+            type: 1,
+            title: escapeHtml(widgetTitleOf(item)),
+            area: ['420px', 'auto'],
+            shadeClose: false,
+            content: content,
+            btn: [escapeHtml(declaration.submit), '取消'],
+            yes: function (index, layero) {
+                var scope = layero.find('[data-widget-form]')[0];
+                if (!scope) {
+                    layer.close(index);
+                    return;
+                }
+                var missing = widgetFormMissingLabel(scope);
+                if (missing !== '') {
+                    layer.msg('请填写' + missing, { icon: 0 });
+                    return;
+                }
+                submitWidgetForm(widgetFormValues(scope), declaration, item.id);
+                layer.close(index);
+            }
+        });
+    }
+
     /** 卡片主体：text 优先（保留换行，行数由尺寸档位 CSS 截断），否则主值 + 单位 + 明细（占格高 1 格取 3 行、2 格取 6 行），
-     *  读取中/失败以占位文案呈现 */
+     *  读取中/失败以占位文案呈现；声明了 form 且为内联形态时改为渲染表单控件（2.1.113） */
     function desktopWidgetBody(item) {
         var record = state.widgetData.get(item.id);
         if (!record) {
@@ -1252,6 +1640,15 @@
                 + '<span class="desktop-widget-hint" title="' + escapeHtml(record.error) + '">读取失败</span>';
         }
         var data = record.data || {};
+        var formDeclaration = widgetFormDeclaration(item);
+        // 内联表单形态（2.1.113）：卡片主体改为渲染控件，只读文本/主值/明细让位给表单；
+        // 字段尚未下发（应用未实现或数据接口异常）时仍按纯展示卡片渲染，避免出现空白卡
+        if (formDeclaration && formDeclaration.mode === 'inline') {
+            var inlineForm = widgetFormMarkup(item, widgetFormFields(item));
+            if (inlineForm !== '') {
+                return inlineForm;
+            }
+        }
         var text = typeof data.text === 'string' ? data.text : '';
         if (text.trim() !== '') {
             return '<span class="desktop-widget-text">' + escapeHtml(text) + '</span>';
@@ -1301,6 +1698,15 @@
                 + '<span>' + escapeHtml(action.title) + '</span>'
                 + '</button>';
         }).join('');
+        // 弹窗表单形态（2.1.113）：卡片主体保持只读展示，底部增加表单入口按钮
+        var form = record && record.status === 'ready' ? widgetFormDeclaration(item) : null;
+        if (form && form.mode === 'modal' && widgetFormFields(item).length) {
+            buttons += '<button class="desktop-widget-action" type="button" data-widget-form-open="1"'
+                + ' title="' + escapeHtml(form.submit) + '">'
+                + '<i class="fa fa-sliders"></i>'
+                + '<span>' + escapeHtml(form.submit) + '</span>'
+                + '</button>';
+        }
         return '<span class="desktop-widget-foot">'
             + '<span class="desktop-widget-state"><i class="desktop-widget-dot"></i>'
             + WIDGET_STATUS_TEXT[status] + '</span>'
@@ -1308,23 +1714,28 @@
             + '</span>';
     }
 
-    /** 小工具卡片 HTML：按占格（1x1/2x1/2x2）渲染尺寸，底部为状态与操作按钮，右下角为调尺寸手柄，
-     *  右上角为关闭按钮（仅移除桌面卡片，不删除应用数据）。
+    /** 小工具卡片 HTML：按像素矩形（px_* 优先）定位与定尺，底部为状态与操作按钮，
+     *  四边四角共 8 个调尺寸手柄（2.1.114），右上角为关闭按钮（仅移除桌面卡片，不删除应用数据）。
+     *  data-widget-size 为按像素宽高四舍五入的视觉档位，仅供 CSS 近似适配（表单双列/纵向等）；
      *  宿主必须是 div 而非 button：按钮内不能嵌套操作按钮（invalid HTML，点击事件也会被宿主吞掉） */
-    function desktopWidgetMarkup(item, left, top) {
+    function desktopWidgetMarkup(item, rect) {
         var status = widgetStatusOf(state.widgetData.get(item.id));
-        var grid = desktopItemSpan(item);
         var size = desktopIconSize();
         var tone = widgetToneOf(item);
         var title = widgetTitleOf(item);
+        var pxWidth = Math.max(1, Math.round(rect.width));
+        var pxHeight = Math.max(1, Math.round(rect.height));
+        var visualW = Math.max(1, Math.min(WIDGET_SPAN_MAX_WIDTH, Math.round(pxWidth / size.cellW)));
+        var visualH = Math.max(1, Math.min(WIDGET_SPAN_MAX_HEIGHT, Math.round(pxHeight / size.cellH)));
         return '<div class="desktop-icon is-widget is-widget-' + status
             + (tone !== 'default' ? ' is-widget-tone-' + tone : '')
             + (state.desktopSelection.has(item.id) ? ' is-selected' : '') + '"'
             + ' role="button" tabindex="0"'
             + ' data-desktop-id="' + escapeHtml(item.id) + '"'
-            + ' data-widget-size="' + grid.w + 'x' + grid.h + '"'
-            + ' style="left:' + left + 'px;top:' + top + 'px;width:' + (grid.w * size.cellW - 6)
-            + 'px;height:' + (grid.h * size.cellH - 6) + 'px;min-height:0"'
+            + ' data-widget-size="' + visualW + 'x' + visualH + '"'
+            + ' data-widget-rows="' + visualH + '"'
+            + ' style="left:' + Math.round(rect.left) + 'px;top:' + Math.round(rect.top)
+            + 'px;width:' + pxWidth + 'px;height:' + pxHeight + 'px;min-height:0"'
             + ' title="' + escapeHtml(title) + '">'
             + '<span class="desktop-widget-head">'
             + '<span class="desktop-widget-icon"><i class="' + safeIcon(item.icon) + '"></i></span>'
@@ -1334,8 +1745,19 @@
             + '</span>'
             + desktopWidgetBody(item)
             + widgetFooterMarkup(item, status)
-            + '<span class="desktop-widget-resize" data-widget-resize="1" title="拖拽调整大小"></span>'
+            + widgetResizeHandlesMarkup()
             + '</div>';
+    }
+
+    /** 小工具调尺寸手柄（2.1.114）：四边四角共 8 个，data-widget-resize 标注方向
+     *  （n/s/e/w/ne/nw/se/sw，口径与应用窗口 data-window-resize 一致），
+     *  拖东/南边仅改占格，拖西/北边同步移动 x/y 保持右/下缘视觉不动 */
+    function widgetResizeHandlesMarkup() {
+        return ['n', 's', 'e', 'w', 'ne', 'nw', 'sw', 'se'].map(function (dir) {
+            return '<span class="desktop-widget-resize" data-widget-resize="' + dir + '"'
+                + (dir === 'se' ? ' title="拖拽调整大小"' : '')
+                + '></span>';
+        }).join('');
     }
 
     /** 局部替换单个小工具卡片：轮询返回后只刷该节点，避免整桌重绘打断拖拽/框选 */
@@ -1356,10 +1778,8 @@
             return;
         }
         var size = desktopIconSize();
-        var left = 4 + Math.max(0, Number(item.x) || 0) * size.cellW;
-        var top = 4 + Math.max(0, Number(item.y) || 0) * size.cellH;
         var wrapper = document.createElement('div');
-        wrapper.innerHTML = desktopWidgetMarkup(item, left, top);
+        wrapper.innerHTML = desktopWidgetMarkup(item, desktopItemPixelRect(item, size));
         if (wrapper.firstElementChild) {
             current.replaceWith(wrapper.firstElementChild);
         }
@@ -1646,94 +2066,147 @@
         });
     }
 
-    /** 声明允许的尺寸档位（缺省 1x1）：拖拽调尺寸时只吸附到这些档位 */
-    function widgetSizeOptions(item) {
-        var declaration = widgetDeclaration(item.widget_key);
-        var sizes = declaration && Array.isArray(declaration.sizes) ? declaration.sizes : [];
-        var options = [];
-        sizes.forEach(function (size) {
-            var parsed = parseWidgetSize(size);
-            if (parsed && !options.some(function (option) {
-                return option.w === parsed.w && option.h === parsed.h;
-            })) {
-                options.push(parsed);
-            }
-        });
-        return options.length ? options : [{ w: 1, h: 1 }];
-    }
-
-    /** 在允许档位中取与目标占格最接近者：距离优先，距离相同取面积小者（避免放大时抢占过多格子） */
-    function nearestWidgetSize(options, targetW, targetH) {
-        var best = options[0];
-        var bestScore = Infinity;
-        options.forEach(function (option) {
-            var score = (Math.abs(option.w - targetW) + Math.abs(option.h - targetH)) * 10 + option.w * option.h;
-            if (score < bestScore) {
-                best = option;
-                bestScore = score;
-            }
-        });
-        return best;
-    }
-
-    /** 除指定小工具自身外，目标矩形是否空闲（调尺寸落位校验） */
-    function widgetRectAvailable(item, x, y, w, h) {
+    /** 像素级调尺寸的取值范围（2.1.115）：最小 1 格，最大 4 格宽 / 3 格高，
+     *  且右/下缘不越出桌面可视区（窗口缩放后仍保持在桌面内） */
+    function widgetPixelLimits() {
+        var size = desktopIconSize();
         var capacity = desktopGridCapacity();
-        var occupied = new Set();
-        assignedDesktopItems().forEach(function (entry) {
-            if (entry.id === item.id) {
-                return;
-            }
-            var span = desktopItemSpan(entry);
-            markDesktopRect(occupied, Math.max(0, Number(entry.x) || 0), Math.max(0, Number(entry.y) || 0), span.w, span.h);
-        });
-        return desktopRectFree(occupied, x, y, w, h, capacity.cols, capacity.rows);
+        var host = elements.desktopIcons;
+        var minWidth = size.cellW - 6;
+        var minHeight = size.cellH - 6;
+        var rightLimit = 4 + WIDGET_SPAN_MAX_WIDTH * size.cellW - 6;
+        var bottomLimit = 4 + WIDGET_SPAN_MAX_HEIGHT * size.cellH - 6;
+        if (host && host.clientWidth > 0) {
+            rightLimit = Math.min(rightLimit, host.clientWidth - 4);
+        }
+        if (host && host.clientHeight > 0) {
+            bottomLimit = Math.min(bottomLimit, host.clientHeight - 4);
+        }
+        if (capacity.cols > 0) {
+            rightLimit = Math.min(rightLimit, 4 + capacity.cols * size.cellW - 6);
+        }
+        if (capacity.rows > 0) {
+            bottomLimit = Math.min(bottomLimit, 4 + capacity.rows * size.cellH - 6);
+        }
+        return {
+            minWidth: minWidth,
+            minHeight: minHeight,
+            maxWidth: WIDGET_SPAN_MAX_WIDTH * size.cellW - 6,
+            maxHeight: WIDGET_SPAN_MAX_HEIGHT * size.cellH - 6,
+            rightLimit: Math.max(4 + minWidth, rightLimit),
+            bottomLimit: Math.max(4 + minHeight, bottomLimit)
+        };
     }
 
-    /** 小工具拖拽调尺寸：按格子吸附并取最近合法档位，松手校验空间；空间不足回退原尺寸并提示 */
-    function resizeDesktopWidget(card, event) {
+    /** 除指定小工具自身外，目标像素矩形是否不与任何桌面项相交（调尺寸落位校验） */
+    function widgetRectAvailable(item, rect) {
+        var size = desktopIconSize();
+        return !assignedDesktopItems().some(function (entry) {
+            return entry.id !== item.id && desktopRectsOverlap(rect, desktopItemPixelRect(entry, size));
+        });
+    }
+
+    /** 小工具拖拽调尺寸（2.1.115 像素级自由）：按方向以像素跟手，最小 1 格、最大 4x3 格且不越出桌面可视区；
+     *  拖西/北边保持右/下缘不动，用 px_left/px_top 记录像素位置；松手按像素矩形校验空间，
+     *  空间不足回退原状并提示。位置拖拽仍按整格对齐（与旧行为一致） */
+    function resizeDesktopWidget(card, event, dir) {
         var item = findDesktopItem(card.getAttribute('data-desktop-id'));
         if (!item || item.kind !== 'widget') {
             return;
         }
-        var start = desktopItemSpan(item);
-        var options = widgetSizeOptions(item);
+        var direction = dir || 'se';
+        var hasN = direction.indexOf('n') >= 0;
+        var hasS = direction.indexOf('s') >= 0;
+        var hasW = direction.indexOf('w') >= 0;
+        var hasE = direction.indexOf('e') >= 0;
         var size = desktopIconSize();
-        var startX = event.clientX;
-        var startY = event.clientY;
-        var startWidth = card.offsetWidth;
-        var startHeight = card.offsetHeight;
-        var pending = { w: start.w, h: start.h };
+        var limits = widgetPixelLimits();
+        var startRect = desktopItemPixelRect(item, size);
+        var startClientX = event.clientX;
+        var startClientY = event.clientY;
+        var pending = { left: startRect.left, top: startRect.top, width: startRect.width, height: startRect.height };
         var moved = false;
-        card.setPointerCapture(event.pointerId);
+        try {
+            card.setPointerCapture(event.pointerId);
+        } catch (error) {
+            // 捕获失败不阻断调尺寸（document 级 move/up 监听兜底，无效 pointerId 会抛 NotFoundError）
+        }
         card.classList.add('is-resizing');
+        // 尺寸预览标签：拖拽期间实时显示像素宽高，避免"拖了没反应"的误解
+        var sizeHint = document.createElement('span');
+        sizeHint.className = 'desktop-widget-size-hint';
+        card.appendChild(sizeHint);
 
-        function preview(next) {
-            pending = next;
-            card.dataset.widgetSize = next.w + 'x' + next.h;
-            card.style.width = (next.w * size.cellW - 6) + 'px';
-            card.style.height = (next.h * size.cellH - 6) + 'px';
+        function clamp(value, min, max) {
+            return Math.max(min, Math.min(max, value));
         }
 
-        function project(value) {
-            return Math.max(1, Math.min(2, Math.round(value)));
+        function preview(rect) {
+            pending = rect;
+            card.style.left = Math.round(rect.left) + 'px';
+            card.style.top = Math.round(rect.top) + 'px';
+            card.style.width = Math.round(rect.width) + 'px';
+            card.style.height = Math.round(rect.height) + 'px';
+            sizeHint.textContent = Math.round(rect.width) + ' × ' + Math.round(rect.height);
         }
+
+        preview(startRect);
 
         function move(moveEvent) {
-            var deltaX = moveEvent.clientX - startX;
-            var deltaY = moveEvent.clientY - startY;
+            var deltaX = moveEvent.clientX - startClientX;
+            var deltaY = moveEvent.clientY - startClientY;
             if (!moved && Math.abs(deltaX) + Math.abs(deltaY) > 3) {
                 moved = true;
             }
-            preview(nearestWidgetSize(
-                options,
-                project((startWidth + deltaX) / size.cellW),
-                project((startHeight + deltaY) / size.cellH)
-            ));
+            var rect = {
+                left: startRect.left,
+                top: startRect.top,
+                width: startRect.width,
+                height: startRect.height
+            };
+            if (hasE) {
+                var growEast = Math.min(limits.maxWidth, limits.rightLimit - startRect.left);
+                rect.width = clamp(startRect.width + deltaX, limits.minWidth, Math.max(limits.minWidth, growEast));
+            } else if (hasW) {
+                var growWest = Math.min(limits.maxWidth, startRect.left + startRect.width - 4);
+                rect.width = clamp(startRect.width - deltaX, limits.minWidth, Math.max(limits.minWidth, growWest));
+                rect.left = startRect.left + startRect.width - rect.width;
+            }
+            if (hasS) {
+                var growSouth = Math.min(limits.maxHeight, limits.bottomLimit - startRect.top);
+                rect.height = clamp(startRect.height + deltaY, limits.minHeight, Math.max(limits.minHeight, growSouth));
+            } else if (hasN) {
+                var growNorth = Math.min(limits.maxHeight, startRect.top + startRect.height - 4);
+                rect.height = clamp(startRect.height - deltaY, limits.minHeight, Math.max(limits.minHeight, growNorth));
+                rect.top = startRect.top + startRect.height - rect.height;
+            }
+            preview(rect);
+        }
+
+        /** 像素矩形换算回网格字段：x/y 向下取整、w/h 向上取整（保守占格），
+         *  供未支持像素的降级渲染、占格统计与按格消费方（预设/任务栏/归一化）使用 */
+        function gridFields(rect) {
+            var capacity = desktopGridCapacity();
+            var x = Math.max(0, Math.floor((rect.left - 4) / size.cellW));
+            var y = Math.max(0, Math.floor((rect.top - 4) / size.cellH));
+            var w = Math.max(1, Math.ceil((rect.left - 4 - x * size.cellW + rect.width) / size.cellW));
+            var h = Math.max(1, Math.ceil((rect.top - 4 - y * size.cellH + rect.height) / size.cellH));
+            if (capacity.cols > 0) {
+                x = Math.min(x, Math.max(0, capacity.cols - 1));
+                w = Math.min(w, Math.max(1, capacity.cols - x));
+            }
+            if (capacity.rows > 0) {
+                y = Math.min(y, Math.max(0, capacity.rows - 1));
+                h = Math.min(h, Math.max(1, capacity.rows - y));
+            }
+            return { x: x, y: y, w: w, h: h };
         }
 
         function cleanup() {
             card.classList.remove('is-resizing');
+            if (sizeHint.parentNode) {
+                sizeHint.parentNode.removeChild(sizeHint);
+            }
             document.removeEventListener('pointermove', move);
             document.removeEventListener('pointerup', finish);
             document.removeEventListener('pointercancel', cancel);
@@ -1746,26 +2219,50 @@
 
         function finish() {
             cleanup();
-            var changed = pending.w !== start.w || pending.h !== start.h;
+            var changed = Math.abs(pending.width - startRect.width) >= 0.5
+                || Math.abs(pending.height - startRect.height) >= 0.5
+                || Math.abs(pending.left - startRect.left) >= 0.5
+                || Math.abs(pending.top - startRect.top) >= 0.5;
             if (!moved || !changed) {
-                preview(start);
+                renderDesktop();
                 return;
             }
-            if (!widgetRectAvailable(item, Math.max(0, Number(item.x) || 0), Math.max(0, Number(item.y) || 0),
-                pending.w, pending.h)) {
-                preview(start);
+            var rect = {
+                left: Math.round(pending.left),
+                top: Math.round(pending.top),
+                width: Math.round(pending.width),
+                height: Math.round(pending.height)
+            };
+            if (!widgetRectAvailable(item, rect)) {
+                renderDesktop();
                 toast('当前位置空间不足，无法调整到该尺寸', 'error');
                 return;
             }
-            item.w = pending.w;
-            item.h = pending.h;
+            var grid = gridFields(rect);
+            item.x = grid.x;
+            item.y = grid.y;
+            item.w = grid.w;
+            item.h = grid.h;
+            item.px_width = rect.width;
+            item.px_height = rect.height;
+            // 西/北边拖拽后左/上缘不在格子线上：记录像素位置；位置拖拽（整格对齐）时清除这两个字段
+            if (rect.left === 4 + grid.x * size.cellW) {
+                delete item.px_left;
+            } else {
+                item.px_left = rect.left;
+            }
+            if (rect.top === 4 + grid.y * size.cellH) {
+                delete item.px_top;
+            } else {
+                item.px_top = rect.top;
+            }
             renderDesktop();
             saveWorkspace(false);
         }
 
         function cancel() {
             cleanup();
-            preview(start);
+            renderDesktop();
         }
 
         document.addEventListener('pointermove', move);
@@ -2620,15 +3117,15 @@
     /**
      * 列优先扫描第一个放得下目标占格的空位（Windows 桌面风格）：每列行数、总列数均由可视容量决定，
      * 第一列放满后进入下一列，避免图标一直向下/向右落到任务栏下方或屏幕外的非可视区域。
-     * span 为目标占格（小工具 1x1/2x1/2x2，缺省按 1x1），需整块矩形无冲突。
+     * span 为目标占格（小工具 1x1/2x1/2x2/2x3/4x2，缺省按 1x1），需整块矩形无冲突。
      * 返回 null 表示可视格子全部占满（cols 为 0 表示容器不可测量，降级为不限制），调用方需提示整理。
      */
     function findFreeDesktopSlot(span) {
         // 预设网格为流式排布、不使用坐标：返回固定非空槽，避免因「无空位」拦截新增
         // （坐标在预设中无意义，播种到新用户桌面后由前台 normalizeDesktopLayout 归位）
         if (state.presetEditing) { return { x: 0, y: 0 }; }
-        var width = clampWidgetSpan(span && span.w);
-        var height = clampWidgetSpan(span && span.h);
+        var width = clampWidgetSpan(span && span.w, WIDGET_SPAN_MAX_WIDTH);
+        var height = clampWidgetSpan(span && span.h, WIDGET_SPAN_MAX_HEIGHT);
         var capacity = desktopGridCapacity();
         var rows = capacity.rows || 1;
         // 找空位时仅统计可见图标：停用应用不再占位，新图标可以落在其格子
@@ -11876,8 +12373,7 @@
             }
             markDesktopRect(occupied, x, y, grid.w, grid.h);
             if (item.x !== x || item.y !== y) {
-                item.x = x;
-                item.y = y;
+                moveDesktopItemToGrid(item, x, y);
                 changed = true;
             }
         });
@@ -11889,8 +12385,7 @@
             if (!slot) { return; }
             markDesktopRect(occupied, slot.x, slot.y, grid.w, grid.h);
             if (item.x !== slot.x || item.y !== slot.y) {
-                item.x = slot.x;
-                item.y = slot.y;
+                moveDesktopItemToGrid(item, slot.x, slot.y);
                 changed = true;
             }
         });
@@ -11920,8 +12415,7 @@
             if (!slot) { return; }
             markDesktopRect(occupied, slot.x, slot.y, grid.w, grid.h);
             if (item.x !== slot.x || item.y !== slot.y) {
-                item.x = slot.x;
-                item.y = slot.y;
+                moveDesktopItemToGrid(item, slot.x, slot.y);
                 changed = true;
             }
         });
@@ -12753,7 +13247,11 @@
             return { left: entryButton.offsetLeft, top: entryButton.offsetTop };
         });
         var moved = false;
-        button.setPointerCapture(event.pointerId);
+        try {
+            button.setPointerCapture(event.pointerId);
+        } catch (error) {
+            // 捕获失败不阻断拖动（document 级 move/up 监听兜底，无效 pointerId 会抛 NotFoundError）
+        }
         dragButtons.forEach(function (entryButton) { entryButton.classList.add('is-dragging'); });
 
         // 拖动悬停目标文件夹：高亮提示可移入（拖动项含文件夹或正拖文件夹本身时不可收纳，防嵌套）
@@ -12944,8 +13442,8 @@
                         gridY = fallback.y;
                     }
                     markDesktopRect(occupied, gridX, gridY, span.w, span.h);
-                    place.item.x = gridX;
-                    place.item.y = gridY;
+                    // 位置拖拽按整格对齐：清除西/北边调尺寸留下的像素位置
+                    moveDesktopItemToGrid(place.item, gridX, gridY);
                 });
                 renderDesktop();
                 saveWorkspace(false);
@@ -13135,13 +13633,13 @@
         });
 
         elements.desktopIcons.addEventListener('pointerdown', function (event) {
-            // 小工具右下角尺寸手柄：独立于拖动/多选，按下即进入调尺寸流程
+            // 小工具四边四角尺寸手柄（2.1.114）：独立于拖动/多选，按下即进入调尺寸流程
             var resizeHandle = event.target.closest('[data-widget-resize]');
             if (resizeHandle && event.button === 0) {
                 var resizeCard = resizeHandle.closest('[data-desktop-id]');
                 if (resizeCard) {
                     event.preventDefault();
-                    resizeDesktopWidget(resizeCard, event);
+                    resizeDesktopWidget(resizeCard, event, resizeHandle.dataset.widgetResize);
                 }
                 return;
             }
@@ -13155,6 +13653,14 @@
             }
             // 小工具卡片内明细行操作（2.1.112）：按下不启动拖动（点击交由下方 click 委托处理）
             if (event.target.closest('[data-widget-line-action]')) {
+                return;
+            }
+            // 小工具卡片内表单区（2.1.113）：控件聚焦、勾选、输入等原生交互优先，按下不启动拖动
+            if (event.target.closest('[data-widget-form]')) {
+                return;
+            }
+            // 小工具卡片底部表单入口按钮（2.1.113，mode=modal）：按下不启动拖动，点击交由下方委托处理
+            if (event.target.closest('[data-widget-form-open]')) {
                 return;
             }
             var button = event.target.closest('[data-desktop-id]');
@@ -13184,6 +13690,27 @@
                 }
                 return;
             }
+            // 卡片内联表单提交按钮（2.1.113）：整表取值 + 必填校验后 POST 到声明的 form.entry
+            var formSubmit = event.target.closest('[data-widget-form-submit]');
+            if (formSubmit) {
+                var submitCard = formSubmit.closest('[data-desktop-id]');
+                if (submitCard) {
+                    event.stopPropagation();
+                    submitInlineWidgetForm(submitCard);
+                }
+                return;
+            }
+            // 卡片弹窗表单入口（2.1.113，mode=modal）：弹出 layer 渲染同一套字段
+            var formOpen = event.target.closest('[data-widget-form-open]');
+            if (formOpen) {
+                var openCard = formOpen.closest('[data-desktop-id]');
+                var openItem = openCard ? findDesktopItem(openCard.dataset.desktopId) : null;
+                if (openItem) {
+                    event.stopPropagation();
+                    openWidgetFormDialog(openItem);
+                }
+                return;
+            }
             var actionButton = event.target.closest('[data-widget-action]');
             if (!actionButton) {
                 return;
@@ -13198,8 +13725,8 @@
         // 桌面空白处框选多个图标（Windows 桌面风格）
         bindDesktopMarquee();
         elements.desktopIcons.addEventListener('dblclick', function (event) {
-            // 卡片内操作按钮/明细行操作/尺寸手柄/关闭按钮的连击不触发打开入口
-            if (event.target.closest('[data-widget-action],[data-widget-resize],[data-widget-close],[data-widget-line-action]')) {
+            // 卡片内操作按钮/明细行操作/表单区（2.1.113）/尺寸手柄/关闭按钮的连击不触发打开入口
+            if (event.target.closest('[data-widget-action],[data-widget-resize],[data-widget-close],[data-widget-line-action],[data-widget-form],[data-widget-form-open]')) {
                 return;
             }
             var button = event.target.closest('[data-desktop-id]');
@@ -13212,6 +13739,11 @@
         });
         // 桌面图标键盘操作（无障碍与效率）：Ctrl+A 全选、方向键移动焦点、Enter 打开、Delete 删除
         elements.desktopIcons.addEventListener('keydown', function (event) {
+            // 卡片表单控件聚焦时（2.1.113）：键盘事件交由原生控件处理——Ctrl+A 选中输入内容、
+            // Enter 换行/确认、Delete/Backspace 删字符，均不得触发桌面全选、打开入口与删除卡片
+            if (event.target.closest('[data-widget-form] input,[data-widget-form] select,[data-widget-form] textarea,[data-widget-form] button')) {
+                return;
+            }
             if (event.ctrlKey && (event.key === 'a' || event.key === 'A')) {
                 event.preventDefault();
                 state.desktopSelection.clear();

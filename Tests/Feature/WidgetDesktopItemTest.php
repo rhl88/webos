@@ -74,12 +74,41 @@ class WidgetDesktopItemTest extends WebosTestCase
             ->assertJsonPath('data.desktop_items.0.h', 1);
     }
 
+    /** 表单档位落库（2.1.113）：4x2 与 2x3 卡片占格原样持久化，不再被压回 2x2 */
+    public function test_workspace_api_persists_form_size_presets(): void
+    {
+        $this->actingAdmin();
+
+        $this->putJson('/admin/cmspro/webos/api/workspace', [
+            'desktop_items' => [
+                $this->widgetItem(['w' => 4, 'h' => 2]),
+                $this->widgetItem([
+                    'id' => 'widget-cmspro_localservice-task-count',
+                    'widget_key' => 'cmspro.localservice:task-count',
+                    'x' => 4, 'y' => 0, 'w' => 2, 'h' => 3,
+                ]),
+            ],
+            'preferences' => [],
+        ])->assertOk()
+            ->assertJsonPath('data.desktop_items.0.w', 4)
+            ->assertJsonPath('data.desktop_items.0.h', 2)
+            ->assertJsonPath('data.desktop_items.1.w', 2)
+            ->assertJsonPath('data.desktop_items.1.h', 3);
+
+        $items = $this->getJson('/admin/cmspro/webos/api/workspace')
+            ->assertOk()
+            ->json('data.desktop_items');
+
+        $this->assertSame([4, 2], [$items[0]['w'], $items[0]['h']]);
+        $this->assertSame([2, 3], [$items[1]['w'], $items[1]['h']]);
+    }
+
     public function test_workspace_api_rejects_widget_size_out_of_range(): void
     {
         $this->actingAdmin();
 
         $response = $this->putJson('/admin/cmspro/webos/api/workspace', [
-            'desktop_items' => [$this->widgetItem(['w' => 3, 'h' => 0])],
+            'desktop_items' => [$this->widgetItem(['w' => 5, 'h' => 0])],
             'preferences' => [],
         ])->assertUnprocessable()
             ->assertJsonPath('code', 40201);
@@ -115,6 +144,52 @@ class WidgetDesktopItemTest extends WebosTestCase
         // 尺寸仅属于小工具卡片：普通入口不落存 w/h
         $this->assertArrayNotHasKey('w', $item);
         $this->assertArrayNotHasKey('h', $item);
+        $this->assertArrayNotHasKey('px_width', $item);
+        $this->assertArrayNotHasKey('px_height', $item);
+        $this->assertArrayNotHasKey('px_left', $item);
+        $this->assertArrayNotHasKey('px_top', $item);
+    }
+
+    /** 像素级自由尺寸（2.1.115）：px_width/px_height 与像素位置随桌面项原样落库 */
+    public function test_workspace_api_persists_widget_pixel_size(): void
+    {
+        $this->actingAdmin();
+
+        $this->putJson('/admin/cmspro/webos/api/workspace', [
+            'desktop_items' => [$this->widgetItem([
+                'w' => 3, 'h' => 2,
+                'px_width' => 312, 'px_height' => 208, 'px_left' => 210, 'px_top' => 106,
+            ])],
+            'preferences' => [],
+        ])->assertOk()
+            ->assertJsonPath('data.desktop_items.0.px_width', 312)
+            ->assertJsonPath('data.desktop_items.0.px_height', 208)
+            ->assertJsonPath('data.desktop_items.0.px_left', 210)
+            ->assertJsonPath('data.desktop_items.0.px_top', 106);
+
+        $item = $this->getJson('/admin/cmspro/webos/api/workspace')
+            ->assertOk()
+            ->json('data.desktop_items.0');
+
+        $this->assertSame([312, 208, 210, 106], [
+            $item['px_width'], $item['px_height'], $item['px_left'], $item['px_top'],
+        ]);
+    }
+
+    public function test_workspace_api_rejects_widget_pixel_size_out_of_range(): void
+    {
+        $this->actingAdmin();
+
+        $response = $this->putJson('/admin/cmspro/webos/api/workspace', [
+            'desktop_items' => [$this->widgetItem(['px_width' => 5000, 'px_height' => 0])],
+            'preferences' => [],
+        ])->assertUnprocessable()
+            ->assertJsonPath('code', 40201);
+
+        // 全局异常处理把字段错误放在 data（不在 Laravel 默认的 errors 键），与同文件其它用例口径一致
+        $errors = $response->json('data');
+        $this->assertArrayHasKey('desktop_items.0.px_width', $errors);
+        $this->assertArrayHasKey('desktop_items.0.px_height', $errors);
     }
 
     public function test_workspace_api_rejects_widget_without_widget_key(): void

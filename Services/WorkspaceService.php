@@ -52,6 +52,16 @@ class WorkspaceService
     /** 实例参数值最大长度 */
     protected const MAX_WIDGET_PARAM_VALUE_LENGTH = 64;
 
+    /** 小工具卡片占格上限（宽x高，2.1.113）：与注册表 SIZE_WHITELIST 的 4x2 / 2x3 档位一致 */
+    public const MAX_WIDGET_SPAN_WIDTH = 4;
+
+    public const MAX_WIDGET_SPAN_HEIGHT = 3;
+
+    /** 小工具像素尺寸上限（2.1.115）：像素宽高与像素位置的防御性上限，实际范围由前端按桌面可视区约束 */
+    public const MAX_WIDGET_PIXEL_SIZE = 4096;
+
+    public const MAX_WIDGET_PIXEL_OFFSET = 20000;
+
     public function getForAdmin(int $adminUserId): WebosWorkspace
     {
         return $this->getFor('admin', $adminUserId);
@@ -521,7 +531,10 @@ class WorkspaceService
     protected function sanitizeTaskbarItems(array $items): array
     {
         return collect(array_slice($items, 0, 12))
-            ->map(fn (array $item): array => Arr::except($this->sanitizeDesktopItem($item), ['x', 'y', 'w', 'h', 'params']))
+            ->map(fn (array $item): array => Arr::except($this->sanitizeDesktopItem($item), [
+                'x', 'y', 'w', 'h', 'params',
+                'px_width', 'px_height', 'px_left', 'px_top',
+            ]))
             ->values()
             ->all();
     }
@@ -588,10 +601,26 @@ class WorkspaceService
             'y' => min(99, max(0, (int) ($item['y'] ?? 0))),
         ];
 
-        // 仅小工具卡片带占格数：1..2 档，非数字或越界回落 1（其它类型无尺寸概念）
+        // 仅小工具卡片带占格数：宽 1..4 格、高 1..3 格，非数字或越界回落 1（其它类型无尺寸概念）
         if ($kind === 'widget') {
-            $sanitized['w'] = $this->widgetSpanOf($item['w'] ?? null);
-            $sanitized['h'] = $this->widgetSpanOf($item['h'] ?? null);
+            $sanitized['w'] = $this->widgetSpanOf($item['w'] ?? null, self::MAX_WIDGET_SPAN_WIDTH);
+            $sanitized['h'] = $this->widgetSpanOf($item['h'] ?? null, self::MAX_WIDGET_SPAN_HEIGHT);
+            // 像素级自由尺寸（2.1.115）：px_width/px_height 为卡片像素宽高，px_left/px_top 为
+            // 西/北边拖拽调尺寸后的像素位置；非法或越界字段直接不落库，前端按网格字段降级渲染
+            $pxWidth = $this->widgetPixelOf($item['px_width'] ?? null, self::MAX_WIDGET_PIXEL_SIZE);
+            $pxHeight = $this->widgetPixelOf($item['px_height'] ?? null, self::MAX_WIDGET_PIXEL_SIZE);
+            $pxLeft = $this->widgetPixelOf($item['px_left'] ?? null, self::MAX_WIDGET_PIXEL_OFFSET, 0);
+            $pxTop = $this->widgetPixelOf($item['px_top'] ?? null, self::MAX_WIDGET_PIXEL_OFFSET, 0);
+            if ($pxWidth !== null && $pxHeight !== null) {
+                $sanitized['px_width'] = $pxWidth;
+                $sanitized['px_height'] = $pxHeight;
+            }
+            if ($pxLeft !== null) {
+                $sanitized['px_left'] = $pxLeft;
+            }
+            if ($pxTop !== null) {
+                $sanitized['px_top'] = $pxTop;
+            }
             if ($widgetParams !== []) {
                 $sanitized['params'] = $widgetParams;
             }
@@ -640,12 +669,24 @@ class WorkspaceService
         return $params;
     }
 
-    /** 小工具卡片占格数：非数字或越界（超出 1..2）一律回落单格 */
-    protected function widgetSpanOf(mixed $value): int
+    /** 小工具卡片占格数：非数字或越界（超出 1..$max）一律回落单格 */
+    protected function widgetSpanOf(mixed $value, int $max): int
     {
         $span = is_numeric($value) ? (int) $value : 1;
 
-        return $span >= 1 && $span <= 2 ? $span : 1;
+        return $span >= 1 && $span <= $max ? $span : 1;
+    }
+
+    /** 小工具像素值：非数值或越界返回 null（不落库）；$min 传 0 用于像素位置，宽度高度从 1 起 */
+    protected function widgetPixelOf(mixed $value, int $max, int $min = 1): ?int
+    {
+        if (! is_numeric($value)) {
+            return null;
+        }
+
+        $pixel = (int) round((float) $value);
+
+        return $pixel >= $min && $pixel <= $max ? $pixel : null;
     }
 
     /** @return array<string,mixed> */

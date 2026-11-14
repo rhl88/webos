@@ -6065,6 +6065,25 @@ textarea:focus-visible,
     background: rgba(232, 76, 61, 0.92);
 }
 
+/* 调尺寸过程中的档位预览标签：显示即将吸附到的占格（如 2x2 → 4x2），
+   拖拽距离不足回弹时用户可据此判断还差多少 */
+.desktop-icon.is-widget .desktop-widget-size-hint {
+    position: absolute;
+    bottom: 6px;
+    left: 50%;
+    z-index: 6;
+    padding: 0 6px;
+    border-radius: 4px;
+    background: rgba(0, 0, 0, 0.66);
+    color: #fff;
+    font-size: 11px;
+    line-height: 16px;
+    letter-spacing: 0.5px;
+    pointer-events: none;
+    transform: translateX(-50%);
+    white-space: nowrap;
+}
+
 /* 正文卡片（2.1.109）：数据契约 text 优先于 value 渲染，保留换行并按尺寸档位限制行数 */
 .desktop-widget-text {
     display: -webkit-box;
@@ -6086,6 +6105,16 @@ textarea:focus-visible,
 
 .desktop-icon.is-widget[data-widget-size="2x2"] .desktop-widget-text {
     -webkit-line-clamp: 9;
+}
+
+/* 像素级自由尺寸（2.1.115）：档位四舍五入后可能落到未声明的 WxH（如 3x2），
+   按行数统一放宽正文行数，避免大卡片仍只显示 3 行（2x1/2x2 等既有精确规则优先不变） */
+.desktop-icon.is-widget[data-widget-rows="2"] .desktop-widget-text {
+    -webkit-line-clamp: 9;
+}
+
+.desktop-icon.is-widget[data-widget-rows="3"] .desktop-widget-text {
+    -webkit-line-clamp: 14;
 }
 
 .desktop-widget-value {
@@ -6228,19 +6257,48 @@ textarea:focus-visible,
     display: none;
 }
 
-/* 右下角调尺寸手柄：默认透明，hover/选中/拖动中显形 */
+/* 四边四角调尺寸手柄（2.1.114）：透明热区默认不可抓（pointer-events:none），
+   hover/选中/聚焦/拖动中显形并启用指针；光标按方向区分（口径同应用窗口手柄） */
 .desktop-icon.is-widget .desktop-widget-resize {
     position: absolute;
-    right: 2px;
-    bottom: 2px;
-    width: 14px;
-    height: 14px;
     opacity: 0;
-    cursor: nwse-resize;
-    pointer-events: auto;
+    pointer-events: none;
 }
 
-.desktop-icon.is-widget .desktop-widget-resize::before {
+.desktop-icon.is-widget .desktop-widget-resize[data-widget-resize="n"] {
+    top: 0; left: 14px; right: 14px; height: 6px; cursor: ns-resize;
+}
+
+.desktop-icon.is-widget .desktop-widget-resize[data-widget-resize="s"] {
+    bottom: 0; left: 14px; right: 14px; height: 6px; cursor: ns-resize;
+}
+
+.desktop-icon.is-widget .desktop-widget-resize[data-widget-resize="e"] {
+    right: 0; top: 14px; bottom: 14px; width: 6px; cursor: ew-resize;
+}
+
+.desktop-icon.is-widget .desktop-widget-resize[data-widget-resize="w"] {
+    left: 0; top: 14px; bottom: 14px; width: 6px; cursor: ew-resize;
+}
+
+.desktop-icon.is-widget .desktop-widget-resize[data-widget-resize="ne"] {
+    top: 0; right: 0; width: 12px; height: 12px; cursor: nesw-resize;
+}
+
+.desktop-icon.is-widget .desktop-widget-resize[data-widget-resize="nw"] {
+    top: 0; left: 0; width: 12px; height: 12px; cursor: nwse-resize;
+}
+
+.desktop-icon.is-widget .desktop-widget-resize[data-widget-resize="se"] {
+    right: 0; bottom: 0; width: 12px; height: 12px; cursor: nwse-resize;
+}
+
+.desktop-icon.is-widget .desktop-widget-resize[data-widget-resize="sw"] {
+    bottom: 0; left: 0; width: 12px; height: 12px; cursor: nesw-resize;
+}
+
+/* 右下角视觉角标：仅 se 手柄保留，其余方向为纯热区 */
+.desktop-icon.is-widget .desktop-widget-resize[data-widget-resize="se"]::before {
     content: "";
     position: absolute;
     right: 2px;
@@ -6256,6 +6314,7 @@ textarea:focus-visible,
 .desktop-icon.is-widget.is-selected .desktop-widget-resize,
 .desktop-icon.is-widget.is-resizing .desktop-widget-resize {
     opacity: 1;
+    pointer-events: auto;
 }
 
 /* 调尺寸过程中提升层级盖过相邻卡片，并禁用过渡保证跟手 */
@@ -6295,6 +6354,227 @@ textarea:focus-visible,
 
 .desktop-icon.is-widget-unknown .desktop-widget-dot {
     background: #4f9de0;
+}
+
+/* 卡片内联表单（2.1.113）：控件直接渲染在卡片主体。卡片为半透明深底，控件走白底深字保证可读；
+   表单区自身滚动（小档位卡片放不下全部字段），并恢复文本选择与指针事件
+   （.desktop-icon span 全局屏蔽指针事件、桌面容器 user-select:none，均需在此反向放开） */
+.desktop-widget-form {
+    display: flex;
+    flex: 1 1 auto;
+    flex-direction: column;
+    gap: 6px;
+    min-height: 0;
+    padding: 2px 0 4px;
+    overflow-y: auto;
+    text-align: left;
+    user-select: text;
+    pointer-events: auto;
+}
+
+.desktop-widget-form span,
+.desktop-widget-form label {
+    pointer-events: auto;
+}
+
+/* 宽档表单卡片（4x2）：字段横向双列，避免单列过长 */
+.desktop-icon.is-widget[data-widget-size="4x2"] .desktop-widget-form {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    align-content: start;
+}
+
+/* 高档表单卡片（2x3）：字段纵向铺满，提交按钮始终贴在表单底部 */
+.desktop-icon.is-widget[data-widget-size="2x3"] .desktop-widget-form {
+    gap: 7px;
+}
+
+.desktop-widget-form .webos-widget-form-foot {
+    grid-column: 1 / -1;
+    display: flex;
+    justify-content: flex-end;
+    margin-top: 2px;
+}
+
+.webos-widget-form-field {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    min-width: 0;
+}
+
+/* 按钮与只读说明不带标签列，横向排布更紧凑 */
+.webos-widget-form-field.is-button,
+.webos-widget-form-field.is-static {
+    flex-direction: row;
+    align-items: center;
+    gap: 6px;
+}
+
+.webos-widget-field-label {
+    color: rgba(255, 255, 255, 0.86);
+    font-size: 11px;
+    line-height: 1.3;
+}
+
+.webos-widget-field-label i {
+    margin-left: 2px;
+    color: #ffd166;
+    font-style: normal;
+}
+
+.webos-widget-input {
+    width: 100%;
+    min-width: 0;
+    padding: 3px 6px;
+    border: 1px solid rgba(255, 255, 255, 0.5);
+    border-radius: 5px;
+    color: var(--webos-text);
+    background: rgba(255, 255, 255, 0.94);
+    font-size: 12px;
+    line-height: 1.5;
+}
+
+.webos-widget-input:focus {
+    border-color: #fff;
+    box-shadow: 0 0 0 2px rgba(120, 195, 255, 0.45);
+    outline: none;
+}
+
+textarea.webos-widget-input {
+    resize: none;
+}
+
+.webos-widget-choices {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px 8px;
+}
+
+.webos-widget-choice {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    color: #fff;
+    font-size: 12px;
+    cursor: pointer;
+}
+
+.webos-widget-choice input {
+    margin: 0;
+    accent-color: var(--webos-primary);
+}
+
+.webos-widget-switch {
+    display: inline-flex;
+    align-items: center;
+    cursor: pointer;
+}
+
+.webos-widget-switch input {
+    position: absolute;
+    width: 0;
+    height: 0;
+    opacity: 0;
+}
+
+.webos-widget-switch-track {
+    position: relative;
+    width: 30px;
+    height: 16px;
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.38);
+    transition: background var(--motion-fast) var(--motion-ease);
+}
+
+.webos-widget-switch-track::after {
+    content: "";
+    position: absolute;
+    top: 2px;
+    left: 2px;
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    background: #fff;
+    transition: transform var(--motion-fast) var(--motion-ease);
+}
+
+.webos-widget-switch input:checked + .webos-widget-switch-track {
+    background: var(--webos-primary);
+}
+
+.webos-widget-switch input:checked + .webos-widget-switch-track::after {
+    transform: translateX(14px);
+}
+
+.webos-widget-switch input:focus-visible + .webos-widget-switch-track {
+    outline: 2px solid var(--webos-focus);
+    outline-offset: 2px;
+}
+
+.webos-widget-field-static {
+    color: rgba(255, 255, 255, 0.82);
+    font-size: 11px;
+    line-height: 1.5;
+}
+
+/* 表单提交按钮：主色实心，与卡片内次级操作按钮（半透明蓝）区分 */
+.desktop-widget-action.is-primary {
+    border-color: transparent;
+    color: #fff;
+    background: var(--webos-primary);
+    font-weight: 600;
+}
+
+.desktop-widget-action.is-primary:hover,
+.desktop-widget-action.is-primary:focus-visible {
+    border-color: transparent;
+    background: var(--webos-primary-dark);
+}
+
+/* 弹窗表单（2.1.113，mode=modal）：layer 内为白底表单，标签/选项配色改回深色 */
+.webos-widget-form {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    padding: 16px 18px;
+}
+
+.webos-widget-form .webos-widget-form-field {
+    gap: 5px;
+}
+
+.webos-widget-form .webos-widget-field-label {
+    color: var(--webos-text);
+    font-size: 12px;
+}
+
+.webos-widget-form .webos-widget-input {
+    padding: 5px 8px;
+    border-color: var(--webos-line);
+    background: #fff;
+    font-size: 13px;
+}
+
+.webos-widget-form .webos-widget-input:focus {
+    border-color: var(--webos-primary);
+    box-shadow: 0 0 0 2px rgba(22, 186, 170, 0.2);
+}
+
+.webos-widget-form .webos-widget-choice {
+    color: var(--webos-text);
+    font-size: 13px;
+}
+
+.webos-widget-form .webos-widget-field-static {
+    color: var(--webos-muted);
+    font-size: 12px;
+}
+
+.webos-widget-form .desktop-widget-action {
+    padding: 4px 10px;
+    font-size: 12px;
+    line-height: 18px;
 }
 
 /* 新建 > 小工具弹窗：注册表项列表（图标 + 名称/来源 + 添加标记），已添加项置灰不可点 */

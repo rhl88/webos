@@ -415,9 +415,17 @@ class WebosController extends Controller
             'desktop_items.*.group_title' => ['nullable', 'string', 'max:60'],
             'desktop_items.*.x' => ['required', 'integer', 'between:0,99'],
             'desktop_items.*.y' => ['required', 'integer', 'between:0,99'],
-            // 小工具卡片占格数（1x1 / 2x1 / 2x2）：仅 kind=widget 携带，缺省由服务层回落 1
-            'desktop_items.*.w' => ['nullable', 'integer', 'between:1,2'],
-            'desktop_items.*.h' => ['nullable', 'integer', 'between:1,2'],
+            // 小工具卡片占格数（1x1 / 2x1 / 2x2 / 2x3 / 4x2）：仅 kind=widget 携带，
+            // 上限与服务层常量同源（2.1.113 表单卡片档位），缺省由服务层回落 1
+            'desktop_items.*.w' => ['nullable', 'integer', 'between:1,' . WorkspaceService::MAX_WIDGET_SPAN_WIDTH],
+            'desktop_items.*.h' => ['nullable', 'integer', 'between:1,' . WorkspaceService::MAX_WIDGET_SPAN_HEIGHT],
+            // 小工具像素级自由尺寸（2.1.115）：px_width/px_height 为卡片像素宽高，
+            // px_left/px_top 为西/北边拖拽调尺寸后的像素位置；上限与服务层常量同源，
+            // 非小工具项即使携带也由服务层丢弃（$validated 只保留声明字段，故此处必须声明）
+            'desktop_items.*.px_width' => ['nullable', 'integer', 'between:1,' . WorkspaceService::MAX_WIDGET_PIXEL_SIZE],
+            'desktop_items.*.px_height' => ['nullable', 'integer', 'between:1,' . WorkspaceService::MAX_WIDGET_PIXEL_SIZE],
+            'desktop_items.*.px_left' => ['nullable', 'integer', 'between:0,' . WorkspaceService::MAX_WIDGET_PIXEL_OFFSET],
+            'desktop_items.*.px_top' => ['nullable', 'integer', 'between:0,' . WorkspaceService::MAX_WIDGET_PIXEL_OFFSET],
             // 小工具实例参数（2.1.109 多实例）：仅 kind=widget 携带，键名与值长度由服务层净化
             'desktop_items.*.params' => ['nullable', 'array'],
         ];

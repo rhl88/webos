@@ -1197,9 +1197,10 @@ class WebosWorkspaceApiTest extends WebosTestCase
         $this->assertStringContainsString('medium: { cellW: 102, cellH: 104, iconW: 88, iconH: 96 }', $script);
         $this->assertStringContainsString('small: { cellW: 86, cellH: 88, iconW: 72, iconH: 78 }', $script);
         $this->assertStringContainsString('function desktopIconSize', $script);
-        // 渲染、小工具卡片渲染/局部刷新、网格容量、小工具调尺寸五处按档位换算
+        // 取档位八处：桌面渲染、小工具占格换算、小工具卡片标记、小工具局部刷新、
+        // 像素级调尺寸的上下限/碰撞校验/拖拽、网格容量
         // （新增找位/归一化经 desktopGridCapacity 间接取档位；拖拽 move 用元素实际尺寸，落点用 dropSize）
-        $this->assertSame(5, substr_count($script, 'var size = desktopIconSize();'));
+        $this->assertSame(8, substr_count($script, 'var size = desktopIconSize();'));
         $this->assertStringContainsString('var dropSize = desktopIconSize();', $script);
         $this->assertStringContainsString('root.dataset.iconSize = ', $script);
         // 右键「查看」子菜单与切档动作（当前档位勾选）

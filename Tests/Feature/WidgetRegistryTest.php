@@ -80,6 +80,7 @@ class WidgetRegistryTest extends WebosTestCase
             'default_size' => '1x1',
             'actions' => [],
             'picker' => null,
+            'form' => null,
             'desktop_id' => 'widget-cmspro_localservice-service-status',
         ], $items[0]);
         // 桌面项 id 只允许 [A-Za-z0-9_-]，app_id 中的点号统一转为下划线
@@ -181,7 +182,7 @@ class WidgetRegistryTest extends WebosTestCase
     public function test_registry_normalizes_widget_sizes(): void
     {
         $this->makeApp('cmspro.localservice', [
-            // 非法档位与重复档位被剔除，保留声明顺序
+            // 非法档位与重复档位被剔除，保留声明顺序（3x3 不在白名单内）
             $this->widget('a', ['sizes' => ['2x2', '3x3', '2x2', '1x1'], 'default_size' => '2x2']),
             // 默认尺寸不在允许档位内时取首个允许档位
             $this->widget('b', ['sizes' => ['2x1'], 'default_size' => '2x2']),
@@ -197,6 +198,105 @@ class WidgetRegistryTest extends WebosTestCase
         $this->assertSame('2x1', $items[1]['default_size']);
         $this->assertSame(['1x1'], $items[2]['sizes']);
         $this->assertSame('1x1', $items[2]['default_size']);
+    }
+
+    /** 表单档位（2.1.113）：2x3 与 4x2 入白名单，为卡片内联表单腾出空间 */
+    public function test_registry_accepts_form_size_presets(): void
+    {
+        $this->makeApp('cmspro.formdemo', [
+            $this->widget('a', ['sizes' => ['4x2', '2x3', '3x4', '5x1'], 'default_size' => '4x2']),
+        ]);
+
+        $item = $this->registry()->list()[0];
+
+        $this->assertSame(['4x2', '2x3'], $item['sizes']);
+        $this->assertSame('4x2', $item['default_size']);
+    }
+
+    /** 表单声明净化（2.1.113）：entry 站内放行、mode 与 submit 非法回落缺省值 */
+    public function test_registry_sanitizes_widget_form_declaration(): void
+    {
+        $this->makeApp('cmspro.formdemo', [
+            // 合法声明：弹窗模式 + 自定义提交文案
+            $this->widget('a', ['form' => [
+                'entry' => '/api/admin/cmspro/demo/widget/form',
+                'mode' => 'modal',
+                'submit' => '保存设置',
+            ]]),
+            // 用户端应用：/user/ 前缀同样放行
+            $this->widget('b', ['form' => ['entry' => '/user/cmspro/formdemo/api/form', 'terminal' => 'user']]),
+            // mode 非法回落 inline，submit 缺省回落「保存」
+            $this->widget('c', ['form' => ['entry' => '/api/c', 'mode' => 'popup']]),
+        ]);
+
+        $items = $this->registry()->list();
+
+        $this->assertSame([
+            'entry' => '/api/admin/cmspro/demo/widget/form',
+            'mode' => 'modal',
+            'submit' => '保存设置',
+        ], $items[0]['form']);
+        $this->assertSame('/user/cmspro/formdemo/api/form', $items[1]['form']['entry']);
+        $this->assertSame('inline', $items[1]['form']['mode'], '缺省 mode 回落卡片内联');
+        $this->assertSame(['inline', '保存'], [$items[2]['form']['mode'], $items[2]['form']['submit']]);
+    }
+
+    /** 提交接口不合法（外链、后台页面路径、非数组）：整段丢弃，小工具退化为纯展示卡片 */
+    public function test_registry_drops_invalid_widget_form_declaration(): void
+    {
+        $this->makeApp('cmspro.formdemo', [
+            $this->widget('d', ['form' => ['entry' => 'https://example.com/api/form']]),
+            $this->widget('e', ['form' => ['entry' => '/admin/cmspro/formdemo/form']]),
+            $this->widget('f', ['form' => 'not-an-array']),
+        ]);
+
+        $items = $this->registry()->list();
+
+        $this->assertNull($items[0]['form']);
+        $this->assertNull($items[1]['form']);
+        $this->assertNull($items[2]['form']);
+    }
+
+    /** 提交文案超长按显示宽度 10 裁剪（汉字计 2，即 5 个汉字），避免卡片底部按钮溢出 */
+    public function test_registry_limits_form_submit_text(): void
+    {
+        $this->makeApp('cmspro.formdemo', [
+            $this->widget('a', ['form' => ['entry' => '/api/a', 'submit' => str_repeat('保', 20)]]),
+        ]);
+
+        $this->assertSame(str_repeat('保', 5), $this->registry()->list()[0]['form']['submit']);
+    }
+
+    /**
+     * 卡片表单渲染（2.1.113）：字段类型白名单、内联/弹窗双形态、整体提交与
+     * 桌面拖拽/键盘操作穿透守卫齐备（表单控件在卡片内可正常输入而不触发拖动、删除）
+     */
+    public function test_widget_form_binds_frontend_wiring(): void
+    {
+        $script = file_get_contents(dirname(__DIR__, 2) . '/Assets/js/webos.js');
+        $this->assertIsString($script);
+        // 字段类型白名单与净化：类型未知或字段名非法一律丢弃，不渲染
+        $this->assertStringContainsString('var WIDGET_FIELD_TYPES =', $script);
+        $this->assertStringContainsString('function sanitizeWidgetField(field) {', $script);
+        // 内联渲染（卡片内）与弹窗渲染（layer 表单）两条路径
+        $this->assertStringContainsString('function widgetFormMarkup(item, fields) {', $script);
+        $this->assertStringContainsString('function openWidgetFormDialog(item) {', $script);
+        // 取值与整体提交：POST 到声明的 form.entry，成功后重拉卡片数据
+        $this->assertStringContainsString('function widgetFormValues(scope) {', $script);
+        $this->assertStringContainsString('function submitWidgetForm(values, declaration, id) {', $script);
+        $this->assertStringContainsString('data-widget-form="1"', $script);
+        $this->assertStringContainsString('data-widget-form-submit="1"', $script);
+        // 交互穿透守卫：按下不启动拖动、连击不打开入口、键盘 Enter/Delete 不作用于表单控件
+        $this->assertStringContainsString("if (event.target.closest('[data-widget-form]')) {", $script);
+        $this->assertStringContainsString('[data-widget-form] input', $script);
+
+        $css = file_get_contents(dirname(__DIR__, 2) . '/Assets/css/webos.css');
+        $this->assertIsString($css);
+        $this->assertStringContainsString('.desktop-widget-form {', $css);
+        $this->assertStringContainsString('.webos-widget-form-field {', $css);
+        // 新档位尺寸：4x2 与 2x3 卡片内的表单可用高度
+        $this->assertStringContainsString('[data-widget-size="4x2"]', $css);
+        $this->assertStringContainsString('[data-widget-size="2x3"]', $css);
     }
 
     public function test_registry_sanitizes_widget_actions(): void

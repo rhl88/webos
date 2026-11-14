@@ -37,6 +37,17 @@ use Illuminate\Support\Str;
  *   仅聚合显式声明了 user 的声明项，entry 接口不受本注册表鉴权（仍按各端登录态可用性区分）。
  * - entry 校验放宽：/api/ 之外放行 /user/ 前缀（用户端应用的 API 挂载位置，如多账号
  *   管理的用户端小工具），外链与后台页面路径（/admin/...）仍然拒绝。
+ *
+ * 2.1.113 起：
+ * - form 声明（可选）让小工具成为可交互表单容器：{entry,mode,submit}，entry 为表单提交
+ *   接口（站内 /api/ 或 /user/ 路径，POST），mode 取值 inline（控件直接渲染在卡片内，缺省）
+ *   或 modal（卡片仅显示入口按钮，点击弹出表单层），submit 为提交按钮文案（≤10 字，缺省「保存」）。
+ *   控件结构与当前值由数据接口 entry 返回的 form.fields 动态下发（字段类型白名单见前端
+ *   webos.js 的 WIDGET_FIELD_TYPES：button/select/text/textarea/number/radio/checkbox/
+ *   switch/date/datetime/static），因此应用无需升级 WebOS 即可扩展控件内容；未声明 form
+ *   或声明非法时整段丢弃，小工具退化为 2.1.112 的纯展示 + 操作按钮卡片（存量行为不变）。
+ * - sizes 白名单新增 2x3 与 4x2 两档，为卡片内联表单腾出空间（桌面项占格上限随之
+ *   放宽为宽 4 格、高 3 格，见 WorkspaceService::MAX_WIDGET_SPAN_WIDTH/HEIGHT）。
  */
 class WidgetRegistryService
 {
@@ -54,11 +65,17 @@ class WidgetRegistryService
 
     public const MAX_REFRESH = 3600;
 
-    /** 小工具允许的尺寸档位（宽x高，单位：桌面格子） */
-    public const SIZE_WHITELIST = ['1x1', '2x1', '2x2'];
+    /** 小工具允许的尺寸档位（宽x高，单位：桌面格子）；2x3/4x2 为表单卡片档位（2.1.113） */
+    public const SIZE_WHITELIST = ['1x1', '2x1', '2x2', '2x3', '4x2'];
 
     /** 小工具声明允许的可见终端 */
     public const TERMINAL_WHITELIST = ['admin', 'user'];
+
+    /** 表单渲染形态（2.1.113）：inline=控件直接渲染在卡片内，modal=点击入口按钮弹出表单层 */
+    public const FORM_MODE_WHITELIST = ['inline', 'modal'];
+
+    /** 表单提交按钮文案最大显示宽度（与 title/label 同用 Str::limit，汉字计 2，约 5 个汉字） */
+    protected const MAX_FORM_SUBMIT_LENGTH = 10;
 
     /** 单个小工具最多声明的操作按钮数量 */
     public const MAX_ACTIONS = 2;
@@ -227,6 +244,7 @@ class WidgetRegistryService
             'default_size' => $this->defaultSizeOf($declaration['default_size'] ?? null, $sizes),
             'actions' => $this->actionsOf($declaration['actions'] ?? null),
             'picker' => $this->pickerOf($declaration['picker'] ?? null),
+            'form' => $this->formOf($declaration['form'] ?? null),
             'terminals' => $this->terminalsOf($declaration['terminal'] ?? null),
             'desktop_id' => $desktopId,
         ];
@@ -284,6 +302,40 @@ class WidgetRegistryService
             'entry' => $entry,
             'param' => $param,
             'label' => $label === '' ? '选择数据' : $label,
+        ];
+    }
+
+    /**
+     * 表单声明（2.1.113）：{entry,mode,submit}
+     *
+     * entry 为表单提交接口，与数据接口同一套站内路径白名单（/api/ 或 /user/，外链与
+     * 后台页面路径拒绝）；提交接口不合法时整段丢弃，小工具退化为纯展示卡片。
+     * mode/submit 非法仅回落缺省值（inline/「保存」），不影响表单可用性。
+     *
+     * @return array{entry:string,mode:string,submit:string}|null
+     */
+    protected function formOf(mixed $value): ?array
+    {
+        if (! is_array($value)) {
+            return null;
+        }
+
+        $entry = trim((string) ($value['entry'] ?? ''));
+        if (mb_strlen($entry) > 500 || ! preg_match('#^/(api|user)/[^\s]*$#', $entry)) {
+            return null;
+        }
+
+        $mode = (string) ($value['mode'] ?? '');
+        if (! in_array($mode, self::FORM_MODE_WHITELIST, true)) {
+            $mode = self::FORM_MODE_WHITELIST[0];
+        }
+
+        $submit = Str::limit(trim((string) ($value['submit'] ?? '')), self::MAX_FORM_SUBMIT_LENGTH, '');
+
+        return [
+            'entry' => $entry,
+            'mode' => $mode,
+            'submit' => $submit === '' ? '保存' : $submit,
         ];
     }
 

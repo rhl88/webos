@@ -1,7 +1,7 @@
 # CmsPro WebOS 管理桌面 · 扩展指南
 
-> 文档版本：2.1.112 | 更新日期：2026-11-12
-> 应用版本：2.1.112 | 应用 ID：`cmspro.webos`
+> 文档版本：2.1.115 | 更新日期：2026-11-14
+> 应用版本：2.1.115 | 应用 ID：`cmspro.webos`
 
 ## 一、概述
 
@@ -82,9 +82,10 @@ WebOS 没有面向第三方应用的桌面右键菜单、任务栏或开始菜�
 | `icon` | 否 | 字体图标类名，缺省 `fa fa-cube` |
 | `entry` | 是 | 数据接口地址，必须以 `/api/` 或 `/user/` 开头（同源站内接口；`/user/` 前缀面向用户端应用 API，2.1.112 起放行），≤500 字符 |
 | `refresh` | 否 | 轮询间隔秒数，缺省 60，有效区间 15–3600（越界按缺省处理） |
-| `sizes` | 否 | 允许的尺寸档位数组，取值 `1x1` / `2x1` / `2x2`；缺省 `["1x1"]`，非数组或全部非法时按缺省处理，重复项去重（2.1.108 新增） |
+| `sizes` | 否 | 允许的尺寸档位数组，取值 `1x1` / `2x1` / `2x2` / `2x3` / `4x2`（`2x3`、`4x2` 为 2.1.113 新增）；缺省 `["1x1"]`，非数组或全部非法时按缺省处理，重复项去重（2.1.108 新增） |
 | `default_size` | 否 | 默认档位，必须命中 `sizes`，否则取 `sizes` 首项（2.1.108 新增） |
 | `actions` | 否 | 卡片内操作按钮，最多 2 项，见下方「卡片操作契约」（2.1.108 新增） |
+| `form` | 否 | 表单卡片声明，`{"entry": "表单提交接口(POST)", "mode": "inline\|modal", "submit": "提交按钮文案"}`；见下方「表单卡片契约」（2.1.113 新增） |
 | `picker` | 否 | 多实例添加前的候选列表，声明后每次添加先弹列表由用户选定一条，见下方「多实例与实例参数」（2.1.109 新增） |
 | `terminal` | 否 | 可见终端，字符串或数组，取值 `admin` / `user`；缺省视为仅 admin（存量应用行为不变），非法值剔除、全部非法回落仅 admin。用户端桌面仅聚合显式声明了 `user` 的声明项，后台桌面聚合缺省与声明 `admin` 的声明项（2.1.112 新增） |
 
@@ -167,6 +168,94 @@ WebOS 没有面向第三方应用的桌面右键菜单、任务栏或开始菜�
 
 典型样例：多账号管理 1.0.5 的「账号切换」小工具（`entry` 返回当前账号 + 可切换目标行，目标行带 `action` 免密切换、`reload=true` 切换后整页刷新），声明与接口实现见 `CmsproAltaccount/doc/CmsPro-多账号管理-扩展指南.md`。
 
+#### 表单卡片契约（2.1.113 新增）
+
+声明 `form` 后小工具升级为**可交互表单卡片**：控件结构与当前值由数据接口动态下发，用户在卡片内（或弹层中）填写并整表提交到应用接口。后端解析见 `Services/WidgetRegistryService.php` 的 `formOf()`（常量 `FORM_MODE_WHITELIST = ['inline','modal']`、`MAX_FORM_SUBMIT_LENGTH = 10`），前端字段净化见 `Assets/js/webos.js` 的 `sanitizeWidgetField()`。
+
+manifest `widgets[]` 的 `form` 声明字段：
+
+| 字段 | 必填 | 说明 |
+|---|---|---|
+| `entry` | 是 | 表单提交接口（POST），必须以 `/api/` 或 `/user/` 开头（同源站内接口），≤500 字符；外链与 `/admin/` 页面路径一律拒绝 |
+| `mode` | 否 | 渲染形态：`inline` = 控件直接渲染在卡片内（缺省）；`modal` = 卡片底部只显示入口按钮，点击弹出表单层；非法值回落 `inline` |
+| `submit` | 否 | 提交按钮文案，按显示宽度 `Str::limit(..., 10)` 裁剪（汉字计 2，约 5 个汉字），缺省「保存」 |
+
+声明非法时整段 `form` 丢弃，小工具退化为 2.1.112 的「纯展示 + 操作按钮」卡片（存量应用行为不变）。
+
+数据接口在原有 `title/status/updated_at` 等字段之外返回 `form.fields` 数组（可选返回 `form.title` 作为弹窗表单标题）；接口不返回 `form.fields` 时前端自动回退到展示分支。`form.fields[]` 每项字段：
+
+| 字段 | 必填 | 说明 |
+|---|---|---|
+| `type` | 是 | 控件类型，白名单 `WIDGET_FIELD_TYPES = ['text','textarea','number','select','radio','checkbox','switch','date','datetime','button','static']`；未知类型字段直接丢弃 |
+| `name` | 条件 | 提交键名，须匹配 `/^[a-z][a-z0-9_]{0,31}$/`；`static`/`button` 不提交可不填 |
+| `label` | 否 | 显示标签，按显示宽度 ≤10 裁剪 |
+| `value` | 否 | 当前值；`switch` 传布尔，`checkbox` 传数组，`date` 传 `Y-m-d`，`datetime` 传 `Y-m-d H:i:s` |
+| `placeholder` | 否 | 占位文案，≤60 字符 |
+| `required` | 否 | 布尔；`true` 时提交前为空会聚焦该控件并提示「请填写「标签名」」 |
+| `options` | 条件 | `select/radio/checkbox` 专用，每项 `{"value": "…", "label": "…"}`（value ≤64、label 按显示宽度 ≤40），上限 20 项（`WIDGET_FORM_MAX_OPTIONS`），**少于 2 项则整个字段丢弃** |
+| `rows` | 否 | `textarea` 行数，1~8 |
+| `maxlength` | 否 | 文本类控件最大长度，1~2000 |
+| `min` / `max` / `step` | 否 | `number` 控件的取值范围与步长 |
+| `action` | 否 | `button` 控件专用，复用行级操作契约 `{entry,title,confirm,reload}`，点击即执行 |
+
+各控件类型的 `value` 形态：`text`/`textarea`/`number`/`date`（`Y-m-d`）/`datetime`（`Y-m-d H:i:s`）为标量；`select`/`radio`/`switch`（布尔）为标量；`checkbox` 为数组；`button`/`static` 不参与提交。`datetime` 控件前端使用 `<input type="datetime-local">`，提交前把 `YYYY-MM-DDTHH:mm` 转回 `Y-m-d H:i:s`，渲染时反向转换——**严禁在接口返回 ISO 8601 格式**。
+
+提交口径：点击提交按钮时收集同容器（内联=卡片；弹窗=layer 弹层）内 `[data-widget-field]` 控件，组成 `{字段名: 值}` **整表一次 POST** 到 `form.entry`，自动携带 XSRF-TOKEN、`X-Requested-With`、`Accept: application/json`；响应 `code === 0` 视为成功——toast 提示 `message` 并调用 `refreshWidgetData` 刷新该卡片数据，非 0 或非 2xx 提示 `message`。
+
+数据接口返回片段（可直接照抄）：
+
+```json
+{
+    "title": "任务速记",
+    "status": "running",
+    "form": {
+        "title": "新建演示任务",
+        "fields": [
+            { "type": "text", "name": "title", "label": "任务标题", "required": true, "placeholder": "一句话说明要做什么", "maxlength": 100, "value": "" },
+            { "type": "select", "name": "project_id", "label": "所属项目", "required": true, "options": [ { "value": "1", "label": "官网改版" }, { "value": "2", "label": "小程序" } ] },
+            { "type": "radio", "name": "priority", "label": "优先级", "value": "1", "options": [ { "value": "0", "label": "低" }, { "value": "1", "label": "中" }, { "value": "2", "label": "高" } ] },
+            { "type": "date", "name": "deadline", "label": "截止日期", "value": "2026-11-20" },
+            { "type": "switch", "name": "done", "label": "创建即完成", "value": false },
+            { "type": "textarea", "name": "content", "label": "备注", "rows": 3, "maxlength": 500, "value": "" },
+            { "type": "static", "label": "提示", "value": "创建后可在演示应用中查看" }
+        ]
+    },
+    "updated_at": "2026-11-13 10:00:00"
+}
+```
+
+manifest `form` 声明片段（可直接照抄）：
+
+```json
+{
+    "id": "task-quick-add",
+    "title": "任务速记",
+    "icon": "fa fa-pencil-square",
+    "entry": "/api/admin/cmspro/demo/widget/task-form",
+    "refresh": 300,
+    "sizes": ["4x2", "2x3"],
+    "default_size": "4x2",
+    "form": {
+        "entry": "/api/admin/cmspro/demo/widget/task-create",
+        "mode": "inline",
+        "submit": "创建任务"
+    }
+}
+```
+
+接入注意事项：
+
+1. 单卡片表单字段数上限 8（`WIDGET_FORM_MAX_FIELDS`，超出截断，内联与弹窗口径一致）；单字段选项上限 20，选项少于 2 项的字段整个丢弃。
+2. 日期时间一律 `Y-m-d`（date）/ `Y-m-d H:i:s`（datetime），禁止 ISO 8601。
+3. 必填项为空时聚焦该控件并提示「请填写「标签名」」，不发起提交。
+4. 提交成功后卡片自动刷新（`refreshWidgetData`），应用接口只需返回统一响应结构。
+5. `apps.manifest` 是安装/升级时写入的全量快照：老应用新增 `form` 声明后，需在应用中心执行「升级/重新安装」使快照更新（WebOS 仅在快照完全没有 `widgets` 键时才回退读取磁盘 `manifest.json`）。
+6. `inline` 模式下表单**替换**卡片展示内容（不再渲染 `value/items` 与「刷新/编辑」底部按钮，仅保留表单与提交按钮）；`modal` 模式下底部显示表单入口按钮（`data-widget-form-open`，标题取 `form.title` 或字段中第一个非空 `label`，缺省「填写表单」）。需要「数据展示 + 表单录入」并存时请使用 `modal`。
+7. 表单区域内的按下/点击/双击/键盘事件均不触发卡片拖动、桌面框选与删除快捷键，且恢复了 `pointer-events` 与文本选中（桌面图标默认禁止选中），应用侧无需处理。
+8. 尺寸档位 `2x3`/`4x2` 为 2.1.113 新增，桌面项占格上限相应放宽为宽 4 格、高 3 格（`WorkspaceService::MAX_WIDGET_SPAN_WIDTH = 4`、`MAX_WIDGET_SPAN_HEIGHT = 3`）；`4x2` 档位的内联表单为双列栅格，`2x3` 加大行间距，弹窗表单为浅色主题（`webos.css`）。
+
+官方示范：Demo 应用 2.4.1 的「任务速记」（inline，`4x2`/`2x3`）与「项目速建」（modal，`2x2`/`4x2`），实现见 `CmsproDemo/Controllers/Admin/WidgetFormController.php`。
+
 #### 多实例与实例参数（2.1.109 新增）
 
 同一小工具声明若需支持「一份数据一张卡片」（如桌面便签：每条便签独立贴到桌面），声明 `picker` 即可由用户在添加时选定实例。**不声明 `picker` 的小工具行为完全不变**（一点即添加一张固定卡片）。
@@ -212,8 +301,8 @@ WebOS 没有面向第三方应用的桌面右键菜单、任务栏或开始菜�
 
 注意事项：
 
-1. 卡片默认只读展示，**点击卡片不打开窗口**（不承载跳转，`path` 强制为空）；需要详情请让用户从开始菜单进入应用页面。声明了 `actions` 的卡片可在卡片内完成轻量写入操作。
-2. 尺寸档位：卡片严格按桌面格子吸附，用户在 `sizes` 声明的档位之间通过右下角拖拽手柄调整；尺寸随桌面项保存（`desktop_items` 的 `w`/`h`），应用侧无需任何处理。
+1. 卡片默认只读展示，**点击卡片不打开窗口**（不承载跳转，`path` 强制为空）；需要详情请让用户从开始菜单进入应用页面。声明了 `actions` 的卡片可在卡片内完成轻量写入操作；声明了 `form` 的卡片可在卡片内（inline）或弹层中（modal）完成表单填写与整表提交（2.1.113 新增，见「表单卡片契约」）。
+2. 尺寸：`sizes` / `default_size` 仅决定新建卡片时的初始大小；2.1.115 起用户拖拽手柄可像素级自由调整宽高（不吸附档位，最小 1 格、最宽 4 格最高 3 格），尺寸随桌面项保存（`desktop_items` 的 `px_width` / `px_height`，位置仍按格保存于 `x` / `y`，拖西/北边改变左/上缘时另记 `px_left` / `px_top`），应用侧无需任何处理。
 3. 轮询按 `refresh` 秒串行排队，桌面无该小工具时立即停止，不会长期占用请求。
 4. 小工具不参与用户桌面预设同步与角色预设推送，属用户手动添加的桌面项；移除方式：卡片右上角关闭按钮（悬停显现，仅从桌面移除卡片、不调应用接口）或桌面项右键「删除」。
 5. 应用停用或卸载后注册表不再返回该项，桌面卡片转为失效态并停止轮询；重新启用后自动恢复数据。
@@ -485,7 +574,9 @@ WebOS 不新增应用管理接口，应用中心的数据与操作全部复用�
 | `kind` | 可空，`folder` / `url` / `widget` | 桌面项类型：文件夹、URL 链接、桌面小工具；空值为普通入口 |
 | `widget_key` | `kind=widget` 时必填，格式 `{app_id}:{widget_id}`（`[A-Za-z0-9_.-]+:[a-z0-9][a-z0-9-]{0,31}`），≤100 字符 | 小工具标识，指向应用 `manifest.widgets` 注册表项；widget 项 `path` 与 `parent_folder` 强制为空，点击不打开窗口（2.1.106 新增） |
 | `x` / `y` | 整数 0–99 | 桌面网格坐标（仅桌面项） |
-| `w` / `h` | 仅 `kind=widget` 输出，整数 1–2 | 小工具占格宽高，对应尺寸档位 `1x1` / `2x1` / `2x2`；非数字或越界回落 1，其它类型不写该字段；任务栏项统一剔除坐标与占格（2.1.108 新增） |
+| `w` / `h` | 仅 `kind=widget` 输出，整数宽 1–4 / 高 1–3 | 小工具占格宽高（降级兼容字段，2.1.115 起按像素尺寸向上取整换算），对应尺寸档位 `1x1` / `2x1` / `2x2` / `2x3` / `4x2`；非数字或越界钳制到范围内，其它类型不写该字段；任务栏项统一剔除坐标与占格（2.1.108 新增） |
+| `px_width` / `px_height` | 仅 `kind=widget` 且成对有效时输出，整数 1–4096 | 卡片像素宽高（2.1.115 新增）；成对有效才写，缺省时前端按 `w`/`h` 与当前图标档位换算；任务栏项剔除 |
+| `px_left` / `px_top` | 仅 `kind=widget` 时输出，整数 0–20000 | 卡片像素左上位置（2.1.115 新增）：仅拖西/北边改变左/上缘时记录；位置拖动落格后自动清除，改由 `x`/`y` 表达 |
 | `params` | 仅 `kind=widget` 且非空时输出，对象 ≤3 键，键名 `[a-z][a-z0-9_]{0,31}`，值 ≤64 字符 | 小工具实例参数（如多实例便签的 `note_id`），随桌面项保存；非对象或全部无效键按空对象处理（不写该字段），任务栏项统一剔除（2.1.109 新增） |
 
 数量与统计约束：
@@ -661,7 +752,7 @@ app(HookManager::class)->registerFilter(
 | 实例参数透传 | 桌面项 `params`（≤3 键，值 ≤64） | 拉数据与提交操作时自动拼 query / 合并请求体 | `WorkspaceServiceTest`、`WidgetNoteTest` | 通过：应用接口按 `note_id` 定位单条便签 |
 | 卡片自定义操作 | `actions[]`（`method` / `entry` / `input`） | 卡片底部按钮 + 输入弹层（`type=text` / `type=select`） | `WidgetRegistryTest`、前端源码断言 | 通过：改色、编辑内容均走应用自有接口 |
 | 自定义数据展示 | `status` / `value` / `unit` / `items` / `title` / `text` / `color` | `desktopWidgetBody()` 与 `widgetToneOf()` 按契约渲染 | 全量前端回归 | 通过：文本便签形态由应用数据驱动，非 WebOS 内置业务 |
-| 尺寸档位 | `sizes` / `default_size` | 占格渲染 + 右下角拖拽吸附 | `WidgetDesktopItemTest` | 通过：1x1 / 2x1 / 2x2 可调 |
+| 尺寸 | `sizes` / `default_size` | 新建按档位换算初始像素大小，拖拽像素级自由调尺寸（1 格 ~ 4×3 格） | `WidgetDesktopItemTest` | 通过：像素尺寸/位置落库、越界拒绝 |
 | 卡片关闭 | 无需声明 | `.desktop-widget-close` → `removeDesktopEntry()` | 前端断言 | 通过：不占 `actions` 名额，不调应用接口 |
 | 权限控制 | 应用路由自带中间件 | 请求沿用应用路由 | `WidgetNoteTest` | 通过：读用 `manage`、写用 `create`，越权 403 |
 
@@ -688,6 +779,9 @@ app(HookManager::class)->registerFilter(
 
 | 版本 | 日期 | 更新人 | 说明 |
 |---|---|---|---|
+| 2.1.115 | 2026-11-14 | CmsPro | **桌面小工具像素级自由尺寸（用户需求「小工具可以随意拖动改变大小，现在的固定大小用户体验很差」）**：① 存储——桌面项新增 `px_width`/`px_height`（像素宽高）与 `px_left`/`px_top`（像素位置，仅拖西/北边改变左/上缘时记录）；`w`/`h` 退为降级兼容字段（按像素向上取整换算、钳至宽 1–4 / 高 1–3）。② 校验与净化——`WebosController::desktopItemsRules()` 声明四个字段（像素尺寸 1–`MAX_WIDGET_PIXEL_SIZE`(4096)、像素位置 0–`MAX_WIDGET_PIXEL_OFFSET`(20000)）；`WorkspaceService::sanitizeDesktopItem()` 仅 `kind=widget` 保留（宽高须成对有效，位置可单存），`sanitizeTaskbarItems()` 统一剔除。③ 前端——`Assets/js/webos.js` 新增 `desktopItemPixelRect()`（`px_*` 优先，缺省按格子换算）按像素矩形定位定尺，`resizeDesktopWidget()` 按方向像素跟手（`widgetPixelLimits()` 约束最小 1 格、最大 4×3 格与桌面可视区），拖拽中显示像素尺寸提示，松手 `widgetRectAvailable()` 按像素矩形做重叠校验；位置拖动/自动排列仍整格对齐并清除 `px_left`/`px_top`。④ 兼容——普通入口与既有 `w`/`h` 数据无需迁移，未记录像素尺寸时行为与旧版一致。268 测试 2588 断言通过。 |
+| 2.1.114 | 2026-11-13 | CmsPro | **小工具卡片四边缩放（用户需求「小工具的窗口大小支持上下左右缩放，现在只有右下角能调整大小」）**：① 手柄——`webos.js` 的 `desktopWidgetMarkup()` 由右下角单手柄改为新增 `widgetResizeHandlesMarkup()` 渲染四条边与四个角共 8 个手柄（`data-widget-resize` 值 n/s/e/w/ne/nw/se/sw，口径同应用窗口 `data-window-resize`）；`webos.css` 手柄基类默认 `pointer-events:none` 不可抓，悬停/选中/聚焦/拖动中（`:hover`/`:focus-visible`/`.is-selected`/`.is-resizing`）显形并启用指针，光标按方向区分（`ns/ew/nesw/nwse-resize`），se 保留视觉角标其余为透明热区（边手柄 6px 两端让出 14px、角手柄 12px，避免遮挡关闭/操作按钮）。② 拖拽——`resizeDesktopWidget(card, event, dir)` 增加 `dir` 参数并方向化重写：拖东/南边仅改目标占格；拖西/北边同步移动 `x/y`（对侧右/下缘视觉固定），`candidates()` 先剔除会让新 x/y 为负的档位（至少含当前档位不会为空）；`project(value, max)` 投影上限由写死 1..2 格改为取声明档位中的最大宽/高（修正 2x3/4x2 档位实际拖不到的问题）；松手 `finish()` 按目标矩形 `widgetRectAvailable()` 校验（越界/重叠拒绝），空间不足回退原 x/y/w/h 并 toast「当前位置空间不足，无法调整到该尺寸」，成功则持久化 `x/y/w/h` 并静默保存。③ 事件——`elements.desktopIcons` 的 `pointerdown` 委托把 `resizeHandle.dataset.widgetResize` 方向传入 `resizeDesktopWidget()`。对应用开发者无新增声明要求，`sizes`/`form` 契约不变。266 测试 2573 断言通过。 |
+| 2.1.113 | 2026-11-13 | CmsPro | 桌面小工具支持表单卡片：manifest 新增 form 声明（inline/modal）、数据接口下发 form.fields 控件契约（11 种控件类型）、整表提交与交互守卫；尺寸档位新增 2x3/4x2，桌面项占格上限放宽为宽 4 高 3 |
 | 2.1.112 | 2026-11-12 | CmsPro | **用户端桌面小工具 + 卡片行级操作（用户需求「在 user 的 webos 增加桌面小工具，用于切换账号功能」）**：① 注册表终端过滤——`Services/WidgetRegistryService.php` 新增 `TERMINAL_WHITELIST=['admin','user']` 常量与 `terminalsOf()` 解析（manifest `widgets[]` 新增可选 `terminal` 字段，字符串或数组皆可、非法值剔除、全空回落仅 admin），`list(?string $terminal)` 按声明的 `terminals` 过滤后 `unset` 内部键，缺省 `terminal` 视为仅 admin（存量应用行为不变）。② entry 校验放宽——`sanitizeWidget()` 的 entry 正则由 `#^/api/[^\s]*$#` 放宽为 `#^/(api|user)/[^\s]*$#`，放行用户端应用 API 的 `/user/` 前缀（外链与 `/admin/` 页面路径仍拒）。③ 用户端注册表路由——`Routes/user.php` 新增 `GET /user/cmspro/webos/api/widgets`（复用父类 `widgets()`，经 `User\WebosController::terminalOf()` 覆写按 `terminal=user` 过滤，`auth:web` + `front_user_status` 保护）。④ 卡片行级操作（items[].action 契约）——数据接口 `items[]` 每项可带 `action` 对象：`entry`（必填，`/api/` 或 `/user/` 前缀，非法该行退化为纯展示）、`params`（提交参数对象）、`confirm`（确认文案，非空先弹确认）、`reload`（布尔，true 时操作成功后整页刷新拉取新会话）；前端 `webos.js` 新增 `widgetLineActionOf()` 契约解析、`runWidgetLineAction()` 行点击执行（`layer.confirm` 确认 → POST JSON → 成功按 reload 分流整页刷新或 `refreshWidgetOnce()` 局部刷新）、行渲染输出 `data-widget-line-action`/`data-action-*` data 属性与 `is-clickable` 类（`role`/`tabindex`/`title` 无障碍）；`desktopWidgetBody()` 明细行数按占格高扩展（1x1 → 3 行，h≥2 → 6 行）；事件层三处接线——`pointerdown` 行节点不启动拖动、`click` 委托命中行节点 `stopPropagation` 后执行操作、`dblclick` 防误触选择器并入 `[data-widget-line-action]`。⑤ 样式——`webos.css` 新增 `.desktop-widget-line.is-clickable` 系列（内边距底色、指针手势、hover/focus-visible 反馈、`b` 值高亮）。⑥ 测试——`WidgetRegistryTest` 新增 5 用例（缺省 terminal 回落 admin、terminal 声明解析、`/user/` entry 放行、用户端 widgets API 401/过滤/admin 端回归、行级操作前端接线断言），260 测试 2539 断言通过。多账号管理 1.0.5 为首个接入样例（「账号切换」小工具）。 |
 | 2.1.111 | 2026-11-11 | CmsPro | **工作区保存误报 40201 修复（问题修复）**：① 现象——桌面项超过 48 个时保存工作区报 `40201 请求参数不合法`，`data.desktop_items` 为「The desktop items field must not have more than 48 items.」，导致 48 个以上图标无法持久化。② 根因——2.1.63 把桌面项上限由 48 提至 200 时，同步改了前端添加入口容量预检查与 `WorkspaceService::DESKTOP_ITEM_LIMIT`，但 `WebosController::desktopItemsRules()` 的 `desktop_items` 校验规则仍误留 `max:48`，请求在进入服务层前即被参数校验拒绝。③ 修复——校验规则改为 `'max:' . WorkspaceService::DESKTOP_ITEM_LIMIT`，`DESKTOP_ITEM_LIMIT` 由 `protected const` 提为 `public const`；前端预检查、接口校验、服务层超限文案三处口径统一取同一常量，杜绝再次漂移。该规则同时服务工作区保存、用户桌面预设保存与管理桌面预设保存。④ 测试——`WebosWorkspaceApiTest` 新增回归用例（60 项保存成功且响应回显 60 项、201 项仍按 40201 拒绝，锁死「上限 200 而非无限制」语义）；`WebosWorkspaceApiTest` + `WorkspaceServiceTest` 132 测试 1785 断言通过。 |
 | 2.1.110 | 2026-11-11 | CmsPro | **开始菜单搜索框每次打开重置（问题修复）**：① 现象——在开始菜单搜索应用后关闭菜单，再次点击任务栏 CMSPRO 标志打开，搜索框仍保留上次关键词，列表停留在上次的搜索结果。② 根因——`Assets/js/webos.js` 的 `togglePanel()` 打开 `start` 面板时只调用 `renderStartMenu()` 按输入框当前值渲染，从未重置 `elements.startSearch.value`，面板关闭时也不清空。③ 修复——`start` 打开分支在 `renderStartMenu()` 前清空搜索框，每次重新打开都回到当前分组的完整列表；面板保持展开期间切换分组、输入搜索词的既有行为不变。`Assets/js/webos.js` 与 `public/apps/cmspro.webos/js/webos.js` 为同一硬链接文件，资源无需二次发布，`assetVersion()` 依据文件 mtime 自动刷新浏览器缓存。④ 测试——`WebosWorkspaceApiTest` 新增 `test_start_menu_search_is_reset_each_time_panel_opens` 源码断言用例。 |
