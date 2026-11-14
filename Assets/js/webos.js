@@ -2067,34 +2067,32 @@
     }
 
     /** 像素级调尺寸的取值范围（2.1.115）：最小 1 格，最大 4 格宽 / 3 格高，
-     *  且右/下缘不越出桌面可视区（窗口缩放后仍保持在桌面内） */
+     *  且右/下缘不越出桌面可视区（窗口缩放后仍保持在桌面内）。
+     *  右/下缘只取桌面可视区边界，宽高上限由 maxWidth/maxHeight 单独约束——
+     *  若把上限换成绝对坐标（旧实现），靠近右缘的卡片会算出负数可用宽度 */
     function widgetPixelLimits() {
         var size = desktopIconSize();
         var capacity = desktopGridCapacity();
         var host = elements.desktopIcons;
         var minWidth = size.cellW - 6;
         var minHeight = size.cellH - 6;
-        var rightLimit = 4 + WIDGET_SPAN_MAX_WIDTH * size.cellW - 6;
-        var bottomLimit = 4 + WIDGET_SPAN_MAX_HEIGHT * size.cellH - 6;
-        if (host && host.clientWidth > 0) {
-            rightLimit = Math.min(rightLimit, host.clientWidth - 4);
+        var rightLimit = 4 + minWidth;
+        var bottomLimit = 4 + minHeight;
+        if (host && host.clientWidth > 0 && host.clientHeight > 0) {
+            rightLimit = Math.max(4 + minWidth, host.clientWidth - 4);
+            bottomLimit = Math.max(4 + minHeight, host.clientHeight - 4);
         }
-        if (host && host.clientHeight > 0) {
-            bottomLimit = Math.min(bottomLimit, host.clientHeight - 4);
-        }
-        if (capacity.cols > 0) {
-            rightLimit = Math.min(rightLimit, 4 + capacity.cols * size.cellW - 6);
-        }
-        if (capacity.rows > 0) {
-            bottomLimit = Math.min(bottomLimit, 4 + capacity.rows * size.cellH - 6);
+        if (capacity.cols > 0 && capacity.rows > 0) {
+            rightLimit = Math.max(4 + minWidth, Math.min(rightLimit, 4 + capacity.cols * size.cellW - 6));
+            bottomLimit = Math.max(4 + minHeight, Math.min(bottomLimit, 4 + capacity.rows * size.cellH - 6));
         }
         return {
             minWidth: minWidth,
             minHeight: minHeight,
             maxWidth: WIDGET_SPAN_MAX_WIDTH * size.cellW - 6,
             maxHeight: WIDGET_SPAN_MAX_HEIGHT * size.cellH - 6,
-            rightLimit: Math.max(4 + minWidth, rightLimit),
-            bottomLimit: Math.max(4 + minHeight, bottomLimit)
+            rightLimit: rightLimit,
+            bottomLimit: bottomLimit
         };
     }
 
@@ -2165,19 +2163,20 @@
                 height: startRect.height
             };
             if (hasE) {
-                var growEast = Math.min(limits.maxWidth, limits.rightLimit - startRect.left);
-                rect.width = clamp(startRect.width + deltaX, limits.minWidth, Math.max(limits.minWidth, growEast));
+                // 上限不低于当前宽度：卡片已达宽/高上限时只允许缩小，不被压到最小值
+                var eastLimit = Math.min(limits.maxWidth, limits.rightLimit - startRect.left);
+                rect.width = clamp(startRect.width + deltaX, limits.minWidth, Math.max(startRect.width, eastLimit));
             } else if (hasW) {
                 var growWest = Math.min(limits.maxWidth, startRect.left + startRect.width - 4);
-                rect.width = clamp(startRect.width - deltaX, limits.minWidth, Math.max(limits.minWidth, growWest));
+                rect.width = clamp(startRect.width - deltaX, limits.minWidth, Math.max(startRect.width, growWest));
                 rect.left = startRect.left + startRect.width - rect.width;
             }
             if (hasS) {
-                var growSouth = Math.min(limits.maxHeight, limits.bottomLimit - startRect.top);
-                rect.height = clamp(startRect.height + deltaY, limits.minHeight, Math.max(limits.minHeight, growSouth));
+                var southLimit = Math.min(limits.maxHeight, limits.bottomLimit - startRect.top);
+                rect.height = clamp(startRect.height + deltaY, limits.minHeight, Math.max(startRect.height, southLimit));
             } else if (hasN) {
                 var growNorth = Math.min(limits.maxHeight, startRect.top + startRect.height - 4);
-                rect.height = clamp(startRect.height - deltaY, limits.minHeight, Math.max(limits.minHeight, growNorth));
+                rect.height = clamp(startRect.height - deltaY, limits.minHeight, Math.max(startRect.height, growNorth));
                 rect.top = startRect.top + startRect.height - rect.height;
             }
             preview(rect);
