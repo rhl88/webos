@@ -1,6 +1,6 @@
 # WebOS 管理桌面 应用文档
 
-> 应用ID：`cmspro.webos` | 文档版本：1.1.0 | 应用版本：2.1.124 | 依赖：PHP ≥ 8.3, CmsPro ≥ 5.1.8
+> 应用ID：`cmspro.webos` | 文档版本：1.1.0 | 应用版本：2.1.125 | 依赖：PHP ≥ 8.3, CmsPro ≥ 5.1.8
 
 - 官方地址：https://www.cmspro.cn/apps/cmspro.webos
 - 本应用是 CmsPro v5 的桌面式后台入口应用，基于 CMSPRO 运行，请先安装 [CMSPRO](https://www.cmspro.cn/help/2)

@@ -5384,15 +5384,21 @@
             return;
         }
         var maxContentHeight = ignoredUpdatesContentMaxHeight();
+        var dialogLayero = null;
         layer.open({
             type: 1,
             title: '忽略的应用',
             area: ['480px', 'auto'],
-            btn: ['关闭'],
+            // 「清除忽略」位于「关闭」左侧：一键清空全部忽略记录（2.1.125）
+            btn: ['清除忽略', '关闭'],
+            yes: function () {
+                clearIgnoredUpdates(dialogLayero);
+            },
             content: '<div class="webos-ignored-updates" data-ignored-updates-panel '
                 + 'style="max-height:' + maxContentHeight + 'px;overflow-y:auto;">'
                 + ignoredUpdatesListMarkup() + '</div>',
             success: function (layero) {
+                dialogLayero = layero;
                 // 移除忽略后弹窗列表即时刷新（同一条 layero 内重绘内容）
                 layero.on('click', '[data-unignore-key]', function () {
                     removeIgnoredUpdate(this.dataset.unignoreKey, layero);
@@ -5409,6 +5415,40 @@
         state.workspace.preferences.ignored_updates = sanitizeIgnoredUpdates(list);
         saveWorkspace(false);
         toast('已恢复该版本的更新提示');
+        syncUpdateBadge();
+        var center = document.querySelector('[data-app-center]');
+        if (center && state.appCenterTab === 'updates') {
+            var status = center.querySelector('[data-app-status]');
+            var content = center.querySelector('[data-app-content]');
+            if (status) {
+                renderUpdatesStatus(status);
+            }
+            if (content) {
+                content.innerHTML = renderApplicationCards(visibleUpdateApps(), 'updates');
+            }
+        }
+        var panel = dialogLayero ? dialogLayero[0].querySelector('[data-ignored-updates-panel]') : null;
+        if (panel) {
+            panel.innerHTML = ignoredUpdatesListMarkup();
+        }
+        // 工具栏「忽略的应用(x)」计数同步
+        var toggle = document.querySelector('[data-ignored-updates-toggle]');
+        if (toggle) {
+            toggle.textContent = '忽略的应用(' + state.workspace.preferences.ignored_updates.length + ')';
+        }
+    }
+
+    /** 清除全部忽略记录：清空偏好并持久化，恢复所有被忽略版本的更新提示；同步角标、更新 Tab、弹窗空态与工具栏计数（2.1.125） */
+    function clearIgnoredUpdates(dialogLayero) {
+        var count = Array.isArray(state.workspace.preferences.ignored_updates)
+            ? state.workspace.preferences.ignored_updates.length : 0;
+        if (!count) {
+            toast('当前没有忽略的版本更新');
+            return;
+        }
+        state.workspace.preferences.ignored_updates = sanitizeIgnoredUpdates([]);
+        saveWorkspace(false);
+        toast('已清除全部忽略记录');
         syncUpdateBadge();
         var center = document.querySelector('[data-app-center]');
         if (center && state.appCenterTab === 'updates') {

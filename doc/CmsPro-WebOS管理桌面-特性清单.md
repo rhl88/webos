@@ -1,7 +1,7 @@
 # CmsPro WebOS 管理桌面 · 特性清单
 
-> 文档版本：2.1.124 | 更新日期：2026-11-16
-> 应用版本：2.1.124 | 应用 ID：`cmspro.webos`
+> 文档版本：2.1.125 | 更新日期：2026-11-16
+> 应用版本：2.1.125 | 应用 ID：`cmspro.webos`
 
 ## 一、应用定位
 
@@ -191,6 +191,7 @@ CmsproWebos/
 
 | 版本 | 日期 | 说明 |
 |---|---|---|
+| 2.1.125 | 2026-11-16 | **「忽略的应用」弹窗新增「清除忽略」**：关闭按钮左侧新增「清除忽略」，一键清空全部忽略记录并持久化，恢复所有被忽略版本的更新提示；同步角标、更新 Tab、弹窗空态与工具栏计数；空记录时仅提示不写库 |
 | 2.1.124 | 2026-11-16 | **「全部功能」入口恢复（2.1.122 需求修正）**：blade 恢复 `data-open-special="entries"`「全部功能」按钮与委托 entries 分支（点击打开启动台）；启动台叶子收集 `collectLauncherLeaves()` 经 `openablePath()` 过滤，`HIDDEN_WEBOS_MENU_PATHS` 四个系统菜单（应用管理/WebOS 管理桌面/应用市场/应用日志）不在启动台展示；开始菜单「应用」目录卡片隐藏行为与 2.1.122 一致 |
 | 2.1.123 | 2026-11-16 | **升级弹窗更新日志摘要与详情展开**：`openUpgradeDialog()` 重写版本 changelog 渲染——取更新日志首个非空行作摘要（`escapeHtml` 纯文本展示），摘要右侧「详情」链接（`data-upgrade-notes-toggle`）展开完整更新日志（`upgradeNotesMarkdown()` 经 `window.marked.parse` 渲染 Markdown，复用 `.doc-markdown-body` 样式 + 新增 `.upgrade-notes-body` 内部滚动容器 max-height 200px，渲染异常回退纯文本段落）；toggle 与详情区按 `nextElementSibling` 相邻配对，点击切换 hidden 并在「详情/收起」间切换文案；弹窗高度 `450px` 改 `auto` 随展开内容自适应 |
 | 2.1.122 | 2026-11-16 | **WebOS 下隐藏系统应用菜单入口**：`webos.js` 新增 `HIDDEN_WEBOS_MENU_PATHS`（/admin/app、/admin/app/market、/admin/app/log、/admin/cmspro/webos），`openablePath()` 在放行判断前按 path 精确集合拦截——该函数是全部菜单数据流的单点过滤（flattenMenus/启动台/窗口导航共用），叶子消失后开始菜单「应用」目录卡片（folder 聚合无叶子）与启动台四个系统卡片同步隐藏；blade 移除「全部功能」按钮（`data-open-special="entries"`）与委托 entries 死代码分支，`openLauncherDialog()` 保留（`menu_open_launcher` 偏好仍触发） |

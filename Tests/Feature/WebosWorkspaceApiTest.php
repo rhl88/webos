@@ -3354,6 +3354,14 @@ class WebosWorkspaceApiTest extends WebosTestCase
         $this->assertStringContainsString('function openIgnoredUpdatesDialog()', $script);
         $this->assertStringContainsString('function removeIgnoredUpdate(key, dialogLayero)', $script);
         $this->assertStringContainsString("data-unignore-key=\"", $script);
+        // 「清除忽略」按钮（2.1.125）：位于「关闭」左侧（layui btn 数组顺序），一键清空全部忽略记录，
+        // 持久化后同步角标、更新 Tab、弹窗空态与工具栏计数；空集合时仅提示不写库
+        $this->assertStringContainsString("btn: ['清除忽略', '关闭'],", $script);
+        $this->assertMatchesRegularExpression("/yes: function \(\) \{\s*clearIgnoredUpdates\(dialogLayero\);\s*\},/", $script);
+        $this->assertStringContainsString('function clearIgnoredUpdates(dialogLayero)', $script);
+        $this->assertStringContainsString('state.workspace.preferences.ignored_updates = sanitizeIgnoredUpdates([]);', $script);
+        $this->assertStringContainsString("toast('已清除全部忽略记录');", $script);
+        $this->assertStringContainsString("toast('当前没有忽略的版本更新');", $script);
         // 「忽略的应用」弹窗高度控制（2.1.117）：内容区最大高度跟随应用中心窗口，且不超过视口 80%，
         // 忽略项过多时列表内部滚动，避免弹窗撑满屏幕
         $this->assertStringContainsString('function ignoredUpdatesContentMaxHeight()', $script);
@@ -3366,8 +3374,8 @@ class WebosWorkspaceApiTest extends WebosTestCase
         $this->assertStringContainsString(">忽略</button>", $script);
         $this->assertStringContainsString("event.target.closest('[data-ignore-update-id]')", $script);
         $this->assertStringContainsString('ignoreUpdateApp(ignoreUpdate.dataset.ignoreUpdateId);', $script);
-        // 角标/状态栏/更新列表/WebOS 自身更新提示统一走可见口径（忽略后不计不显示）；9 处含函数定义本身
-        $this->assertSame(10, substr_count($script, 'visibleUpdateApps()'));
+        // 角标/状态栏/更新列表/WebOS 自身更新提示/清除忽略后的更新列表统一走可见口径（忽略后不计不显示）；11 处含函数定义本身
+        $this->assertSame(11, substr_count($script, 'visibleUpdateApps()'));
         $this->assertStringNotContainsString("renderApplicationCards(state.updateApps, 'updates')", $script);
         $this->assertStringNotContainsString("state.updateApps.find(function (app) { return app.app_id === 'cmspro.webos'; })", $script);
         // 三层同步：state 默认偏好 / normalizePreferences / 服务层 DEFAULT + 净化 + 验证规则
