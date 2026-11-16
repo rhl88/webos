@@ -163,6 +163,9 @@
         startGroupCount: document.getElementById('start-group-count'),
         taskbarPinned: document.getElementById('taskbar-pinned'),
         taskbarWindows: document.getElementById('taskbar-windows'),
+        taskbarScroll: document.getElementById('taskbar-scroll'),
+        taskbarScrollStart: document.getElementById('taskbar-scroll-start'),
+        taskbarScrollEnd: document.getElementById('taskbar-scroll-end'),
         taskbar: document.querySelector('.webos-taskbar'),
         websiteButton: document.getElementById('website-button'),
         notificationButton: document.getElementById('notification-button'),
@@ -306,9 +309,20 @@
         return typeof path === 'string' && /^https?:\/\/[^/\s]/i.test(path);
     }
 
-    /** 菜单路径是否可打开：站内路径一律放行，_blank 额外放行 http(s) 外链；URL 链接入口按 http(s) 外链放行 */
+    // WebOS 下隐藏的系统菜单入口（2.1.122）：应用管理/应用市场/应用日志/WebOS 管理桌面，
+    // 功能已由 WebOS 应用中心覆盖——开始菜单目录卡片、启动台、窗口导航中均不再展示
+    var HIDDEN_WEBOS_MENU_PATHS = {
+        '/admin/app': true,
+        '/admin/app/market': true,
+        '/admin/app/log': true,
+        '/admin/cmspro/webos': true
+    };
+
+    /** 菜单路径是否可打开：站内路径一律放行，_blank 额外放行 http(s) 外链；URL 链接入口按 http(s) 外链放行；
+     *  命中 WebOS 隐藏集合的系统菜单一律不放行（openablePath 是全部菜单数据流的单点过滤） */
     function openablePath(entry) {
         if (entry.kind === 'url' && externalPath(entry.path)) { return true; }
+        if (typeof entry.path === 'string' && HIDDEN_WEBOS_MENU_PATHS[entry.path]) { return false; }
         return safePath(entry.path) || (entry.open_type === '_blank' && externalPath(entry.path));
     }
 
@@ -2466,6 +2480,62 @@
                 + '<span class="taskbar-button-label" aria-hidden="true">' + escapeHtml(item.title) + '</span>'
                 + '</button>';
         }).join('');
+        syncTaskbarOverflow();
+    }
+
+    /**
+     * 任务栏溢出收纳（2.1.118，Windows 行为）：
+     * ① 「图标+文字」模式放不下 → 先隐藏文字只留图标（data-taskbar-compact，CSS 生效）；
+     * ② 纯图标仍放不下 → 显示左右翻页箭头（应用区滚动容器内部滚动）。
+     * 开始菜单与右侧托盘区始终保留不被挤出。竖排（left/right）不限制溢出，行为与原先一致。
+     */
+    function syncTaskbarOverflow() {
+        var scroll = elements.taskbarScroll;
+        if (!scroll) {
+            return;
+        }
+        var position = state.workspace.preferences.taskbar_position || 'bottom';
+        var vertical = position === 'left' || position === 'right';
+        var compact = false;
+        if (!vertical && root.dataset.taskbarButtonStyle === 'text') {
+            // 先按「图标+文字」自然宽度测量，放不下再降级为纯图标
+            root.removeAttribute('data-taskbar-compact');
+            compact = scroll.scrollWidth - scroll.clientWidth > 1;
+        }
+        if (compact) {
+            root.setAttribute('data-taskbar-compact', 'on');
+        } else {
+            root.removeAttribute('data-taskbar-compact');
+        }
+        updateTaskbarScrollButtons();
+    }
+
+    /** 溢出时显示翻页箭头并按当前位置置灰到头一侧；未溢出时隐藏箭头并复位滚动 */
+    function updateTaskbarScrollButtons() {
+        var scroll = elements.taskbarScroll;
+        if (!scroll || !elements.taskbarScrollStart || !elements.taskbarScrollEnd) {
+            return;
+        }
+        var max = scroll.scrollWidth - scroll.clientWidth;
+        var overflowing = max > 1;
+        elements.taskbarScrollStart.hidden = !overflowing;
+        elements.taskbarScrollEnd.hidden = !overflowing;
+        if (!overflowing) {
+            scroll.scrollLeft = 0;
+            scroll.scrollTop = 0;
+            return;
+        }
+        elements.taskbarScrollStart.disabled = scroll.scrollLeft <= 1;
+        elements.taskbarScrollEnd.disabled = scroll.scrollLeft >= max - 1;
+    }
+
+    /** 翻页箭头点击：按可视宽度约 85% 平滑滚动（Windows 11 任务栏溢出交互） */
+    function scrollTaskbarPage(direction) {
+        var scroll = elements.taskbarScroll;
+        if (!scroll) {
+            return;
+        }
+        scroll.scrollBy({ left: direction * Math.round(scroll.clientWidth * 0.85), behavior: 'smooth' });
     }
 
     function menuGroups() {
@@ -3910,6 +3980,10 @@
             items.push({ label: '最小化', icon: 'fa-minus', action: 'minimize', key: key });
         }
         items.push({ label: '关闭', icon: 'fa-times', action: 'close', key: key, danger: true });
+        // 关闭全部（2.1.119）：右键「关闭」下方一键关闭所有运行窗口（Windows 式批量关闭），有窗口才显示
+        if (state.windows.size) {
+            items.push({ label: '关闭全部', icon: 'fa-window-close-o', action: 'close-all', danger: true });
+        }
         var entryId = target.entry ? target.entry.id : '';
         if (entryId) {
             var pinned = taskbarItems().some(function (item) { return item.id === entryId; });
@@ -4010,6 +4084,12 @@
             else if (action === 'minimize') { minimizeWindow(key); }
             else if (action === 'restore') { restoreWindow(key); }
             else { closeWindow(key); }
+            return;
+        }
+        if (action === 'close-all') {
+            // 关闭全部运行窗口（2.1.119）：先取快照再遍历（closeWindow 内部会删除 Map 条目），
+            // 逐个走 closeWindow 保证窗口元素清理、账号身份刷新等副作用不遗漏
+            Array.from(state.windows.keys()).forEach(function (windowKey) { closeWindow(windowKey); });
             return;
         }
         var id = dataset.taskbarId;
@@ -7919,6 +7999,12 @@
             cacheMarketApps(random);
             section.apps = random;
             section.page = 0;
+            // 同步更新首页缓存中的 random 区块（2.1.120），保持缓存与显示一致
+            var cached = readMarketHomeCache();
+            if (cached) {
+                cached.random = random;
+                writeMarketHomeCache(cached);
+            }
             var scope = refreshBtn.closest('.market-home-section');
             var body = scope ? scope.querySelector('[data-home-body]') : null;
             if (body) {
@@ -7935,53 +8021,107 @@
         });
     }
 
-    /** 首页视图：随机推荐/推荐应用/推荐位竖列/辅助推荐，数据来自市场 home 接口 */
+    /** 首页视图：随机推荐/推荐应用/推荐位竖列/辅助推荐，数据来自市场 home 接口；
+     *  市场首页数据缓存（2.1.120）：有缓存时先用缓存秒显，再后台静默刷新（stale-while-revalidate），
+     *  避免每次进入首页都等待远程市场接口（后端仅 60 秒短缓存，random 随机推荐不能长缓存） */
     function renderMarketHome(content, status, body) {
         cancelMarketRequest();
+        var cached = readMarketHomeCache();
+        if (cached) {
+            renderMarketHomeBody(body, cached);
+            refreshMarketHomeSilently(body);
+            return;
+        }
         body.innerHTML = '<div class="market-sentinel"><i class="fa fa-circle-o-notch fa-spin"></i>正在读取推荐内容…</div>';
         api('/api/admin/market/home').then(function (payload) {
             var data = payload || {};
-            var random = Array.isArray(data.random) ? data.random : [];
-            var featured = Array.isArray(data.featured) ? data.featured : [];
-            var positions = Array.isArray(data.positions) ? data.positions : [];
-            cacheMarketApps(random.concat(featured));
-            positions.forEach(function (position) {
-                cacheMarketApps(position.apps || []);
-            });
-
-            // 推荐位拆分：常规推荐位竖列展示（每列每页5个），辅助推荐(aux)横排网格（每页12个）
-            var columnPositions = positions.filter(function (position) {
-                return position.code !== 'aux' && (position.apps || []).length;
-            });
-            var auxPositions = positions.filter(function (position) {
-                return position.code === 'aux' && (position.apps || []).length;
-            });
-
-            // 区块分页状态：应用数超过每页数量时标题右侧显示 < > 翻页（重新进入首页时重建）
-            // 推荐应用与推荐位区块从接口返回列表中随机展示（Fisher-Yates），每次进入首页顺序不同；打乱一次后翻页顺序保持稳定
-            marketHomeSections = {
-                random: { type: 'grid', apps: random, pageSize: 12, page: 0, refreshable: true },
-                featured: { type: 'grid', apps: shuffleArray(featured), pageSize: 12, page: 0 }
-            };
-            auxPositions.forEach(function (position) {
-                marketHomeSections['aux-' + position.code] = { type: 'grid', apps: shuffleArray(position.apps || []), pageSize: 12, page: 0 };
-            });
-            columnPositions.forEach(function (position) {
-                marketHomeSections['pos-' + position.code] = { type: 'list', apps: shuffleArray(position.apps || []), pageSize: 5, page: 0 };
-            });
-
-            var html = '<div class="market-home">'
-                + marketHomeGridSection('random', '不可错过的应用')
-                + marketHomeGridSection('featured', '推荐应用')
-                + marketHomeColumnsSection(columnPositions)
-                + auxPositions.map(function (position) {
-                    return marketHomeGridSection('aux-' + position.code, position.name);
-                }).join('')
-                + '</div>';
-            body.innerHTML = html;
+            writeMarketHomeCache(data);
+            renderMarketHomeBody(body, data);
         }).catch(function (error) {
             body.innerHTML = emptyState('fa-shopping-bag', '暂时无法读取市场首页：' + (error.message || '网络异常'));
         });
+    }
+
+    /** 渲染首页各区块（首次加载与静默刷新共用）：写入市场应用缓存并重建区块分页状态 */
+    function renderMarketHomeBody(body, data) {
+        var random = Array.isArray(data.random) ? data.random : [];
+        var featured = Array.isArray(data.featured) ? data.featured : [];
+        var positions = Array.isArray(data.positions) ? data.positions : [];
+        cacheMarketApps(random.concat(featured));
+        positions.forEach(function (position) {
+            cacheMarketApps(position.apps || []);
+        });
+
+        // 推荐位拆分：常规推荐位竖列展示（每列每页5个），辅助推荐(aux)横排网格（每页12个）
+        var columnPositions = positions.filter(function (position) {
+            return position.code !== 'aux' && (position.apps || []).length;
+        });
+        var auxPositions = positions.filter(function (position) {
+            return position.code === 'aux' && (position.apps || []).length;
+        });
+
+        // 区块分页状态：应用数超过每页数量时标题右侧显示 < > 翻页（重新进入首页时重建）
+        // 推荐应用与推荐位区块从接口返回列表中随机展示（Fisher-Yates），每次进入首页顺序不同；打乱一次后翻页顺序保持稳定
+        marketHomeSections = {
+            random: { type: 'grid', apps: random, pageSize: 12, page: 0, refreshable: true },
+            featured: { type: 'grid', apps: shuffleArray(featured), pageSize: 12, page: 0 }
+        };
+        auxPositions.forEach(function (position) {
+            marketHomeSections['aux-' + position.code] = { type: 'grid', apps: shuffleArray(position.apps || []), pageSize: 12, page: 0 };
+        });
+        columnPositions.forEach(function (position) {
+            marketHomeSections['pos-' + position.code] = { type: 'list', apps: shuffleArray(position.apps || []), pageSize: 5, page: 0 };
+        });
+
+        var html = '<div class="market-home">'
+            + marketHomeGridSection('random', '不可错过的应用')
+            + marketHomeGridSection('featured', '推荐应用')
+            + marketHomeColumnsSection(columnPositions)
+            + auxPositions.map(function (position) {
+                return marketHomeGridSection('aux-' + position.code, position.name);
+            }).join('')
+            + '</div>';
+        body.innerHTML = html;
+    }
+
+    /** 首页静默刷新：后台拉最新数据更新缓存与视图；失败时保留已显示的缓存内容（不报错打扰），
+     *  页面已切离首页/市场时仅更新缓存、不重建区块状态（marketHomeSections 为全局单例） */
+    function refreshMarketHomeSilently(body) {
+        api('/api/admin/market/home').then(function (payload) {
+            var data = payload || {};
+            writeMarketHomeCache(data);
+            if (document.contains(body)) {
+                renderMarketHomeBody(body, data);
+            }
+        }).catch(function () {
+            // 静默失败：缓存视图保持不变
+        });
+    }
+
+    /** 市场首页缓存 key（localStorage）：缓存为市场公开数据，跨会话复用 */
+    var MARKET_HOME_CACHE_KEY = 'cmspro.webos.market_home';
+
+    /** 读取市场首页缓存：缺失/损坏返回 null（隐私模式等 localStorage 异常静默降级为直接请求） */
+    function readMarketHomeCache() {
+        try {
+            var raw = window.localStorage.getItem(MARKET_HOME_CACHE_KEY);
+            if (!raw) {
+                return null;
+            }
+            var payload = JSON.parse(raw);
+            return payload && typeof payload === 'object' ? payload : null;
+        } catch (error) {
+            return null;
+        }
+    }
+
+    /** 写入市场首页缓存：localStorage 异常（隐私模式/配额满）静默忽略，不缓存不影响功能 */
+    function writeMarketHomeCache(data) {
+        try {
+            window.localStorage.setItem(MARKET_HOME_CACHE_KEY, JSON.stringify(data || {}));
+        } catch (error) {
+            // 忽略：无缓存时进入首页走正常加载
+        }
     }
 
     /** 首页应用写入市场缓存（供详情层读取），不清空已有缓存 */
@@ -8549,26 +8689,62 @@
     /** 全屏截图预览层状态，null 表示未打开：{ urls, index, element } */
     var shotViewer = null;
 
-    /** 应用截图：优先应用级截图，缺失时回溯最近一个带截图的版本；单行展示，点击缩略图进入全屏预览 */
+    /** 详情截图区块上下文：当前应用的版本截图列表（从新到旧），切换分组/版本时读取（详情层单例） */
+    var marketShotsOptions = [];
+
+    /** 应用截图（2.1.121，对齐后台 market.blade.php）：默认展示最新版本截图（从新到旧回溯首个带截图版本，
+     *  全部版本无截图时降级应用级截图），分组 tab 切换（仅 >1 个分组显示），版本下拉加载历史版本截图 */
     function marketDetailShotsMarkup(app) {
-        var urls = normalizeScreenshots(app.screenshots_groups || app.screenshots);
-        if (!urls.length) {
-            urls = versionScreenshots(app);
+        var versions = Array.isArray(app.versions) ? app.versions.slice() : [];
+        // 服务端旧数据可能未按创建时间降序返回，前端统一排序（最新在前），截图回溯依赖此顺序
+        versions.sort(function (left, right) {
+            return String(right.create_time || '').localeCompare(String(left.create_time || ''));
+        });
+        var options = [];
+        versions.forEach(function (item) {
+            var groups = normalizeScreenshotGroups(item.screenshots_groups || item.screenshots);
+            if (groups.length) {
+                options.push({ version: item.version || '', groups: groups });
+            }
+        });
+        // 全部版本都无截图但应用级截图存在：作为「应用截图」兜底项（不参与版本下拉）
+        if (!options.length) {
+            var appGroups = normalizeScreenshotGroups(app.screenshots_groups || app.screenshots);
+            if (appGroups.length) {
+                options.push({ version: '', groups: appGroups });
+            }
         }
-        if (!urls.length) {
+        if (!options.length) {
             return '';
         }
+        marketShotsOptions = options;
 
-        var shots = urls.map(function (url, index) {
-            return '<button class="market-detail-shot" type="button" data-shot-url="' + escapeHtml(url) + '"'
-                + ' aria-label="查看第 ' + (index + 1) + ' 张截图">'
-                + '<img data-market-shot src="' + escapeHtml(url) + '" alt="应用截图 ' + (index + 1) + '"'
-                + ' loading="lazy"></button>';
-        }).join('');
+        var initial = options[0];
+        var hasVersionSelect = options.length > 1;
+        var tools = '';
+        if (hasVersionSelect || initial.groups.length > 1) {
+            // 单分组时不显示 tab，但保留占位容器（hidden）：切换到多分组版本时由 applyMarketShots 展开
+            var groupsHtml = initial.groups.length > 1
+                ? '<div class="market-shots-groups" data-shots-groups>'
+                    + screenshotGroupTabsMarkup(initial.groups, '__all__') + '</div>'
+                : '<div class="market-shots-groups" data-shots-groups hidden></div>';
+            tools = '<div class="market-shots-tools">' + groupsHtml;
+            // 版本下拉（与后台一致）：仅展示有截图的版本，多于一个版本时显示
+            if (hasVersionSelect) {
+                tools += '<select class="market-shots-version" data-shots-version aria-label="选择版本截图">'
+                    + options.map(function (option) {
+                        return '<option value="' + escapeHtml(option.version) + '"'
+                            + (option.version === initial.version ? ' selected' : '') + '>v' + escapeHtml(option.version) + '</option>';
+                    }).join('') + '</select>';
+            }
+            tools += '</div>';
+        }
 
-        return marketDetailSectionMarkup('fa-picture-o', '应用截图（' + urls.length + '）',
-            '<div class="market-shots">' + marketShotsNavMarkup('prev', 'fa-angle-left', '上一张截图')
-            + '<div class="market-detail-shots" data-shots-track>' + shots + '</div>'
+        return marketDetailSectionMarkup('fa-picture-o', '应用截图',
+            tools
+            + '<div class="market-shots">' + marketShotsNavMarkup('prev', 'fa-angle-left', '上一张截图')
+            + '<div class="market-detail-shots" data-shots-track>'
+            + screenshotTrackMarkup(flattenScreenshotGroups(initial.groups)) + '</div>'
             + marketShotsNavMarkup('next', 'fa-angle-right', '下一张截图') + '</div>');
     }
 
@@ -8578,7 +8754,8 @@
             + '" disabled><i class="fa ' + icon + '"></i></button>';
     }
 
-    /** 绑定截图轨道滚动监听并初始化箭头可用态（详情层每次重写 innerHTML 后调用） */
+    /** 绑定截图轨道滚动监听并初始化箭头可用态（详情层每次重写 innerHTML 后调用）；
+     *  同时绑定截图版本下拉（2.1.121）：切换历史版本截图并重置为「全部」分组 */
     function syncMarketShots(panel) {
         var track = panel ? panel.querySelector('[data-shots-track]') : null;
         if (!track) {
@@ -8588,6 +8765,12 @@
             updateMarketShotsNav(track);
         });
         updateMarketShotsNav(track);
+        var versionSelect = panel.querySelector('[data-shots-version]');
+        if (versionSelect) {
+            versionSelect.addEventListener('change', function () {
+                applyMarketShots(versionSelect.closest('.market-detail-section'), this.value, '__all__');
+            });
+        }
     }
 
     /** 按方向滚动截图轨道一步（平滑滚动结束后由 scroll 监听刷新箭头） */
@@ -8682,37 +8865,85 @@
         }
     }
 
-    /** 归一化截图数据：兼容纯 URL 数组与 [{ name, images: [] }] 分组结构 */
-    function normalizeScreenshots(source) {
+    /** 分组归一化（与后台 market 一致）：兼容纯 URL 数组（归入默认分组）与 [{name, sort, images}] 分组结构，
+     *  过滤空分组；URL 统一经 marketIconUrl 转换（与原 normalizeScreenshots 口径一致） */
+    function normalizeScreenshotGroups(source) {
         if (!Array.isArray(source) || !source.length) {
             return [];
         }
-        var urls = [];
-        source.forEach(function (item) {
-            if (typeof item === 'string') {
-                urls.push(marketIconUrl(item));
-                return;
+        if (typeof source[0] === 'string') {
+            return [{ name: '默认分组', sort: 1, images: source.map(function (url) { return marketIconUrl(url); }) }];
+        }
+        var groups = [];
+        source.forEach(function (group, index) {
+            var images = (group && Array.isArray(group.images))
+                ? group.images.map(function (url) { return marketIconUrl(url); }) : [];
+            if (images.length) {
+                groups.push({
+                    name: (group && group.name) ? group.name : '默认分组',
+                    sort: (group && group.sort) ? group.sort : (index + 1),
+                    images: images
+                });
             }
-            ((item && Array.isArray(item.images)) ? item.images : []).forEach(function (url) {
-                urls.push(marketIconUrl(url));
-            });
+        });
+        return groups;
+    }
+
+    /** 分组列表平铺为 URL 列表（按分组顺序） */
+    function flattenScreenshotGroups(groups) {
+        var urls = [];
+        (groups || []).forEach(function (group) {
+            (group.images || []).forEach(function (url) { urls.push(url); });
         });
         return urls;
     }
 
-    /** 按发布时间从新到旧回溯，返回首个带截图版本的截图列表 */
-    function versionScreenshots(app) {
-        var versions = Array.isArray(app.versions) ? app.versions.slice() : [];
-        versions.sort(function (left, right) {
-            return String(right.create_time || '').localeCompare(String(left.create_time || ''));
-        });
-        for (var index = 0; index < versions.length; index += 1) {
-            var urls = normalizeScreenshots(versions[index].screenshots_groups || versions[index].screenshots);
-            if (urls.length) {
-                return urls;
+    /** 截图分组 tab：全部 + 各分组名（activeName 为当前选中分组，'__all__' 表示全部） */
+    function screenshotGroupTabsMarkup(groups, activeName) {
+        return '<button class="market-shots-group' + (activeName === '__all__' ? ' is-active' : '') + '" type="button"'
+            + ' data-shots-group="__all__">全部</button>'
+            + groups.map(function (group) {
+                return '<button class="market-shots-group' + (group.name === activeName ? ' is-active' : '') + '" type="button"'
+                    + ' data-shots-group="' + escapeHtml(group.name) + '">' + escapeHtml(group.name) + '</button>';
+            }).join('');
+    }
+
+    /** 截图轨道缩略图列表（点击进入全屏预览，委托读取 data-shot-url） */
+    function screenshotTrackMarkup(urls) {
+        return urls.map(function (url, index) {
+            return '<button class="market-detail-shot" type="button" data-shot-url="' + escapeHtml(url) + '"'
+                + ' aria-label="查看第 ' + (index + 1) + ' 张截图">'
+                + '<img data-market-shot src="' + escapeHtml(url) + '" alt="应用截图 ' + (index + 1) + '"'
+                + ' loading="lazy"></button>';
+        }).join('');
+    }
+
+    /** 按版本与分组重绘截图区块（版本下拉 change 与分组 tab 点击共用）：单分组的版本隐藏 tab，
+     *  切换版本重置为「全部」分组（与后台一致）；重绘后刷新轨道箭头可用态 */
+    function applyMarketShots(section, versionValue, groupName) {
+        var option = marketShotsOptions.find(function (item) { return item.version === versionValue; })
+            || marketShotsOptions[0];
+        if (!option) {
+            return;
+        }
+        var groups = option.groups;
+        var active = groupName || '__all__';
+        var tabWrap = section.querySelector('[data-shots-groups]');
+        if (tabWrap) {
+            if (groups.length > 1) {
+                tabWrap.hidden = false;
+                tabWrap.innerHTML = screenshotGroupTabsMarkup(groups, active);
+            } else {
+                tabWrap.hidden = true;
             }
         }
-        return [];
+        var track = section.querySelector('[data-shots-track]');
+        if (track) {
+            track.innerHTML = screenshotTrackMarkup(active === '__all__'
+                ? flattenScreenshotGroups(groups)
+                : flattenScreenshotGroups(groups.filter(function (group) { return group.name === active; })));
+            updateMarketShotsNav(track);
+        }
     }
 
     /** 版本记录表格：版本号、更新说明、包大小、发布时间 */
@@ -9703,6 +9934,15 @@
         });
     }
 
+    /** 升级说明 Markdown 渲染（2.1.123）：复用全局 marked（与应用文档预览同源），渲染失败回退纯文本段落 */
+    function upgradeNotesMarkdown(source) {
+        try {
+            return window.marked.parse(source);
+        } catch (error) {
+            return '<p>' + escapeHtml(source) + '</p>';
+        }
+    }
+
     /** 升级弹窗：当前版本 + 备份提醒 + layui radio 选择升级版本（含一键升级到最新版） */
     function openUpgradeDialog(appId, availableVersions) {
         var layer = layuiLayer();
@@ -9726,9 +9966,23 @@
             } else {
                 tip = '（跳跃升级）';
             }
+            // 升级说明（2.1.123）：默认只显示第一行摘要，「详情」展开 Markdown 渲染的完整更新日志
+            var changelog = String(version.changelog || '');
+            var firstLine = '';
+            changelog.split(/\r?\n/).some(function (line) {
+                if (line.trim()) { firstLine = line.trim(); return true; }
+                return false;
+            });
+            var notesHtml = '';
+            if (changelog.trim()) {
+                notesHtml = '<a href="javascript:;" class="upgrade-notes-toggle" data-upgrade-notes-toggle>详情</a>'
+                    + '<div class="doc-markdown-body upgrade-notes-body" data-upgrade-notes-body hidden>'
+                    + upgradeNotesMarkdown(changelog)
+                    + '</div>';
+            }
             radioHtml += '<div style="padding:8px 0;border-bottom:1px solid #f0f0f0;">'
                 + '<input type="radio" name="upgrade_version" value="' + escapeHtml(version.version) + '" title="v' + escapeHtml(version.version) + ' ' + tip + '" ' + checked + '>'
-                + '<div style="padding-left:24px;color:#999;font-size:12px;margin-top:4px;">' + (version.changelog || '无更新日志') + '</div>'
+                + '<div style="padding-left:24px;color:#999;font-size:12px;margin-top:4px;">' + escapeHtml(firstLine || '无更新日志') + notesHtml + '</div>'
                 + '</div>';
         });
 
@@ -9743,7 +9997,8 @@
         layer.open({
             type: 1,
             title: '升级「' + escapeHtml(appDisplayName(app)) + '」',
-            area: ['500px', '450px'],
+            // 高度自适应（2.1.123）：「详情」展开完整更新日志后弹窗随内容增长，避免固定 450px 裁剪
+            area: ['500px', 'auto'],
             content: radioHtml,
             btn: ['我已备份，确认升级', '先去备份', '取消'],
             success: function (layero) {
@@ -9751,6 +10006,16 @@
                 // 「一键升级到最新版」问号图标：鼠标悬停显示 layui tips 说明
                 layero.find('#autoUpgradeTip').off('mouseenter').on('mouseenter', function () {
                     layer.tips('按版本自动升级到最新（逐级升级，任一步失败即停止）！', this, { tips: [1, '#666'] });
+                });
+                // 升级说明「详情」展开/收起（2.1.123）：toggle 与详情区为相邻兄弟节点，按 nextElementSibling 配对
+                layero[0].querySelectorAll('[data-upgrade-notes-toggle]').forEach(function (toggle) {
+                    toggle.addEventListener('click', function () {
+                        var body = toggle.nextElementSibling;
+                        if (!body || !body.hasAttribute('data-upgrade-notes-body')) { return; }
+                        var expanded = !body.hidden;
+                        body.hidden = expanded;
+                        toggle.textContent = expanded ? '详情' : '收起';
+                    });
                 });
             },
             btn2: function () {
@@ -13172,6 +13437,8 @@
         root.style.setProperty('--webos-window-height', clampWindowRatio(preferences.window_height, 80) + '%');
         applyTaskbarPosition();
         updateClock();
+        // 任务栏溢出收纳（2.1.118）：停靠位置/图标显示方式变化后重测（图标+文字先降级纯图标，再判断翻页箭头）
+        syncTaskbarOverflow();
     }
 
     function savePreference(message) {
@@ -13597,6 +13864,15 @@
     }
 
     function bindEvents() {
+        // 任务栏溢出翻页箭头（2.1.118）：点击按可视宽度约 85% 平滑滚动，滚动中更新箭头可用态
+        if (elements.taskbarScrollStart && elements.taskbarScrollEnd) {
+            elements.taskbarScrollStart.addEventListener('click', function () { scrollTaskbarPage(-1); });
+            elements.taskbarScrollEnd.addEventListener('click', function () { scrollTaskbarPage(1); });
+        }
+        if (elements.taskbarScroll) {
+            elements.taskbarScroll.addEventListener('scroll', updateTaskbarScrollButtons);
+        }
+
         elements.startButton.addEventListener('click', function () {
             // 「点击菜单进入」偏好（OS 设置-系统设置）：开启后点击菜单按钮直接进入「全部功能」启动台，
             // 默认（关闭）打开当前系统菜单面板
@@ -14485,6 +14761,18 @@
                 return;
             }
 
+            // 截图分组 tab（2.1.121，与后台 market 一致）：切换显示对应分组的截图（__all__ 平铺全部）
+            var shotsGroup = event.target.closest('[data-shots-group]');
+            if (shotsGroup) {
+                var shotsSection = shotsGroup.closest('.market-detail-section');
+                if (shotsSection) {
+                    applyMarketShots(shotsSection,
+                        (shotsSection.querySelector('[data-shots-version]') || {}).value || '',
+                        shotsGroup.dataset.shotsGroup);
+                }
+                return;
+            }
+
             // 截图轨道左右箭头：单行展示时超出部分横向滚动切换
             var shotsNav = event.target.closest('[data-shots-prev], [data-shots-next]');
             if (shotsNav) {
@@ -14502,6 +14790,7 @@
             var specialOpen = event.target.closest('[data-open-special]');
             if (specialOpen) {
                 // 「全部功能」：开始菜单按钮直接打开启动台（macOS 风格全功能浮层）；
+                // 启动台叶子经 openablePath 过滤，系统应用菜单（2.1.122）不在启动台展示；
                 // 其余特殊入口仍走应用中心对应标签页
                 if (specialOpen.dataset.openSpecial === 'entries') { openLauncherDialog(); return; }
                 state.appCenterTab = specialOpen.dataset.openSpecial;
@@ -14997,6 +15286,8 @@
                 desktopResizeFrame = 0;
                 normalizeDesktopLayout();
                 renderDesktop();
+                // 任务栏溢出收纳（2.1.118）：可视宽度变化后重测翻页箭头与文字降级
+                syncTaskbarOverflow();
             });
         });
 

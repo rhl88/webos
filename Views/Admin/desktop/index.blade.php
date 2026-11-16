@@ -77,6 +77,8 @@
                         <strong id="start-group-title">全部应用</strong>
                         <span id="start-group-count">0 个入口</span>
                     </div>
+                    {{-- 「全部功能」打开启动台（2.1.124 保留入口）：启动台叶子经 openablePath 过滤，
+                        应用管理/WebOS 管理桌面/应用市场/应用日志等系统菜单不在启动台展示 --}}
                     <button type="button" class="text-button" data-open-special="entries">全部功能</button>
                 </div>
                 <div id="start-app-grid" class="start-app-grid"></div>
@@ -238,8 +240,18 @@
         <button id="start-button" class="taskbar-button brand-button" type="button" aria-label="打开开始菜单" aria-expanded="false">
             <img src="{{ asset('Images/logo-80x80.png') }}" alt="">
         </button>
-        <div id="taskbar-pinned" class="taskbar-pinned" aria-label="固定应用"></div>
-        <div id="taskbar-windows" class="taskbar-windows" aria-label="运行中的应用"></div>
+        {{-- 任务栏溢出收纳（2.1.118）：应用区放入滚动容器，占满后先隐藏文字只留图标，
+             图标仍放不下时显示左右翻页箭头，开始菜单与右侧托盘区始终保留（Windows 行为） --}}
+        <button id="taskbar-scroll-start" class="taskbar-scroll-btn" type="button" aria-label="向左滚动任务栏" hidden>
+            <i class="fa fa-angle-left" aria-hidden="true"></i>
+        </button>
+        <div id="taskbar-scroll" class="taskbar-scroll">
+            <div id="taskbar-pinned" class="taskbar-pinned" aria-label="固定应用"></div>
+            <div id="taskbar-windows" class="taskbar-windows" aria-label="运行中的应用"></div>
+        </div>
+        <button id="taskbar-scroll-end" class="taskbar-scroll-btn" type="button" aria-label="向右滚动任务栏" hidden>
+            <i class="fa fa-angle-right" aria-hidden="true"></i>
+        </button>
         <div class="taskbar-spacer"></div>
         {{-- 前台首页入口：在 WebOS 内以通用窗口打开站点首页 --}}
         <button id="website-button" class="taskbar-button website-button" type="button" aria-label="访问前台首页" data-website-url="{{ url('/') }}">

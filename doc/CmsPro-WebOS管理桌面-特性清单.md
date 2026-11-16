@@ -1,7 +1,7 @@
 # CmsPro WebOS 管理桌面 · 特性清单
 
-> 文档版本：2.1.117 | 更新日期：2026-11-15
-> 应用版本：2.1.117 | 应用 ID：`cmspro.webos`
+> 文档版本：2.1.124 | 更新日期：2026-11-16
+> 应用版本：2.1.124 | 应用 ID：`cmspro.webos`
 
 ## 一、应用定位
 
@@ -191,6 +191,13 @@ CmsproWebos/
 
 | 版本 | 日期 | 说明 |
 |---|---|---|
+| 2.1.124 | 2026-11-16 | **「全部功能」入口恢复（2.1.122 需求修正）**：blade 恢复 `data-open-special="entries"`「全部功能」按钮与委托 entries 分支（点击打开启动台）；启动台叶子收集 `collectLauncherLeaves()` 经 `openablePath()` 过滤，`HIDDEN_WEBOS_MENU_PATHS` 四个系统菜单（应用管理/WebOS 管理桌面/应用市场/应用日志）不在启动台展示；开始菜单「应用」目录卡片隐藏行为与 2.1.122 一致 |
+| 2.1.123 | 2026-11-16 | **升级弹窗更新日志摘要与详情展开**：`openUpgradeDialog()` 重写版本 changelog 渲染——取更新日志首个非空行作摘要（`escapeHtml` 纯文本展示），摘要右侧「详情」链接（`data-upgrade-notes-toggle`）展开完整更新日志（`upgradeNotesMarkdown()` 经 `window.marked.parse` 渲染 Markdown，复用 `.doc-markdown-body` 样式 + 新增 `.upgrade-notes-body` 内部滚动容器 max-height 200px，渲染异常回退纯文本段落）；toggle 与详情区按 `nextElementSibling` 相邻配对，点击切换 hidden 并在「详情/收起」间切换文案；弹窗高度 `450px` 改 `auto` 随展开内容自适应 |
+| 2.1.122 | 2026-11-16 | **WebOS 下隐藏系统应用菜单入口**：`webos.js` 新增 `HIDDEN_WEBOS_MENU_PATHS`（/admin/app、/admin/app/market、/admin/app/log、/admin/cmspro/webos），`openablePath()` 在放行判断前按 path 精确集合拦截——该函数是全部菜单数据流的单点过滤（flattenMenus/启动台/窗口导航共用），叶子消失后开始菜单「应用」目录卡片（folder 聚合无叶子）与启动台四个系统卡片同步隐藏；blade 移除「全部功能」按钮（`data-open-special="entries"`）与委托 entries 死代码分支，`openLauncherDialog()` 保留（`menu_open_launcher` 偏好仍触发） |
+| 2.1.121 | 2026-11-16 | **应用详情截图分组与历史版本（对齐后台 market）**：`marketDetailShotsMarkup()` 重写——版本按 `create_time` 从新到旧排序后归一化各版本截图分组（`normalizeScreenshotGroups()` 兼容纯 URL 数组与 `[{name, sort, images}]` 结构，空分组过滤），默认展示最新有截图版本；全部版本无截图时降级应用级截图（不参与版本下拉）；新增分组 tab（`screenshotGroupTabsMarkup()`，「全部」+ 各分组，`data-shots-group` 委托切换、`__all__` 平铺全部）与版本下拉（`data-shots-version`，仅列出有截图版本，`syncMarketShots()` 绑定 change、切换后重置「全部」分组）；`applyMarketShots()` 统一重绘 tab 与轨道（单分组版本隐藏 tab）并刷新轨道箭头；移除被替代的 `normalizeScreenshots()`/`versionScreenshots()`；区块标题由「应用截图（N）」改为「应用截图」（数量随版本/分组动态变化不再固定） |
+| 2.1.120 | 2026-11-16 | **应用市场首页数据缓存（stale-while-revalidate）**：新增 `MARKET_HOME_CACHE_KEY`（localStorage）与 `readMarketHomeCache()`/`writeMarketHomeCache()`（损坏/隐私模式异常静默降级）；`renderMarketHome()` 有缓存时先 `renderMarketHomeBody()` 秒显再 `refreshMarketHomeSilently()` 后台刷新（`document.contains(body)` 兜底——页面切离首页后仅更新缓存不重建全局区块状态），无缓存走原加载；「换一批」成功后把新 random 列表同步进缓存；首次渲染与静默刷新共用 `renderMarketHomeBody()`（市场应用缓存、推荐位拆分、Fisher-Yates 打乱与区块分页状态重建逻辑单点维护） |
+| 2.1.119 | 2026-11-16 | **任务栏右键「关闭全部」**：`taskbarWindowMenuItems()` 在「关闭」项下方新增「关闭全部」（`fa-window-close-o`，danger 样式），`state.windows.size > 0` 才显示；`runTaskbarContextAction()` 新增 `close-all` 分支——`Array.from(state.windows.keys())` 取快照后逐个 `closeWindow()`（快照遍历规避 Map 迭代中删除），窗口元素移除、任务栏重绘、个人设置窗口关闭后的账号身份刷新等副作用逐个执行不遗漏；固定图标运行中菜单（复用窗口菜单）同步提供该入口 |
+| 2.1.118 | 2026-11-16 | **任务栏溢出收纳（Windows 行为）**：桌面视图应用区外包 `#taskbar-scroll` 滚动容器（水平停靠时 `overflow-x:auto` 且隐藏滚动条，内部固定区/运行区 `flex:0 0 auto` 保持内容宽）；新增 `syncTaskbarOverflow()` 分级收纳——「图标+文字」模式溢出时挂 `data-taskbar-compact="on"` 先隐藏文字只留图标，纯图标仍溢出才显示两侧翻页箭头（`updateTaskbarScrollButtons()` 控制 hidden 与到头置灰，`scrollTaskbarPage()` 按可视宽度约 85% 平滑滚动）；挂点覆盖任务项渲染（`renderPinnedApps()`）、偏好变更（`applyWorkspacePreferences()`）与窗口 resize；新增 `.webos-taskbar > .taskbar-button/.taskbar-divider/.account-button/.clock-button/.show-desktop-button { flex-shrink:0 }` 兜底，开始菜单与右侧托盘区不再被挤出；竖排（left/right）停靠行为不变 |
 | 2.1.117 | 2026-11-15 | **「忽略的应用」弹窗高度控制**（用户需求「高度默认跟随应用中心的高度，现在的没有最大高度控制，当忽略的应用非常多时，就 100% 高度了」）：新增 `ignoredUpdatesContentMaxHeight()`，以应用中心 `[data-app-center]` 的 `clientHeight` 为参考并以视口 80% 封顶，扣除标题栏 42px、按钮区 60px 与内容留白 16px，下限 180px；该值作为忽略列表容器 `[data-ignored-updates-panel]` 的 `max-height` 并启用 `overflow-y:auto`，条目过多时列表内部滚动，弹窗高度自适应少量条目 |
 | 2.1.116 | 2026-11-15 | **应用备份内容可选**（用户需求「点击立即备份时，弹出确认中增加备份选项：备份数据、备份应用，默认全选，可单独备份应用或数据；备份记录列表在版本左侧增加备份列」）：「立即备份」确认弹窗新增「备份数据 / 备份应用」复选框（默认全选，两项都不选时提示至少选择一项；取消备份数据后隐藏分卷大小），备份类型按勾选组合为全量 / 数据 / 应用随 `prepare` 提交；备份记录表在「版本」左侧新增「备份」列，输出全量 / 数据 / 应用 / 恢复徽章（样式与后台一致） |
 | 2.1.115 | 2026-11-14 | **小工具卡片像素级自由尺寸**（用户需求「不是浏览器尺寸，是固定在桌面的小工具，可以随意拖动改变大小；现在的固定大小用户体验很差」）：卡片尺寸不再吸附档位，拖拽四边/四角手柄按像素跟手并实时显示「宽 × 高」；最小 1 格、最宽 4 格最高 3 格且不越出桌面可视区，拖西/北边时对侧边缘固定（非格线位置记 `px_left`/`px_top`）；落位空间不足回退原状并提示。桌面项新增 `px_width`/`px_height`/`px_left`/`px_top`，`w`/`h` 退为降级兼容字段；位置拖拽仍整格对齐。268 测试 2588 断言通过 |

@@ -338,6 +338,39 @@ class WebosWorkspaceApiTest extends WebosTestCase
         $this->assertStringContainsString('[data-taskbar-position="left"] .taskbar-button-label', $stylesheet);
     }
 
+    /** 任务栏溢出收纳（2.1.118）：应用区滚动容器 + 文字降级纯图标 + 翻页箭头，开始菜单与右侧托盘区不被挤出 */
+    public function test_taskbar_overflow_hides_labels_then_paginates(): void
+    {
+        $script = file_get_contents(dirname(__DIR__, 2) . '/Assets/js/webos.js');
+        $stylesheet = file_get_contents(dirname(__DIR__, 2) . '/Assets/css/webos.css');
+        $view = file_get_contents(dirname(__DIR__, 2) . '/Views/Admin/desktop/index.blade.php');
+
+        $this->assertIsString($script);
+        $this->assertIsString($stylesheet);
+        $this->assertIsString($view);
+        // 桌面视图：应用区包滚动容器，两侧翻页箭头默认隐藏
+        $this->assertStringContainsString('id="taskbar-scroll-start"', $view);
+        $this->assertStringContainsString('id="taskbar-scroll"', $view);
+        $this->assertStringContainsString('id="taskbar-scroll-end"', $view);
+        // JS：溢出分级收纳——图标+文字先降级纯图标（data-taskbar-compact），仍溢出才显示箭头
+        $this->assertStringContainsString('function syncTaskbarOverflow()', $script);
+        $this->assertStringContainsString("root.setAttribute('data-taskbar-compact', 'on')", $script);
+        $this->assertStringContainsString('function updateTaskbarScrollButtons()', $script);
+        $this->assertStringContainsString('function scrollTaskbarPage(', $script);
+        $this->assertStringContainsString('taskbarScroll.addEventListener(\'scroll\', updateTaskbarScrollButtons)', $script);
+        // CSS：滚动容器（隐藏滚动条，仅水平停靠启用溢出）与箭头按钮
+        $this->assertStringContainsString('.taskbar-scroll {', $stylesheet);
+        $this->assertStringContainsString('.taskbar-scroll-btn {', $stylesheet);
+        $this->assertStringContainsString('.taskbar-scroll-btn[hidden] {', $stylesheet);
+        $this->assertStringContainsString('[data-taskbar-position="bottom"] .taskbar-scroll,', $stylesheet);
+        // 文字降级覆盖规则置于 text 模式规则之后（同特异性按源顺序胜出）
+        $this->assertStringContainsString('[data-taskbar-compact="on"] .taskbar-app-button', $stylesheet);
+        $this->assertStringContainsString('[data-taskbar-compact="on"] .taskbar-button-label', $stylesheet);
+        // 开始菜单与右侧托盘区防挤压兜底
+        $this->assertStringContainsString('.webos-taskbar > .taskbar-button,', $stylesheet);
+        $this->assertStringContainsString('.webos-taskbar > .clock-button,', $stylesheet);
+    }
+
     /** 任务栏空白右键菜单（Windows 式）：自动隐藏/锁定/任务栏设置 + 设置面板开关与 CSS 收起样式 */
     public function test_taskbar_shell_context_menu_and_settings(): void
     {
@@ -356,6 +389,10 @@ class WebosWorkspaceApiTest extends WebosTestCase
         $this->assertStringContainsString("action: 'taskbar-settings'", $script);
         $this->assertStringContainsString("action === 'taskbar-autohide' || action === 'taskbar-locked'", $script);
         $this->assertStringContainsString("osSettingsTab = 'general';", $script);
+        // 关闭全部（2.1.119）：窗口右键「关闭」下新增「关闭全部」，快照遍历逐个 closeWindow
+        $this->assertStringContainsString("label: '关闭全部', icon: 'fa-window-close-o', action: 'close-all'", $script);
+        $this->assertStringContainsString("if (action === 'close-all')", $script);
+        $this->assertStringContainsString('Array.from(state.windows.keys()).forEach(function (windowKey) { closeWindow(windowKey); })', $script);
         // 锁定任务栏：禁用固定图标拖动（左键打开不受影响）
         $this->assertStringContainsString("root.dataset.taskbarLocked !== 'on'", $script);
         // 自动隐藏：桌面容器 data 属性驱动 CSS，按停靠方向收起
@@ -1963,6 +2000,25 @@ class WebosWorkspaceApiTest extends WebosTestCase
             '/\.market-detail-shots\s*\{[^}]*display:\s*flex[^}]*overflow-x:\s*auto/s',
             $stylesheet
         );
+
+        // 截图分组与版本切换（2.1.121，对齐后台 market）：默认最新版本截图、分组 tab、历史版本下拉
+        $this->assertStringContainsString('var marketShotsOptions = [];', $script);
+        $this->assertStringContainsString('function normalizeScreenshotGroups(source)', $script);
+        $this->assertStringContainsString("name: '默认分组', sort: 1, images:", $script);
+        $this->assertStringContainsString('function flattenScreenshotGroups(groups)', $script);
+        $this->assertStringContainsString('function screenshotGroupTabsMarkup(groups, activeName)', $script);
+        $this->assertStringContainsString('function screenshotTrackMarkup(urls)', $script);
+        $this->assertStringContainsString('function applyMarketShots(section, versionValue, groupName)', $script);
+        $this->assertStringContainsString('data-shots-version', $script);
+        $this->assertStringContainsString('data-shots-group="__all__">全部</button>', $script);
+        // 切换版本重置为「全部」分组（与后台一致）；分组 tab 点击走委托
+        $this->assertStringContainsString("applyMarketShots(versionSelect.closest('.market-detail-section'), this.value, '__all__')", $script);
+        $this->assertStringContainsString("event.target.closest('[data-shots-group]')", $script);
+        // CSS：工具行 / 分组 tab / 版本下拉样式
+        $this->assertStringContainsString('.market-shots-tools {', $stylesheet);
+        $this->assertStringContainsString('.market-shots-group {', $stylesheet);
+        $this->assertStringContainsString('.market-shots-group.is-active {', $stylesheet);
+        $this->assertStringContainsString('.market-shots-version {', $stylesheet);
     }
 
     public function test_shot_viewer_image_uses_ninety_percent_viewport_box(): void
@@ -2085,6 +2141,28 @@ class WebosWorkspaceApiTest extends WebosTestCase
         $this->assertStringContainsString('btn: [\'我已备份，确认升级\', \'先去备份\', \'取消\'],', $script);
         $this->assertStringContainsString('dropUpdatedApp(appId);', $script);
         $this->assertStringContainsString('promptEnableAfterUpgrade(appId);', $script);
+
+        // 2.1.123：升级说明默认只显示第一行摘要，「详情」展开/收起 Markdown 渲染的完整更新日志
+        // （复用全局 marked 与 .doc-markdown-body 样式，渲染失败回退纯文本段落）
+        $this->assertStringContainsString('function upgradeNotesMarkdown(source)', $script);
+        $this->assertStringContainsString('window.marked.parse(source)', $script);
+        $this->assertStringContainsString("return '<p>' + escapeHtml(source) + '</p>';", $script);
+        $this->assertStringContainsString("'<a href=\"javascript:;\" class=\"upgrade-notes-toggle\" data-upgrade-notes-toggle>详情</a>'", $script);
+        $this->assertStringContainsString("'<div class=\"doc-markdown-body upgrade-notes-body\" data-upgrade-notes-body hidden>'", $script);
+        $this->assertStringContainsString('changelog.split(/\\r?\\n/).some(function (line)', $script);
+        // 展开收起交互：toggle 与详情区按 nextElementSibling 配对，文案「详情/收起」切换
+        $this->assertStringContainsString("querySelectorAll('[data-upgrade-notes-toggle]')", $script);
+        $this->assertStringContainsString('var body = toggle.nextElementSibling;', $script);
+        $this->assertStringContainsString("toggle.textContent = expanded ? '详情' : '收起';", $script);
+        // 弹窗高度随展开内容自适应（固定 450px 会裁剪展开后的完整日志）
+        $this->assertStringContainsString("area: ['500px', 'auto'],", $script);
+
+        // 2.1.123 样式：详情区内部滚动约束与主题色切换链接
+        $stylesheet = file_get_contents(dirname(__DIR__, 2) . '/Assets/css/webos.css');
+        $this->assertIsString($stylesheet);
+        $this->assertStringContainsString('.upgrade-notes-toggle {', $stylesheet);
+        $this->assertStringContainsString('.upgrade-notes-body {', $stylesheet);
+        $this->assertStringContainsString('max-height: 200px;', $stylesheet);
 
         // 升级链路停留在当前 Tab：reloadAppCenterCurrent 按当前 Tab 渲染（不切到已安装），
         // 更新 Tab 用本地数据渲染（updateChecked），升级成功 dropUpdatedApp 后列表即时移除该项
@@ -2733,6 +2811,7 @@ class WebosWorkspaceApiTest extends WebosTestCase
         $this->assertMatchesRegularExpression('/if \(ICON_ALIASES\[className\]\)\s*\{\s*return ICON_ALIASES\[className\];/', $script);
 
         // 开始菜单「全部功能」按钮：data-open-special="entries" 特例打开启动台；应用行菜单保持「管理入口」
+        // （2.1.124 修正：按钮保留，仅隐藏启动台中的系统应用菜单卡片）
         $this->assertMatchesRegularExpression(
             '/openSpecial === \'entries\'\)\s*\{\s*openLauncherDialog\(\);\s*return;\s*\}/',
             $script
@@ -2793,9 +2872,22 @@ class WebosWorkspaceApiTest extends WebosTestCase
         $this->assertStringContainsString("['manage-entry', 'fa-th', '管理入口']", $script);
 
         // 开始菜单按钮文案（Blade）：data-open-special="entries" 显示为「全部功能」
+        // （2.1.124 修正：按钮保留，点击打开启动台；启动台中的系统应用菜单卡片由 openablePath 过滤隐藏）
         $blade = file_get_contents(dirname(__DIR__, 2) . '/Views/Admin/desktop/index.blade.php');
         $this->assertIsString($blade);
         $this->assertStringContainsString('data-open-special="entries">全部功能</button>', $blade);
+
+        // 2.1.122：WebOS 下隐藏系统应用菜单入口——openablePath 单点过滤 HIDDEN_WEBOS_MENU_PATHS
+        // （叶子在开始菜单目录卡片/启动台/窗口导航全链路消失，目录卡片随叶子清空自动隐藏）
+        $this->assertStringContainsString('var HIDDEN_WEBOS_MENU_PATHS = {', $script);
+        $this->assertStringContainsString("'/admin/app': true,", $script);
+        $this->assertStringContainsString("'/admin/app/market': true,", $script);
+        $this->assertStringContainsString("'/admin/app/log': true,", $script);
+        $this->assertStringContainsString("'/admin/cmspro/webos': true", $script);
+        $this->assertStringContainsString(
+            "if (typeof entry.path === 'string' && HIDDEN_WEBOS_MENU_PATHS[entry.path]) { return false; }",
+            $script
+        );
 
         $stylesheet = file_get_contents(dirname(__DIR__, 2) . '/Assets/css/webos.css');
         $this->assertIsString($stylesheet);
@@ -3492,6 +3584,15 @@ class WebosWorkspaceApiTest extends WebosTestCase
         $this->assertStringContainsString('function marketPurchased(appId) {', $script);
         $this->assertStringContainsString("state.marketPurchased.has(String(appId || '').toLowerCase())", $script);
         $this->assertStringContainsString('function marketPriceMarkup(app, className, compact) {', $script);
+        // 市场首页数据缓存（2.1.120）：localStorage 缓存 + 先秒显后静默刷新，换一批同步更新缓存
+        $this->assertStringContainsString("var MARKET_HOME_CACHE_KEY = 'cmspro.webos.market_home';", $script);
+        $this->assertStringContainsString('function readMarketHomeCache()', $script);
+        $this->assertStringContainsString('function writeMarketHomeCache(data)', $script);
+        $this->assertStringContainsString('function renderMarketHomeBody(body, data)', $script);
+        $this->assertStringContainsString('function refreshMarketHomeSilently(body)', $script);
+        // 静默刷新仅在首页仍显示时重渲染（切走后只更新缓存，不重建全局区块状态）
+        $this->assertStringContainsString('if (document.contains(body)) {', $script);
+        $this->assertStringContainsString('cached.random = random;', $script);
         // marketState 补充付费上下文：付费且未购买时主操作由「安装」改为「购买」
         $this->assertStringContainsString('purchased: purchased,', $script);
         $this->assertStringContainsString('needs_purchase: price > 0 && !purchased', $script);
