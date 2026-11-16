@@ -2412,9 +2412,25 @@ class WebosWorkspaceApiTest extends WebosTestCase
         $this->assertStringContainsString('function doLocalRestore(', $script);
         // 备份管理弹层宽高 660 × 520
         $this->assertStringContainsString("title: '「' + appDisplayName(app) + '」备份管理',\n            area: ['660px', '520px']", $script);
-        // 备份时间列加宽且不换行（列宽 200，单元格 nowrap）；大小列 140，操作列自适应收窄
-        $this->assertStringContainsString('<col width="200"><col width="110"><col width="140"><col></colgroup>', $script);
+        // 备份时间列不换行；新增「备份」列（展示全量/数据/应用徽章），位于版本列左侧
+        $this->assertStringContainsString('<col width="180"><col width="70"><col width="90"><col width="110"><col></colgroup>', $script);
+        $this->assertStringContainsString('<th>备份时间</th><th>备份</th><th>版本</th>', $script);
+        $this->assertStringContainsString('backupTypeBadge(backup.backup_type)', $script);
         $this->assertStringContainsString('\'<tr><td style="white-space:nowrap;">\' + escapeHtml(backup.create_time', $script);
+        // 立即备份弹窗提供「备份数据 / 备份应用」选项，默认全选，可单独选择且至少一项
+        $this->assertStringContainsString('id="dlgBkData" checked', $script);
+        $this->assertStringContainsString('id="dlgBkApp" checked', $script);
+        $this->assertStringContainsString("bkData && bkApp ? 'full' : (bkData ? 'data' : 'app')", $script);
+        $this->assertStringContainsString("msg('请至少选择一项备份内容'", $script);
+        // 分卷大小仅在备份数据时显示；备份类型随 prepare 请求提交
+        $this->assertStringContainsString("scope.find('#dlgVolumeWrap').toggle(", $script);
+        $this->assertStringContainsString('data: { volume_size: ctx.volumeSize, backup_type: ctx.backupType }', $script);
+        // 仅备份应用时进度提示不出现「共 0 张表」
+        $this->assertStringContainsString("'准备完成，仅备份应用代码'", $script);
+        // 徽章样式与后台一致
+        $stylesheet = file_get_contents(dirname(__DIR__, 2) . '/Assets/css/webos.css');
+        $this->assertStringContainsString('.bk-type-badge {', $stylesheet);
+        $this->assertStringContainsString('.bk-type-full {', $stylesheet);
         // 操作列按钮去掉图标，只保留文字
         $this->assertStringContainsString('\'">导出</button>\'', $script);
         $this->assertStringContainsString('\'">恢复</button>\'', $script);
@@ -3246,6 +3262,11 @@ class WebosWorkspaceApiTest extends WebosTestCase
         $this->assertStringContainsString('function openIgnoredUpdatesDialog()', $script);
         $this->assertStringContainsString('function removeIgnoredUpdate(key, dialogLayero)', $script);
         $this->assertStringContainsString("data-unignore-key=\"", $script);
+        // 「忽略的应用」弹窗高度控制（2.1.117）：内容区最大高度跟随应用中心窗口，且不超过视口 80%，
+        // 忽略项过多时列表内部滚动，避免弹窗撑满屏幕
+        $this->assertStringContainsString('function ignoredUpdatesContentMaxHeight()', $script);
+        $this->assertStringContainsString('Math.round(window.innerHeight * 0.8)', $script);
+        $this->assertStringContainsString("style=\"max-height:' + maxContentHeight + 'px;overflow-y:auto;\"", $script);
         // 更新列表版本号升级指向（2.1.52）：版本 xx => xxx（当前版本 → 最新版本）；更新来源详情补「最新版本」行
         $this->assertStringContainsString("version = (app.version || app.current_version || '-') + ' => ' + (app.latest_version || '-');", $script);
         $this->assertStringContainsString("items.push(['最新版本', 'v' + escapeHtml(app.latest_version || '-')]);", $script);

@@ -1,7 +1,7 @@
 # CmsPro WebOS 管理桌面 · 扩展指南
 
-> 文档版本：2.1.115 | 更新日期：2026-11-14
-> 应用版本：2.1.115 | 应用 ID：`cmspro.webos`
+> 文档版本：2.1.117 | 更新日期：2026-11-15
+> 应用版本：2.1.117 | 应用 ID：`cmspro.webos`
 
 ## 一、概述
 
@@ -779,6 +779,8 @@ app(HookManager::class)->registerFilter(
 
 | 版本 | 日期 | 更新人 | 说明 |
 |---|---|---|---|
+| 2.1.117 | 2026-11-15 | CmsPro | **「忽略的应用」弹窗高度控制（用户需求「高度默认跟随应用中心的高度，现在的没有最大高度控制，当忽略的应用非常多时，就 100% 高度了」）**：`webos.js` 新增 `ignoredUpdatesContentMaxHeight()` 计算内容区上限——参考 `document.querySelector('[data-app-center]')` 的 `clientHeight`（取不到时回落视口 75%），再以 `Math.round(window.innerHeight * 0.8)` 封顶，扣除 layer 标题栏 42px + 按钮区 60px + 内容区上下留白 16px 共 118px，下限 180px；`openIgnoredUpdatesDialog()` 仍用 `area: ['480px', 'auto']`（少量条目高度自适应），但内容容器改为 `<div class="webos-ignored-updates" data-ignored-updates-panel style="max-height:…px;overflow-y:auto;">`，条目过多时列表内部滚动而不是把弹窗撑到 100% 高；`removeIgnoredUpdate()` 局部重绘仍命中 `[data-ignored-updates-panel]`，无需改动。新增 3 条源码断言（函数存在、视口 80% 封顶、容器内联 max-height/overflow），268 测试 2602 断言通过 |
+| 2.1.116 | 2026-11-15 | CmsPro | **应用备份内容可选**（对齐后台应用管理页）：前端 `createBackupMarkup()` 新增 `#dlgBkData`（备份数据）/`#dlgBkApp`（备份应用）复选框，默认均 `checked`；`bindCreateBackupEvents()` 在取消备份数据时隐藏 `#dlgVolumeWrap`（分卷大小仅数据备份生效），两项均未选时提示「请至少选择一项备份内容」并中止；`backupType` 组合规则 `full`（数据+应用）/`data`（仅数据）/`app`（仅应用），经 `doBackupWithProgress(appId, appName, volumeSize, backupType)` 写入 `ctx.backupType`，`prepare` 请求体新增 `backup_type`。`renderBackupList()` 表头在「版本」左侧新增「备份」列（列宽 180/70/90/110/自适应），`backupTypeBadge()` 输出 full/data/app/import 徽章，样式 `bk-type-*` 追加在 `webos.css` 末尾。后端沿用系统接口既有 `backup_type` 能力（`app` 跳过数据表导出、`data` 跳过程序文件打包），无接口变更；新增源码断言与样式断言，268 测试通过 |
 | 2.1.115 | 2026-11-14 | CmsPro | **桌面小工具像素级自由尺寸（用户需求「小工具可以随意拖动改变大小，现在的固定大小用户体验很差」）**：① 存储——桌面项新增 `px_width`/`px_height`（像素宽高）与 `px_left`/`px_top`（像素位置，仅拖西/北边改变左/上缘时记录）；`w`/`h` 退为降级兼容字段（按像素向上取整换算、钳至宽 1–4 / 高 1–3）。② 校验与净化——`WebosController::desktopItemsRules()` 声明四个字段（像素尺寸 1–`MAX_WIDGET_PIXEL_SIZE`(4096)、像素位置 0–`MAX_WIDGET_PIXEL_OFFSET`(20000)）；`WorkspaceService::sanitizeDesktopItem()` 仅 `kind=widget` 保留（宽高须成对有效，位置可单存），`sanitizeTaskbarItems()` 统一剔除。③ 前端——`Assets/js/webos.js` 新增 `desktopItemPixelRect()`（`px_*` 优先，缺省按格子换算）按像素矩形定位定尺，`resizeDesktopWidget()` 按方向像素跟手（`widgetPixelLimits()` 约束最小 1 格、最大 4×3 格与桌面可视区），拖拽中显示像素尺寸提示，松手 `widgetRectAvailable()` 按像素矩形做重叠校验；位置拖动/自动排列仍整格对齐并清除 `px_left`/`px_top`。④ 兼容——普通入口与既有 `w`/`h` 数据无需迁移，未记录像素尺寸时行为与旧版一致。268 测试 2588 断言通过。 |
 | 2.1.114 | 2026-11-13 | CmsPro | **小工具卡片四边缩放（用户需求「小工具的窗口大小支持上下左右缩放，现在只有右下角能调整大小」）**：① 手柄——`webos.js` 的 `desktopWidgetMarkup()` 由右下角单手柄改为新增 `widgetResizeHandlesMarkup()` 渲染四条边与四个角共 8 个手柄（`data-widget-resize` 值 n/s/e/w/ne/nw/se/sw，口径同应用窗口 `data-window-resize`）；`webos.css` 手柄基类默认 `pointer-events:none` 不可抓，悬停/选中/聚焦/拖动中（`:hover`/`:focus-visible`/`.is-selected`/`.is-resizing`）显形并启用指针，光标按方向区分（`ns/ew/nesw/nwse-resize`），se 保留视觉角标其余为透明热区（边手柄 6px 两端让出 14px、角手柄 12px，避免遮挡关闭/操作按钮）。② 拖拽——`resizeDesktopWidget(card, event, dir)` 增加 `dir` 参数并方向化重写：拖东/南边仅改目标占格；拖西/北边同步移动 `x/y`（对侧右/下缘视觉固定），`candidates()` 先剔除会让新 x/y 为负的档位（至少含当前档位不会为空）；`project(value, max)` 投影上限由写死 1..2 格改为取声明档位中的最大宽/高（修正 2x3/4x2 档位实际拖不到的问题）；松手 `finish()` 按目标矩形 `widgetRectAvailable()` 校验（越界/重叠拒绝），空间不足回退原 x/y/w/h 并 toast「当前位置空间不足，无法调整到该尺寸」，成功则持久化 `x/y/w/h` 并静默保存。③ 事件——`elements.desktopIcons` 的 `pointerdown` 委托把 `resizeHandle.dataset.widgetResize` 方向传入 `resizeDesktopWidget()`。对应用开发者无新增声明要求，`sizes`/`form` 契约不变。266 测试 2573 断言通过。 |
 | 2.1.113 | 2026-11-13 | CmsPro | 桌面小工具支持表单卡片：manifest 新增 form 声明（inline/modal）、数据接口下发 form.fields 控件契约（11 种控件类型）、整表提交与交互守卫；尺寸档位新增 2x3/4x2，桌面项占格上限放宽为宽 4 高 3 |

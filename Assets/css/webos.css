@@ -7615,3 +7615,34 @@ textarea.webos-widget-input {
 .browser-views iframe[hidden] {
     display: none;
 }
+
+/* ===================== 应用备份类型徽章 ===================== */
+
+.bk-type-badge {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 10px;
+    font-size: 12px;
+    font-weight: 500;
+    white-space: nowrap;
+}
+
+.bk-type-full {
+    background: #e3f2fd;
+    color: #1976d2;
+}
+
+.bk-type-data {
+    background: #e8f5e9;
+    color: #4caf50;
+}
+
+.bk-type-app {
+    background: #fff3e0;
+    color: #ff9800;
+}
+
+.bk-type-import {
+    background: #f3e5f5;
+    color: #9c27b0;
+}

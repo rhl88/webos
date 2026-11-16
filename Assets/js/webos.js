@@ -5285,6 +5285,17 @@
         }).join('') + '</div>';
     }
 
+    /** 「忽略的应用」弹窗内容区最大高度：跟随应用中心窗口内容区高度，且不超过视口 80%（扣除标题栏与按钮区），忽略项过多时列表内部滚动 */
+    function ignoredUpdatesContentMaxHeight() {
+        var center = document.querySelector('[data-app-center]');
+        var reference = center && center.clientHeight > 0
+            ? center.clientHeight
+            : Math.round(window.innerHeight * 0.75);
+        // 扣除 layer 标题栏（42px）、按钮区（60px）与内容区上下留白（16px）
+        var maxHeight = Math.min(reference, Math.round(window.innerHeight * 0.8)) - 118;
+        return Math.max(180, Math.round(maxHeight));
+    }
+
     /** 打开「忽略的应用」弹窗：查看被忽略的版本更新并可逐条移除忽略（2.1.53） */
     function openIgnoredUpdatesDialog() {
         var layer = layuiLayer();
@@ -5292,12 +5303,15 @@
             toast('弹层组件未就绪，请刷新页面后重试', 'error');
             return;
         }
+        var maxContentHeight = ignoredUpdatesContentMaxHeight();
         layer.open({
             type: 1,
             title: '忽略的应用',
             area: ['480px', 'auto'],
             btn: ['关闭'],
-            content: '<div class="webos-ignored-updates" data-ignored-updates-panel>' + ignoredUpdatesListMarkup() + '</div>',
+            content: '<div class="webos-ignored-updates" data-ignored-updates-panel '
+                + 'style="max-height:' + maxContentHeight + 'px;overflow-y:auto;">'
+                + ignoredUpdatesListMarkup() + '</div>',
             success: function (layero) {
                 // 移除忽略后弹窗列表即时刷新（同一条 layero 内重绘内容）
                 layero.on('click', '[data-unignore-key]', function () {
@@ -10836,12 +10850,24 @@
         }
 
         return '<table class="layui-table" style="margin:0;"><colgroup>'
-            + '<col width="200"><col width="110"><col width="140"><col></colgroup>'
-            + '<thead><tr><th>备份时间</th><th>版本</th><th>大小</th>'
+            + '<col width="180"><col width="70"><col width="90"><col width="110"><col></colgroup>'
+            + '<thead><tr><th>备份时间</th><th>备份</th><th>版本</th><th>大小</th>'
             + '<th style="text-align:right;">操作</th></tr></thead><tbody>'
             + backups.map(function (backup) {
                 return backupRowMarkup(backup);
             }).join('') + '</tbody></table>';
+    }
+
+    /** 备份类型徽章：full=全量（数据+应用）、data=数据、app=应用、import=导入/恢复记录 */
+    function backupTypeBadge(backupType) {
+        var map = {
+            full: { text: '全量', title: '全量（数据+应用）', cls: 'bk-type-full' },
+            data: { text: '数据', title: '数据（仅应用数据）', cls: 'bk-type-data' },
+            app: { text: '应用', title: '应用（仅应用代码）', cls: 'bk-type-app' },
+            import: { text: '恢复', title: '恢复（导入或恢复操作记录）', cls: 'bk-type-import' }
+        };
+        var item = map[backupType] || map.full;
+        return '<span class="bk-type-badge ' + item.cls + '" title="' + item.title + '">' + item.text + '</span>';
     }
 
     /** 备份失败的记录不提供「导出」「恢复」，只能删除；操作列按钮仅保留文字，不显示图标 */
@@ -10858,6 +10884,7 @@
             + id + '">删除</button>';
 
         return '<tr><td style="white-space:nowrap;">' + escapeHtml(backup.create_time || '-') + '</td>'
+            + '<td>' + backupTypeBadge(backup.backup_type) + '</td>'
             + '<td>v' + escapeHtml(backup.app_version || '-') + '</td>'
             + '<td>' + formatSize(backup.file_size || 0) + '</td>'
             + '<td style="text-align:right;white-space:nowrap;">' + buttons + '</td></tr>';
@@ -10912,8 +10939,18 @@
 
     function createBackupMarkup() {
         return '<div style="padding:20px;">'
-            + '<div style="margin-bottom:16px;font-size:13px;color:#666;">备份将包含应用数据表和程序文件</div>'
+            + '<div style="margin-bottom:16px;font-size:13px;color:#666;">请选择备份内容，默认全选（数据 + 应用）</div>'
             + '<div class="layui-form-item" style="margin-bottom:16px;">'
+            + '<label style="font-size:13px;color:#333;display:block;margin-bottom:6px;">备份内容</label>'
+            + '<div style="display:flex;gap:20px;">'
+            + '<label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:13px;color:#333;">'
+            + '<input type="checkbox" id="dlgBkData" checked> 备份数据</label>'
+            + '<label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:13px;color:#333;">'
+            + '<input type="checkbox" id="dlgBkApp" checked> 备份应用</label>'
+            + '</div>'
+            + '<div style="font-size:12px;color:#999;margin-top:6px;">可单独备份应用或数据，至少选择一项</div>'
+            + '</div>'
+            + '<div class="layui-form-item" style="margin-bottom:16px;" id="dlgVolumeWrap">'
             + '<label style="font-size:13px;color:#333;display:block;margin-bottom:6px;">分卷大小（MB）</label>'
             + '<input type="number" id="dlgVolumeSize" class="layui-input" value="2" min="1" max="100" '
             + 'style="width:120px;">'
@@ -10928,14 +10965,26 @@
 
     function bindCreateBackupEvents(layero, appId, appName) {
         var scope = layuiJquery()(layero);
+        // 分卷仅作用于数据备份：取消勾选「备份数据」时隐藏该选项
+        var toggleVolume = function () {
+            scope.find('#dlgVolumeWrap').toggle(scope.find('#dlgBkData').is(':checked'));
+        };
+        scope.find('#dlgBkData').on('change', toggleVolume);
         scope.find('#dlgBtnCancelBackup').on('click', function () {
             closeBackupLayers();
         });
         scope.find('#dlgBtnConfirmBackup').on('click', function () {
+            var bkData = scope.find('#dlgBkData').is(':checked');
+            var bkApp = scope.find('#dlgBkApp').is(':checked');
+            if (!bkData && !bkApp) {
+                layuiLayer().msg('请至少选择一项备份内容', { icon: 2 });
+                return;
+            }
+            var backupType = bkData && bkApp ? 'full' : (bkData ? 'data' : 'app');
             var volumeSize = parseInt(scope.find('#dlgVolumeSize').val(), 10) || 2;
             volumeSize = Math.min(100, Math.max(1, volumeSize));
             closeBackupLayers();
-            doBackupWithProgress(appId, appName, volumeSize);
+            doBackupWithProgress(appId, appName, volumeSize, backupType);
         });
     }
 
@@ -10962,9 +11011,10 @@
         }
     }
 
-    function doBackupWithProgress(appId, appName, volumeSize) {
+    function doBackupWithProgress(appId, appName, volumeSize, backupType) {
         var ctx = {
-            appId: appId, appName: appName, volumeSize: volumeSize, prefix: 'bk',
+            appId: appId, appName: appName, volumeSize: volumeSize,
+            backupType: backupType || 'full', prefix: 'bk',
             sessionId: '', totalTables: 0, tables: [], layero: null
         };
         pushBackupLayer(layuiLayer().open({
@@ -10984,7 +11034,7 @@
         legacyAjax({
             url: '/api/admin/apps/' + encodeURIComponent(ctx.appId) + '/backups/prepare',
             type: 'POST',
-            data: { volume_size: ctx.volumeSize },
+            data: { volume_size: ctx.volumeSize, backup_type: ctx.backupType },
             timeout: 30000,
             success: function (res) {
                 if (res.code !== 0) {
@@ -10995,9 +11045,15 @@
                 ctx.sessionId = res.data.session_id;
                 ctx.tables = res.data.tables || [];
                 ctx.totalTables = res.data.total_tables || ctx.tables.length;
+                // 按备份内容给出不同提示：仅备份应用时没有数据表，避免出现「共 0 张表」
+                var readyText = ctx.backupType === 'app'
+                    ? '准备完成，仅备份应用代码'
+                    : (ctx.backupType === 'data'
+                        ? '准备完成，共 ' + ctx.totalTables + ' 张表（仅数据）'
+                        : '准备完成，共 ' + ctx.totalTables + ' 张表');
                 updateTaskProgress(ctx, {
                     current: 0, total: ctx.totalTables,
-                    status: '准备完成，共 ' + ctx.totalTables + ' 张表', detail: ''
+                    status: readyText, detail: ''
                 });
                 backupNextTable(ctx, 0);
             },
