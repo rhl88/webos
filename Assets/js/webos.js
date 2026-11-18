@@ -4366,7 +4366,14 @@
         // 传入 folderId 时复用为文件夹浮层「+」添加弹窗：叶子点选后移入/新建到该文件夹
         var folder = folderId ? findDesktopItem(folderId) : null;
         var index = null;
-        var emptyMarkup = '<div class="webos-entry-pick-empty">所有菜单都已固定到桌面</div>';
+        // 空树文案按态区分（2.1.126）：预设态空树的真因是目录为空（所选角色未授权菜单，
+        // 尤其超管角色不写 admin_role_menus 关联表），沿用桌面态旧文案会严重误导；
+        // 桌面态维持既有文案不动（已固定叶子在树中以「已固定」标签呈现，可另行判断）
+        var emptyMarkup = '<div class="webos-entry-pick-empty">'
+            + (state.presetEditing
+                ? '该角色暂无可用菜单，请先在「菜单管理」中为该角色授权菜单'
+                : '所有菜单都已固定到桌面')
+            + '</div>';
         // 多选勾选集合（node.key）：展开/收起重渲染后按 checked 回填
         var checkedPicks = new Set();
         /** 弹窗内树节点：每行左侧复选框（多选，勾选后点底部「添加」批量加入）；
@@ -5836,10 +5843,13 @@
             + '<small>前台用户访问用户首页将直接进入 WebOS 桌面，同样支持 ?skip_webos=1 临时绕过</small></span><i></i></button></section>';
         return overrideSection
             + '<section class="settings-card"><div class="settings-card-title"><i class="fa fa-clone"></i><div>'
-            + '<strong>应用窗口多选项卡</strong><small>开启后窗口内点击菜单以选项卡方式打开，可在标题栏切换与关闭；切换选项卡不重新加载页面</small></div></div>'
+            + '<strong>应用窗口多选项卡</strong><small>开启后窗口内点击菜单以选项卡方式打开，可在标题栏切换与关闭；切换选项卡默认不重新加载页面，可按需开启「选项卡刷新」</small></div></div>'
             + '<button class="settings-toggle" type="button" data-toggle-webos-setting="window_tabs" aria-pressed="'
             + (preferences.window_tabs ? 'true' : 'false') + '"><span><strong>多选项卡模式</strong>'
-            + '<small>仅对开启后新打开的应用窗口生效，已打开窗口保持原模式</small></span><i></i></button></section>'
+            + '<small>仅对开启后新打开的应用窗口生效，已打开窗口保持原模式</small></span><i></i></button>'
+            + '<button class="settings-toggle" type="button" data-toggle-webos-setting="tab_reload" aria-pressed="'
+            + (preferences.tab_reload ? 'true' : 'false') + '"><span><strong>选项卡刷新</strong>'
+            + '<small>多选项卡模式下点击左侧菜单重新加载对应页面内容（始终显示最新）；关闭时仅切换选项卡，页面状态保留</small></span><i></i></button></section>'
             + '<section class="settings-card"><div class="settings-card-title"><i class="fa fa-hand-pointer-o"></i><div>'
             + '<strong>点击菜单进入</strong><small>控制点击任务栏「菜单」按钮的行为</small></div></div>'
             + '<button class="settings-toggle" type="button" data-toggle-webos-setting="menu_open_launcher" aria-pressed="'
@@ -6774,6 +6784,11 @@
         return state.workspace.preferences.window_tabs === true;
     }
 
+    /** 选项卡刷新开关：多选项卡模式下点击左侧菜单复用既有选项卡时重新加载页面内容（2.1.126） */
+    function tabReloadEnabled() {
+        return state.workspace.preferences.tab_reload === true;
+    }
+
     /** 当前激活的选项卡：无激活记录时回退最后一个 */
     function windowActiveTab(windowState) {
         if (!windowState.tabs || !windowState.tabs.length) {
@@ -7202,10 +7217,13 @@
             || entry.id === 'webos-browser') {
             return;
         }
-        // 多选项卡模式：同路径复用既有选项卡，否则新开并激活（页面内容按需创建，切换不重载）
+        // 多选项卡模式：同路径复用既有选项卡，否则新开并激活（页面内容按需创建）；
+        // 「选项卡刷新」开启时复用既有选项卡重新加载页面内容，保证菜单内容始终最新（2.1.126）；
+        // 关闭时保持原行为——切换只改变显示，页面状态保留
         if (windowState.tabs) {
             var existing = windowState.tabs.find(function (tab) { return tab.path === entry.path; })
                 || null;
+            var reloadExisting = Boolean(existing) && tabReloadEnabled();
             if (!existing) {
                 existing = makeWindowTab(entry);
                 windowState.tabs.push(existing);
@@ -7214,7 +7232,11 @@
             windowState.entry = entry;
             rerenderWindowNav(windowState, true);
             loadWindowHomeMenu(windowState);
-            renderWindowPage(windowState, existing);
+            if (reloadExisting) {
+                reloadWindowTab(windowState, existing);
+            } else {
+                renderWindowPage(windowState, existing);
+            }
             syncWindowTabSubtitle(windowState, existing.title);
             syncWindowTabsBar(windowState);
             renderTaskbarWindows();
@@ -15252,6 +15274,7 @@
             icon_size: 'medium',
             label_effect: 'none',
             window_tabs: false,
+            tab_reload: false,
             menu_open_launcher: false,
             taskbar_alignment: 'left',
             taskbar_position: 'bottom',

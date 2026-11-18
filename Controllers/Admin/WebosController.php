@@ -732,6 +732,11 @@ class WebosController extends Controller
      * MenuService::userMenus 口径一致）被分配菜单的并集 + 祖先补全；供单角色预设
      * 与「查看管理员桌面」目录共用（管理员目录 = 其全部角色的并集）。
      *
+     * 超级管理员角色特判（2.1.126）：超管权限为「隐式全量」，admin_role_menus 关联表中
+     * 不存在其记录（口径见 AdminUser::isSuperAdmin 与框架 MenuService::userMenus）。
+     * 缺此特判时「管理桌面」选中超管角色会得到空目录，预设编辑器无法挑选任何入口，
+     * 前端入口树为空并误显示「所有菜单都已固定到桌面」。
+     *
      * @param array<int,int> $roleIds
      * @return array<int,array<string,mixed>>
      */
@@ -740,6 +745,18 @@ class WebosController extends Controller
         $roleIds = array_values(array_unique(array_filter(array_map('intval', $roleIds))));
         if (! $roleIds) {
             return [];
+        }
+
+        // 超管角色：返回全部启用可见菜单（与 adminMenuTreeForAdmin 的超管分支同口径）
+        if ($this->containsSuperAdminRole($roleIds)) {
+            return $this->buildMenuTree(
+                AdminMenu::query()
+                    ->where('status', 1)
+                    ->where('visible', 1)
+                    ->orderBy('sort')
+                    ->get()
+                    ->toArray()
+            );
         }
 
         $menus = AdminMenu::query()
@@ -826,17 +843,26 @@ class WebosController extends Controller
             return [];
         }
 
-        $appIds = AdminMenu::query()
-            ->whereHas('roles', fn ($query) => $query->whereIn('admin_roles.id', $roleIds))
+        $menus = AdminMenu::query()
             ->where('status', 1)
             ->where('visible', 1)
             ->whereNotNull('app_id')
-            ->where('app_id', '!=', '')
-            ->distinct()
-            ->pluck('app_id')
-            ->all();
+            ->where('app_id', '!=', '');
+        // 超管角色：全部启用可见菜单出现过的应用（隐式全量，2.1.126，与 adminApplicationListForAdmin 同口径）
+        if (! $this->containsSuperAdminRole($roleIds)) {
+            $menus->whereHas('roles', fn ($query) => $query->whereIn('admin_roles.id', $roleIds));
+        }
 
-        return $this->applicationListByAppIds($appIds);
+        return $this->applicationListByAppIds($menus->distinct()->pluck('app_id')->all());
+    }
+
+    /** 角色集合中是否含超级管理员角色（code = super_admin）：超管权限为隐式全量、不写关联表 */
+    protected function containsSuperAdminRole(array $roleIds): bool
+    {
+        return AdminRole::query()
+            ->whereIn('id', $roleIds)
+            ->where('code', 'super_admin')
+            ->exists();
     }
 
     /**
@@ -931,6 +957,7 @@ class WebosController extends Controller
             'preferences.icon_size' => ['sometimes', 'in:small,medium,large'],
             // 应用窗口多选项卡（OS 设置开关）
             'preferences.window_tabs' => ['sometimes', 'boolean'],
+            'preferences.tab_reload' => ['sometimes', 'boolean'],
             // 点击菜单进入（OS 设置开关：默认打开系统菜单面板，开启后直接进入全部功能启动台）
             'preferences.menu_open_launcher' => ['sometimes', 'boolean'],
             'preferences.taskbar_alignment' => ['sometimes', 'in:left,center'],

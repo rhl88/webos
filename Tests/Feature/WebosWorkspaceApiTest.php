@@ -447,6 +447,18 @@ class WebosWorkspaceApiTest extends WebosTestCase
         $this->assertStringContainsString("'preferences.window_tabs' => ['sometimes', 'boolean'],", $controller);
         // OS 设置系统页开关卡
         $this->assertStringContainsString('data-toggle-webos-setting="window_tabs"', $script);
+        // 「选项卡刷新」偏好（2.1.126）：三层同步 + OS 设置开关卡（多选项卡模式下生效）+ 复用既有选项卡时重载
+        $this->assertStringContainsString('tab_reload: false,', $script);
+        $this->assertStringContainsString("'tab_reload' => false,", $service);
+        $this->assertStringContainsString("(bool) (\$preferences['tab_reload'] ?? false)", $service);
+        $this->assertStringContainsString("'preferences.tab_reload' => ['sometimes', 'boolean'],", $controller);
+        $this->assertStringContainsString('data-toggle-webos-setting="tab_reload"', $script);
+        $this->assertStringContainsString('function tabReloadEnabled', $script);
+        $this->assertStringContainsString('var reloadExisting = Boolean(existing) && tabReloadEnabled();', $script);
+        $this->assertMatchesRegularExpression(
+            '/if \(reloadExisting\) \{\s*reloadWindowTab\(windowState, existing\);\s*\} else \{\s*renderWindowPage\(windowState, existing\);\s*\}/',
+            $script
+        );
         // 「点击菜单进入」偏好：三层同步 + OS 设置开关卡 + 菜单按钮点击分支（开启直接进全部功能启动台）
         $this->assertStringContainsString('menu_open_launcher: false,', $script);
         $this->assertStringContainsString("'menu_open_launcher' => false,", $service);

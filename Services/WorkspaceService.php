@@ -18,6 +18,7 @@ class WorkspaceService
         'icon_size' => 'medium',
         'label_effect' => 'none',
         'window_tabs' => false,
+        'tab_reload' => false,
         'menu_open_launcher' => false,
         'taskbar_alignment' => 'left',
         'taskbar_position' => 'bottom',
@@ -709,6 +710,8 @@ class WorkspaceService
             : self::DEFAULT_PREFERENCES['label_effect'];
         // 应用窗口多选项卡（OS 设置开关，默认关闭）
         $preferences['window_tabs'] = (bool) ($preferences['window_tabs'] ?? false);
+        // 选项卡刷新（OS 设置开关，默认关闭）：多选项卡模式下点击左侧菜单重新加载对应页面内容
+        $preferences['tab_reload'] = (bool) ($preferences['tab_reload'] ?? false);
         // 点击菜单进入（OS 设置开关，默认关闭=打开系统菜单面板；开启=直接进入「全部功能」启动台）
         $preferences['menu_open_launcher'] = (bool) ($preferences['menu_open_launcher'] ?? false);
         $preferences['taskbar_alignment'] = in_array($preferences['taskbar_alignment'], ['left', 'center'], true)

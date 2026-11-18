@@ -1,7 +1,7 @@
 # CmsPro WebOS 管理桌面 · 特性清单
 
-> 文档版本：2.1.125 | 更新日期：2026-11-16
-> 应用版本：2.1.125 | 应用 ID：`cmspro.webos`
+> 文档版本：2.1.126 | 更新日期：2026-11-18
+> 应用版本：2.1.126 | 应用 ID：`cmspro.webos`
 
 ## 一、应用定位
 
@@ -191,6 +191,8 @@ CmsproWebos/
 
 | 版本 | 日期 | 说明 |
 |---|---|---|
+| 2.1.126 | 2026-11-18 | **「管理桌面」预设超管角色目录为空修复**（与 CmsproWin11os 1.2.36 同源同修）：`roleMenuTreeForRoles` / `roleApplicationListForRoleIds` 补超级管理员角色特判——超管权限为「隐式全量」，`admin_role_menus` 关联表中不存在 `code=super_admin` 角色记录（框架口径见 `AdminUser::isSuperAdmin` 与 `MenuService::userMenus`），此前只查关联表致超管角色返回空目录，预设编辑器无法挑选任何入口、入口树为空并误显示「所有菜单都已固定到桌面」；新增 `containsSuperAdminRole()` 辅助判定，命中时返回全部 status=1&visible=1 菜单（与同 Controller 内既有超管分支 `adminMenuTreeForAdmin` / `adminApplicationListForAdmin` 对齐）。普通角色仍严格按关联表授权，语义不变。前端 `openNewEntryDialog` 空树文案按态区分：预设态提示「该角色暂无可用菜单，请先在『菜单管理』中为该角色授权菜单」，桌面态维持原文案。实测真实数据：超管角色菜单 0 → 40 顶层/560 展平、应用 0 → 58，两端结果一致。新增测试 `test_admin_desktop_preset_catalog_for_super_admin_role_returns_all_menus`；270 用例 / 2678 断言全绿 |
+| 2.1.126 | 2026-11-18 | **OS 设置「应用窗口多选项卡」下新增「选项卡刷新」开关**：开启后多选项卡窗口内点击左侧菜单重新加载对应选项卡页面（始终最新），关闭仅切换选项卡、保留页面状态；默认关闭，按个人喜好配置 |
 | 2.1.125 | 2026-11-16 | **「忽略的应用」弹窗新增「清除忽略」**：关闭按钮左侧新增「清除忽略」，一键清空全部忽略记录并持久化，恢复所有被忽略版本的更新提示；同步角标、更新 Tab、弹窗空态与工具栏计数；空记录时仅提示不写库 |
 | 2.1.124 | 2026-11-16 | **「全部功能」入口恢复（2.1.122 需求修正）**：blade 恢复 `data-open-special="entries"`「全部功能」按钮与委托 entries 分支（点击打开启动台）；启动台叶子收集 `collectLauncherLeaves()` 经 `openablePath()` 过滤，`HIDDEN_WEBOS_MENU_PATHS` 四个系统菜单（应用管理/WebOS 管理桌面/应用市场/应用日志）不在启动台展示；开始菜单「应用」目录卡片隐藏行为与 2.1.122 一致 |
 | 2.1.123 | 2026-11-16 | **升级弹窗更新日志摘要与详情展开**：`openUpgradeDialog()` 重写版本 changelog 渲染——取更新日志首个非空行作摘要（`escapeHtml` 纯文本展示），摘要右侧「详情」链接（`data-upgrade-notes-toggle`）展开完整更新日志（`upgradeNotesMarkdown()` 经 `window.marked.parse` 渲染 Markdown，复用 `.doc-markdown-body` 样式 + 新增 `.upgrade-notes-body` 内部滚动容器 max-height 200px，渲染异常回退纯文本段落）；toggle 与详情区按 `nextElementSibling` 相邻配对，点击切换 hidden 并在「详情/收起」间切换文案；弹窗高度 `450px` 改 `auto` 随展开内容自适应 |

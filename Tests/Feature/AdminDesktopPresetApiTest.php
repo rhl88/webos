@@ -254,6 +254,43 @@ class AdminDesktopPresetApiTest extends WebosTestCase
     }
 
     /**
+     * 超管角色的预设目录口径（2.1.126）：超管权限为「隐式全量」，admin_role_menus 关联表中
+     * 不存在 super_admin 角色记录（口径见 AdminUser::isSuperAdmin 与框架 MenuService::userMenus），
+     * 故 roleMenuTree 若只查关联表则恒返回空目录，「管理桌面」预设无法为超管挑选任何入口，
+     * 前端入口树为空并误显示「所有菜单都已固定到桌面」。
+     */
+    public function test_admin_desktop_preset_catalog_for_super_admin_role_returns_all_menus(): void
+    {
+        $admin = $this->actingAsSuperAdmin();
+
+        $superRoleId = $admin->roles()->where('code', 'super_admin')->value('admin_roles.id');
+        $this->assertNotNull($superRoleId, '前置条件：登录管理员应持有 super_admin 角色');
+        // 复现真实数据：超管角色在关联表中无任何菜单授权记录
+        $this->assertSame(0, DB::table('admin_role_menus')->where('role_id', $superRoleId)->count());
+
+        AppModel::create([
+            'app_id' => 'cmspro.supercatalog',
+            'name' => '超管目录测试应用',
+            'icon' => 'fa fa-cube',
+            'version' => '1.0.0',
+            'status' => AppStatus::ENABLED,
+            'is_system' => 0,
+        ]);
+        $leaf = AdminMenu::create(['name' => '超管可见菜单', 'parent_id' => 0, 'path' => '/admin/super-only', 'terminal_type' => 'admin', 'status' => 1, 'visible' => 1, 'sort' => 1]);
+        AdminMenu::create(['name' => '超管应用菜单', 'parent_id' => 0, 'app_id' => 'cmspro.supercatalog', 'path' => '/admin/super-app', 'terminal_type' => 'admin', 'status' => 1, 'visible' => 1, 'sort' => 2]);
+
+        $response = $this->getJson('/admin/cmspro/webos/api/admin-desktop-preset?role_id=' . $superRoleId)
+            ->assertOk()
+            ->assertJsonPath('code', 0);
+
+        $allMenuIds = collect($response->json('data.catalog.menus'))
+            ->flatMap(fn (array $node): array => $this->flattenMenuIds($node))
+            ->all();
+        $this->assertContains($leaf->id, $allMenuIds, '超管角色目录应含全部启用可见菜单（隐式全量授权）');
+        $this->assertContains('cmspro.supercatalog', collect($response->json('data.catalog.applications'))->pluck('app_id')->all(), '超管角色应用清单不得为空');
+    }
+
+    /**
      * 递归收集菜单树节点 id（含 children），供「未授权/停用/隐藏菜单不出现」的全树比对。
      *
      * @return array<int,int|string>
