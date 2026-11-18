@@ -168,6 +168,7 @@
         taskbarScrollEnd: document.getElementById('taskbar-scroll-end'),
         taskbar: document.querySelector('.webos-taskbar'),
         websiteButton: document.getElementById('website-button'),
+        websitePanel: document.getElementById('website-panel'),
         notificationButton: document.getElementById('notification-button'),
         notificationPanel: document.getElementById('notification-panel'),
         notificationBadge: document.getElementById('notification-badge'),
@@ -13309,7 +13310,7 @@
     }
 
     function closePanels(except) {
-        [['start', elements.startPanel, elements.startButton], ['notifications', elements.notificationPanel, elements.notificationButton], ['account', elements.accountPanel, elements.accountButton], ['calendar', elements.calendarPanel, elements.clockButton]].forEach(function (panel) {
+        [['start', elements.startPanel, elements.startButton], ['website', elements.websitePanel, elements.websiteButton], ['notifications', elements.notificationPanel, elements.notificationButton], ['account', elements.accountPanel, elements.accountButton], ['calendar', elements.calendarPanel, elements.clockButton]].forEach(function (panel) {
             if (panel[0] === except || !panel[1] || !panel[2]) { return; }
             panel[1].hidden = true;
             panel[2].classList.remove('is-active');
@@ -13318,7 +13319,7 @@
     }
 
     function isPanelToggle(target) {
-        return [elements.startButton, elements.notificationButton, elements.accountButton, elements.clockButton].some(function (button) {
+        return [elements.startButton, elements.websiteButton, elements.notificationButton, elements.accountButton, elements.clockButton].some(function (button) {
             return button && button.contains(target);
         });
     }
@@ -13953,13 +13954,22 @@
         if (elements.notificationButton) {
             elements.notificationButton.addEventListener('click', function () { togglePanel('notifications', elements.notificationPanel, elements.notificationButton); });
         }
-        // 前台首页：默认新标签页打开站点首页；全屏下新标签页会退出全屏，改在桌面内置浏览器窗口打开
-        elements.websiteButton.addEventListener('click', function () {
+        // 站点入口（2.1.128）：地球图标点击弹出菜单，菜单项按 data-website-action 分流
+        elements.websiteButton.addEventListener('click', function () { togglePanel('website', elements.websitePanel, elements.websiteButton); });
+        elements.websitePanel.addEventListener('click', function (event) {
+            var action = event.target.closest('[data-website-action]');
+            if (!action) { return; }
+            var url = action.getAttribute('data-website-action') === 'home'
+                ? elements.websiteButton.dataset.websiteUrl
+                : elements.websiteButton.dataset.userCenterUrl;
+            closePanels();
+            if (!url) { return; }
+            // 默认新标签页打开；全屏下新标签页会退出全屏，改在桌面内置浏览器窗口打开
             if (document.fullscreenElement || document.webkitFullscreenElement) {
-                openBrowserWithURL(elements.websiteButton.dataset.websiteUrl);
+                openBrowserWithURL(url);
                 return;
             }
-            window.open(elements.websiteButton.dataset.websiteUrl, '_blank', 'noopener');
+            window.open(url, '_blank', 'noopener');
         });
         elements.accountButton.addEventListener('click', function () { togglePanel('account', elements.accountPanel, elements.accountButton); });
         elements.clockButton.addEventListener('click', function () { togglePanel('calendar', elements.calendarPanel, elements.clockButton); });

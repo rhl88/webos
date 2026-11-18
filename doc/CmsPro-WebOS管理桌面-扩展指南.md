@@ -1,7 +1,7 @@
 # CmsPro WebOS 管理桌面 · 扩展指南
 
-> 文档版本：2.1.127 | 更新日期：2026-11-18
-> 应用版本：2.1.127 | 应用 ID：`cmspro.webos`
+> 文档版本：2.1.128 | 更新日期：2026-11-18
+> 应用版本：2.1.128 | 应用 ID：`cmspro.webos`
 
 ## 一、概述
 
@@ -779,6 +779,7 @@ app(HookManager::class)->registerFilter(
 
 | 版本 | 日期 | 更新人 | 说明 |
 |---|---|---|---|
+| 2.1.128 | 2026-11-18 | CmsPro | **任务栏地球图标改为弹出站点入口菜单（用户需求「状态栏->地球图标 点击后弹出菜单 访问首页 用户中心」）**：① blade `#website-button` 改为菜单触发按钮（`aria-haspopup` + `data-user-center-url="{{ url('/user') }}"`），新增 `#website-panel` 面板（`webos-panel website-panel`，菜单项 `data-website-action="home/user-center"`）；② JS `elements.websitePanel` 纳入 `closePanels`/`isPanelToggle` 通用面板体系，点击地球按钮 `togglePanel('website', …)`，面板内点击委托按 `data-website-action` 取 `data-website-url`（首页）或 `data-user-center-url`（用户中心），点后 `closePanels()` 并新标签页打开，全屏时复用 `openBrowserWithURL()` 兜底；③ CSS `.website-panel` 定位随任务栏四向停靠适配（默认 `right:132px`、bottom 计算式，top/left/right 停靠各自覆盖），`.website-actions` 菜单按钮样式与账号面板一致；④ 测试——内置浏览器测试新增 16 条断言（面板结构/双动作分流/closePanels·isPanelToggle 纳入/togglePanel 绑定/CSS 规则） |
 | 2.1.127 | 2026-11-18 | CmsPro | **应用更新「详情」弹窗化（用户需求「应用中心->应用更新 弹出升级在升级说明中，点击"详情"使用 layui 弹出详细的更新详情」）**：① `openUpgradeDialog()` 新增 `upgradeNotes` 数组收集各候选版本完整更新详情（`{ version, html }`，索引与链接 `data-upgrade-notes-index` 对应）；② 摘要行仅保留首行说明与「详情」链接，移除 2.1.123 的行内隐藏详情区（`data-upgrade-notes-body`）与展开/收起交互；③ `success` 回调按 `data-upgrade-notes-index` 绑定点击——`layer.open({ type: 1, title: '更新详情「应用名」v版本', area: ['520px', 'auto'], content: Markdown 渲染结果（max-height:60vh 内部滚动） })`；④ CSS 移除 `.upgrade-notes-body` 行内展开容器规则，保留 `.upgrade-notes-toggle` 链接样式；⑤ 测试断言同步更新（弹窗结构/数据源/标题/内容/样式移除） |
 | 2.1.126 | 2026-11-18 | CmsPro | **OS 设置新增「选项卡刷新」（用户需求「应用窗口多选项卡模式下增加选项卡刷新开关：开启则每次点击左侧菜单对应内容重新加载，关闭则仅切换；按个人喜好配置」）**：① 偏好 `preferences.tab_reload`（布尔，默认 false）三层同步——服务层 `DEFAULT_PREFERENCES` 与 `sanitizePreferences()` 强制布尔净化、`WebosController` 保存验证 `'preferences.tab_reload' => ['sometimes', 'boolean']`、前端 `normalizePreferences` 默认值；② OS 设置「应用窗口多选项卡」卡片下新增「选项卡刷新」开关按钮（`data-toggle-webos-setting="tab_reload"`，复用通用偏好开关保存链路），卡片描述同步说明默认仅切换行为；③ 新增 `tabReloadEnabled()`，`activateWindowEntry` 多选项卡分支中复用既有选项卡时按 `reloadExisting` 分流——开启则 `reloadWindowTab()` 重新加载页面内容（始终最新），关闭则维持 `renderWindowPage()` 仅切换、页面状态保留；新建选项卡不受开关影响（首次必然加载）；④ 测试——`test_window_tabs_preference_and_titlebar_tab_bar` 新增 9 条断言（三层同步/OS 设置开关卡/tabReloadEnabled/reloadExisting 分流正则） |
 | 2.1.125 | 2026-11-16 | CmsPro | **「忽略的应用」弹窗新增「清除忽略」（用户需求「忽略的应用弹出的关闭按钮左侧增加清除忽略按钮，点击后全部清除所有的忽略记录」）**：① `openIgnoredUpdatesDialog()` 的 `btn` 由 `['关闭']` 改为 `['清除忽略', '关闭']`（layui 按钮按数组顺序排列，清除忽略位于关闭左侧），新增 `yes` 回调调用 `clearIgnoredUpdates(dialogLayero)`（yes 不自动关窗，清除后弹窗保持打开并刷新为空态）；`success` 回调记录 `dialogLayero` 供回调使用；② 新增 `clearIgnoredUpdates(dialogLayero)`：空集合时仅 toast「当前没有忽略的版本更新」不写库；否则 `ignored_updates = sanitizeIgnoredUpdates([])` 清空、`saveWorkspace(false)` 静默持久化、toast「已清除全部忽略记录」，并复用移除忽略的同步链路——`syncUpdateBadge()`（侧栏角标+桌面角标）、更新 Tab 打开中重渲染状态栏与可见更新列表（`visibleUpdateApps()` 口径）、弹窗面板重绘 `ignoredUpdatesListMarkup()`（空态）、工具栏「忽略的应用(x)」计数归零；③ 测试——`test_workspace_api_persists_ignored_updates` 新增 6 条断言（按钮顺序/yes 回调/清空函数/持久化/两条 toast 文案） |

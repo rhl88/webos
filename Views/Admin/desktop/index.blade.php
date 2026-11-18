@@ -163,6 +163,14 @@
         </nav>
     </section>
 
+    {{-- 站点入口菜单（2.1.128）：任务栏地球图标点击弹出，访问首页 / 用户中心均新标签页打开 --}}
+    <section id="website-panel" class="webos-panel website-panel" aria-label="站点入口" hidden>
+        <nav class="website-actions">
+            <button type="button" data-website-action="home"><i class="fa fa-home"></i>访问首页</button>
+            <button type="button" data-website-action="user-center"><i class="fa fa-user-circle-o"></i>用户中心</button>
+        </nav>
+    </section>
+
     {{-- 会话恢复层：419/401 过期时弹出，iframe 复用 /admin/login 完整安全机制，登录成功后自动重放失败请求 --}}
     <section id="session-recovery-layer" class="session-recovery" hidden>
         <div class="session-recovery-mask"></div>
@@ -253,8 +261,8 @@
             <i class="fa fa-angle-right" aria-hidden="true"></i>
         </button>
         <div class="taskbar-spacer"></div>
-        {{-- 前台首页入口：在 WebOS 内以通用窗口打开站点首页 --}}
-        <button id="website-button" class="taskbar-button website-button" type="button" aria-label="访问前台首页" data-website-url="{{ url('/') }}">
+        {{-- 站点入口（2.1.128）：点击弹出菜单（访问首页/用户中心），取代原「点击直接打开首页」 --}}
+        <button id="website-button" class="taskbar-button website-button" type="button" aria-label="站点入口" aria-haspopup="true" aria-expanded="false" data-website-url="{{ url('/') }}" data-user-center-url="{{ url('/user') }}">
             <i class="fa fa-globe" aria-hidden="true"></i>
         </button>
         @if ($webosTerminal === 'admin')

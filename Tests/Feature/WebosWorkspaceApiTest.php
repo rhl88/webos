@@ -1181,9 +1181,25 @@ class WebosWorkspaceApiTest extends WebosTestCase
         $this->assertStringContainsString('function browserStartPageMarkup()', $script);
         $this->assertStringContainsString('frame.srcdoc = browserStartPageMarkup();', $script);
         $this->assertStringContainsString("viewsHost.querySelector('[data-browser-view=\"' + tab.id + '\"]')", $script);
-        // 全屏下任务栏地球图标改为在内置浏览器窗口打开（新标签页会退出全屏）
+        // 全屏下新标签页会退出全屏：站点入口菜单项改在桌面内置浏览器窗口打开（2.1.128 起菜单项共用该兜底）
         $this->assertStringContainsString('function openBrowserWithURL(url)', $script);
-        $this->assertStringContainsString('openBrowserWithURL(elements.websiteButton.dataset.websiteUrl);', $script);
+        // 站点入口菜单（2.1.128）：地球图标点击弹出菜单（访问首页/用户中心），不再直接打开首页
+        $this->assertStringContainsString("togglePanel('website', elements.websitePanel, elements.websiteButton);", $script);
+        $this->assertStringContainsString("['website', elements.websitePanel, elements.websiteButton]", $script);
+        $this->assertStringContainsString("elements.websitePanel.addEventListener('click', function (event) {", $script);
+        $this->assertStringContainsString("var action = event.target.closest('[data-website-action]');", $script);
+        $this->assertStringContainsString('? elements.websiteButton.dataset.websiteUrl', $script);
+        $this->assertStringContainsString(': elements.websiteButton.dataset.userCenterUrl;', $script);
+        $this->assertStringContainsString('openBrowserWithURL(url);', $script);
+        $this->assertStringContainsString('id="website-panel"', $view);
+        $this->assertStringContainsString('data-website-action="home"', $view);
+        $this->assertStringContainsString('data-website-action="user-center"', $view);
+        $this->assertStringContainsString('访问首页', $view);
+        $this->assertStringContainsString('用户中心', $view);
+        $this->assertStringContainsString('data-user-center-url=', $view);
+        $this->assertStringContainsString('aria-haspopup="true"', $view);
+        $this->assertStringContainsString('.website-panel {', $stylesheet);
+        $this->assertStringContainsString('.website-actions button {', $stylesheet);
         // 桌面项加载过滤：内置浏览器空 path 与桌面原生项（文件夹 path 置空、URL 链接为外链、小工具 path 置空）均按特判/kind 放行，
         // 否则首次载入被 safePath 过滤导致浏览器图标、文件夹、URL 链接、小工具每次加载都不显示
         $this->assertMatchesRegularExpression(

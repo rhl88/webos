@@ -2346,6 +2346,51 @@ textarea:focus-visible,
     color: #d6484d;
 }
 
+/* 站点入口菜单（2.1.128）：任务栏地球图标点击弹出，定位随任务栏方位适配（与其它任务栏面板一致） */
+.website-panel {
+    right: 132px;
+    bottom: calc(var(--taskbar-height) + 12px);
+    width: 168px;
+}
+
+.webos-desktop[data-taskbar-position="top"] .website-panel {
+    top: calc(var(--taskbar-size) + 12px);
+    bottom: auto;
+}
+
+.webos-desktop[data-taskbar-position="left"] .website-panel {
+    right: auto;
+    bottom: 18px;
+    left: calc(var(--taskbar-size) + 12px);
+}
+
+.webos-desktop[data-taskbar-position="right"] .website-panel {
+    right: calc(var(--taskbar-size) + 12px);
+    bottom: 18px;
+}
+
+.website-actions {
+    padding: 8px;
+}
+
+.website-actions button {
+    display: flex;
+    align-items: center;
+    width: 100%;
+    min-height: 42px;
+    padding: 0 12px;
+    gap: 10px;
+    border: 0;
+    border-radius: 6px;
+    background: transparent;
+    cursor: pointer;
+    text-align: left;
+}
+
+.website-actions button:hover {
+    background: #f0f4f7;
+}
+
 .webos-dialog {
     position: fixed;
     inset: 0;
