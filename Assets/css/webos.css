@@ -2543,6 +2543,14 @@ textarea:focus-visible,
     background: #f7fafd;
 }
 
+/* 新增/编辑表单已改为独立 layui 弹出层（2.1.129 调整）：弹层内去掉内联态的虚线框与留白 */
+.quick-access-dialog .quick-access-form {
+    margin-top: 0;
+    padding: 2px 0 0;
+    border: none;
+    background: transparent;
+}
+
 .quick-access-field {
     display: flex;
     align-items: center;

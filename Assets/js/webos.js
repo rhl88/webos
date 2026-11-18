@@ -13633,10 +13633,11 @@
 
     /* ==================== 快捷访问菜单管理弹窗（2.1.129） ==================== */
 
-    /** 弹窗会话状态：terminal=管理的端（admin/user）、index=正在编辑的项（-1 为新增）、layerIndex=layui 弹层句柄 */
-    var quickAccessDialog = { terminal: 'admin', index: -1, layerIndex: null, element: null };
+    /** 弹窗会话状态：terminal=管理的端（admin/user）、index=正在编辑的项（-1 为新增）、
+     *  layerIndex=管理弹层句柄、formLayerIndex=新增/编辑表单弹层句柄 */
+    var quickAccessDialog = { terminal: 'admin', index: -1, layerIndex: null, formLayerIndex: null, element: null };
 
-    /** 打开指定终端的快捷菜单管理弹窗：layui 弹层承载列表与表单，改动即时写回工作区偏好 */
+    /** 打开指定终端的快捷菜单管理弹窗：layui 弹层承载列表，新增/编辑再弹独立表单层，改动即时写回工作区偏好 */
     function openQuickAccessDialog(terminal) {
         var layer = layuiLayer();
         if (!layer) { toast('弹窗组件未就绪', 'error'); return; }
@@ -13656,30 +13657,35 @@
                 renderQuickAccessList();
             },
             end: function () {
+                closeQuickAccessForm();
                 quickAccessDialog.layerIndex = null;
                 quickAccessDialog.element = null;
             }
         });
     }
 
-    /** 弹窗骨架：工具栏（计数 + 新增）、菜单列表、编辑表单、填写提示 */
+    /** 弹窗骨架：工具栏（计数 + 新增）、菜单列表、填写提示；新增/编辑为独立 layui 弹出层表单 */
     function quickAccessDialogMarkup() {
         return '<div class="quick-access-dialog">'
             + '<div class="quick-access-toolbar"><span data-quick-count></span>'
             + '<button type="button" class="webos-button primary compact" data-quick-add><i class="fa fa-plus"></i>新增菜单</button></div>'
             + '<div class="quick-access-list" data-quick-list></div>'
-            + '<div class="quick-access-form" data-quick-form hidden>'
+            + '<p class="quick-access-tip">链接支持站内路径（以 / 开头）或 http(s):// 外链；每端最多配置 8 项，保存后立即生效。</p>'
+            + '</div>';
+    }
+
+    /** 新增/编辑弹出层表单骨架（2.1.129 调整：由列表下方内联表单改为 layui 弹出层） */
+    function quickAccessFormMarkup() {
+        return '<div class="quick-access-dialog"><div class="quick-access-form">'
             + '<div class="quick-access-field"><label>名称</label><input type="text" maxlength="20" data-quick-label placeholder="如：访问首页"></div>'
             + '<div class="quick-access-field"><label>链接</label><input type="text" maxlength="500" data-quick-url placeholder="以 / 或 https:// 开头"></div>'
             + '<div class="quick-access-field"><label>图标</label><input type="text" maxlength="60" data-quick-icon placeholder="可选，如 fa fa-home"></div>'
             + '<div class="quick-access-actions"><button type="button" class="webos-button primary compact" data-quick-save>保存</button>'
             + '<button type="button" class="webos-button secondary compact" data-quick-cancel>取消</button></div>'
-            + '</div>'
-            + '<p class="quick-access-tip">链接支持站内路径（以 / 开头）或 http(s):// 外链；每端最多配置 8 项，保存后立即生效。</p>'
-            + '</div>';
+            + '</div></div>';
     }
 
-    /** 重绘弹窗菜单列表与计数，并收起编辑表单 */
+    /** 重绘弹窗菜单列表与计数 */
     function renderQuickAccessList() {
         var host = quickAccessDialog.element && quickAccessDialog.element.querySelector('[data-quick-list]');
         if (!host) { return; }
@@ -13700,26 +13706,60 @@
                     + '</span></div>';
             }).join('');
         }
-        quickAccessDialog.index = -1;
-        var form = quickAccessDialog.element.querySelector('[data-quick-form]');
-        if (form) { form.hidden = true; }
     }
 
-    /** 把表单区切换为编辑/新增状态：item 为空表示新增 */
+    /** 新增/编辑菜单改为独立 layui 弹出层表单（2.1.129 调整）：item 为空表示新增；
+     *  保存/取消在表单层内完成，成功后关闭表单层并刷新列表 */
     function showQuickAccessForm(item, index) {
-        var form = quickAccessDialog.element && quickAccessDialog.element.querySelector('[data-quick-form]');
-        if (!form) { return; }
-        form.querySelector('[data-quick-label]').value = item ? item.label : '';
-        form.querySelector('[data-quick-url]').value = item ? item.url : '';
-        form.querySelector('[data-quick-icon]').value = item ? item.icon : '';
+        var layer = layuiLayer();
+        if (!layer) { toast('弹窗组件未就绪', 'error'); return; }
         quickAccessDialog.index = index;
-        form.hidden = false;
+        if (quickAccessDialog.formLayerIndex !== null) {
+            layer.close(quickAccessDialog.formLayerIndex);
+        }
+        quickAccessDialog.formLayerIndex = layer.open({
+            type: 1,
+            title: item ? '编辑菜单' : '新增菜单',
+            area: ['420px', 'auto'],
+            content: quickAccessFormMarkup(),
+            success: function (layero) {
+                var form = layero && layero[0] ? layero[0] : layero;
+                form.querySelector('[data-quick-label]').value = item ? item.label : '';
+                form.querySelector('[data-quick-url]').value = item ? item.url : '';
+                form.querySelector('[data-quick-icon]').value = item ? item.icon : '';
+                bindQuickAccessForm(form);
+            },
+            end: function () {
+                quickAccessDialog.formLayerIndex = null;
+                quickAccessDialog.index = -1;
+            }
+        });
+    }
+
+    /** 表单弹出层事件：保存校验写回并关闭，取消直接关闭 */
+    function bindQuickAccessForm(form) {
+        form.addEventListener('click', function (event) {
+            if (event.target.closest('[data-quick-save]')) {
+                saveQuickAccessItem(form);
+                return;
+            }
+            if (event.target.closest('[data-quick-cancel]')) {
+                closeQuickAccessForm();
+            }
+        });
+    }
+
+    /** 关闭新增/编辑表单弹出层 */
+    function closeQuickAccessForm() {
+        if (quickAccessDialog.formLayerIndex === null) { return; }
+        var layer = layuiLayer();
+        if (layer) { layer.close(quickAccessDialog.formLayerIndex); }
+        quickAccessDialog.formLayerIndex = null;
+        quickAccessDialog.index = -1;
     }
 
     /** 校验并保存表单：写回当前端偏好数组，同步刷新地球菜单并静默保存工作区 */
-    function saveQuickAccessItem() {
-        var form = quickAccessDialog.element && quickAccessDialog.element.querySelector('[data-quick-form]');
-        if (!form) { return; }
+    function saveQuickAccessItem(form) {
         var label = form.querySelector('[data-quick-label]').value.trim();
         var url = form.querySelector('[data-quick-url]').value.trim();
         var icon = form.querySelector('[data-quick-icon]').value.trim();
@@ -13743,6 +13783,7 @@
         preferences.quick_access[quickAccessDialog.terminal] = bucket;
         persistQuickAccess();
         renderQuickAccessList();
+        closeQuickAccessForm();
         toast('快捷菜单已更新');
     }
 
@@ -13768,7 +13809,7 @@
         saveWorkspace(false);
     }
 
-    /** 弹窗事件委托：新增/编辑/删除/保存/取消 */
+    /** 管理弹窗事件委托：新增/编辑弹出表单层、删除确认后删除（保存/取消在表单层内处理） */
     function bindQuickAccessDialog() {
         if (!quickAccessDialog.element) { return; }
         quickAccessDialog.element.addEventListener('click', function (event) {
@@ -13794,14 +13835,6 @@
                     layer.close(confirmIndex);
                     removeQuickAccessItem(removeIndex);
                 });
-                return;
-            }
-            if (event.target.closest('[data-quick-save]')) { saveQuickAccessItem(); return; }
-            var cancel = event.target.closest('[data-quick-cancel]');
-            if (cancel) {
-                quickAccessDialog.index = -1;
-                var form = quickAccessDialog.element.querySelector('[data-quick-form]');
-                if (form) { form.hidden = true; }
             }
         });
     }

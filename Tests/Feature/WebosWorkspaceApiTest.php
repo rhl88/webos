@@ -1248,7 +1248,9 @@ class WebosWorkspaceApiTest extends WebosTestCase
         $this->assertStringContainsString('data-quick-access-open="admin"', $script);
         $this->assertStringContainsString('data-quick-access-open="user"', $script);
         $this->assertStringContainsString('function openQuickAccessDialog(terminal)', $script);
-        $this->assertStringContainsString('function saveQuickAccessItem()', $script);
+        $this->assertStringContainsString('function quickAccessFormMarkup()', $script);
+        $this->assertStringContainsString('function showQuickAccessForm(item, index)', $script);
+        $this->assertStringContainsString('function saveQuickAccessItem(form)', $script);
         $this->assertStringContainsString('function removeQuickAccessItem(index)', $script);
         $this->assertStringContainsString('.website-panel {', $stylesheet);
         $this->assertStringContainsString('.website-actions button {', $stylesheet);
