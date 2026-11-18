@@ -1252,6 +1252,15 @@ class WebosWorkspaceApiTest extends WebosTestCase
         $this->assertStringContainsString('function showQuickAccessForm(item, index)', $script);
         $this->assertStringContainsString('function saveQuickAccessItem(form)', $script);
         $this->assertStringContainsString('function removeQuickAccessItem(index)', $script);
+        // 快捷菜单图标点选（2.1.130）：表单 hidden input + 预览按钮 + 目录网格选择弹窗，渲染兼容目录 SVG 与存量字体图标
+        $this->assertStringContainsString('function quickAccessIconMarkup(icon)', $script);
+        $this->assertStringContainsString('function catalogIconSvg(catalog, slug)', $script);
+        $this->assertStringContainsString('function openQuickAccessIconPicker(form)', $script);
+        $this->assertStringContainsString('function updateQuickAccessIconPreview(form)', $script);
+        $this->assertStringContainsString('data-quick-icon-pick', $script);
+        $this->assertStringContainsString('data-quick-icon-clear', $script);
+        $this->assertStringContainsString('.quick-access-icon-picker {', $stylesheet);
+        $this->assertStringContainsString('.quick-icon {', $stylesheet);
         $this->assertStringContainsString('.website-panel {', $stylesheet);
         $this->assertStringContainsString('.website-actions button {', $stylesheet);
         $this->assertStringContainsString('.quick-access-dialog {', $stylesheet);

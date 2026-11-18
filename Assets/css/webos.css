@@ -2591,6 +2591,89 @@ textarea:focus-visible,
     font-size: 12px;
 }
 
+/* 快捷菜单图标（2.1.130）：目录 SVG 与字体图标统一容器，地球菜单与管理列表共用 */
+.quick-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 16px;
+    height: 16px;
+    flex: none;
+}
+
+.quick-icon svg {
+    width: 100%;
+    height: 100%;
+}
+
+/* 图标选择（2.1.130）：预览按钮点击弹出目录网格，清除按钮恢复默认链接图标 */
+.quick-access-icon-picker {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    flex: 1;
+    min-width: 0;
+    padding: 6px 10px;
+    border: 1px solid #d7e2ec;
+    border-radius: 6px;
+    background: #fff;
+    color: #24425c;
+    font-size: 13px;
+    cursor: pointer;
+}
+
+.quick-access-icon-picker:hover {
+    border-color: #2f6fed;
+    color: #2f6fed;
+}
+
+.quick-access-icon-preview {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 18px;
+    height: 18px;
+    flex: none;
+}
+
+.quick-access-icon-preview svg {
+    width: 100%;
+    height: 100%;
+}
+
+.quick-access-icon-value {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    text-align: left;
+}
+
+.quick-access-icon-picker .fa-angle-down {
+    flex: none;
+    color: #8a97a5;
+}
+
+.quick-access-icon-clear {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    flex: none;
+    border: 1px solid #d7e2ec;
+    border-radius: 6px;
+    background: #fff;
+    color: #8a97a5;
+    cursor: pointer;
+}
+
+.quick-access-icon-clear:hover {
+    border-color: #e5484d;
+    color: #e5484d;
+}
+
 .webos-dialog {
     position: fixed;
     inset: 0;

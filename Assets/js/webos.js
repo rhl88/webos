@@ -4873,6 +4873,27 @@
         });
     }
 
+    /** 图标目录单图标 SVG（2.1.130）：f=1 品牌实心（fill），f=0 lucide 线性（stroke）；供图标设置与快捷菜单选择器复用 */
+    function catalogIconSvg(catalog, slug) {
+        var def = catalog && catalog.icons && catalog.icons[slug];
+        if (!def) {
+            return '';
+        }
+        return '<svg viewBox="' + def.v + '" ' + (Number(def.f) === 1
+            ? 'fill="currentColor" stroke="none"'
+            : 'fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"')
+            + ' aria-hidden="true">' + def.b + '</svg>';
+    }
+
+    /** 快捷菜单项图标标记（2.1.130）：命中内置图标目录的 slug 渲染内联 SVG，否则按字体图标类名渲染（兼容存量 fa fa-* 数据） */
+    function quickAccessIconMarkup(icon) {
+        var svg = catalogIconSvg(window.WEBOS_ICON_CATALOG, icon);
+        if (svg) {
+            return '<span class="quick-icon">' + svg + '</span>';
+        }
+        return '<span class="quick-icon"><i class="' + escapeHtml(icon || 'fa fa-link') + '"></i></span>';
+    }
+
     /** 右键「图标设置」（2.1.33，2.1.50 起文件夹与 URL 快捷方式共用）：内置图标目录网格点选，替换图标并持久化 */
     function openFolderIconDialog(folderId) {
         var folder = findDesktopItem(folderId);
@@ -4886,17 +4907,6 @@
             return;
         }
         var index = null;
-        /** 单个目录图标 SVG：f=1 品牌实心（fill），f=0 lucide 线性（stroke） */
-        function catalogSvg(slug) {
-            var def = catalog.icons && catalog.icons[slug];
-            if (!def) {
-                return '';
-            }
-            return '<svg viewBox="' + def.v + '" ' + (Number(def.f) === 1
-                ? 'fill="currentColor" stroke="none"'
-                : 'fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"')
-                + ' aria-hidden="true">' + def.b + '</svg>';
-        }
         index = layer.open({
             type: 1,
             title: '图标设置 - ' + folder.title,
@@ -4906,7 +4916,7 @@
                 var slug = option.slug || option.value;
                 return '<button class="webos-icon-option' + (folder.icon === slug ? ' is-active' : '') + '" type="button"'
                     + ' data-icon-slug="' + escapeHtml(slug) + '" title="' + escapeHtml(option.label) + '">'
-                    + '<span class="webos-icon-option-svg">' + catalogSvg(slug) + '</span>'
+                    + '<span class="webos-icon-option-svg">' + catalogIconSvg(catalog, slug) + '</span>'
                     + '<small>' + escapeHtml(option.label) + '</small></button>';
             }).join('') + '</div>',
             success: function (layero) {
@@ -13589,7 +13599,7 @@
         }
         nav.innerHTML = items.map(function (item, index) {
             return '<button type="button" data-website-index="' + index + '">'
-                + '<i class="' + (item.icon || 'fa fa-link') + '"></i>' + escapeHtml(item.label) + '</button>';
+                + quickAccessIconMarkup(item.icon) + escapeHtml(item.label) + '</button>';
         }).join('');
     }
 
@@ -13674,15 +13684,61 @@
             + '</div>';
     }
 
-    /** 新增/编辑弹出层表单骨架（2.1.129 调整：由列表下方内联表单改为 layui 弹出层） */
+    /** 新增/编辑弹出层表单骨架（2.1.129 调整：由列表下方内联表单改为 layui 弹出层；2.1.130 图标改为内置目录点选） */
     function quickAccessFormMarkup() {
         return '<div class="quick-access-dialog"><div class="quick-access-form">'
             + '<div class="quick-access-field"><label>名称</label><input type="text" maxlength="20" data-quick-label placeholder="如：访问首页"></div>'
             + '<div class="quick-access-field"><label>链接</label><input type="text" maxlength="500" data-quick-url placeholder="以 / 或 https:// 开头"></div>'
-            + '<div class="quick-access-field"><label>图标</label><input type="text" maxlength="60" data-quick-icon placeholder="可选，如 fa fa-home"></div>'
+            + '<div class="quick-access-field quick-access-icon-field"><label>图标</label>'
+            + '<input type="hidden" data-quick-icon>'
+            + '<button type="button" class="quick-access-icon-picker" data-quick-icon-pick>'
+            + '<span class="quick-access-icon-preview"></span><span class="quick-access-icon-value"></span>'
+            + '<i class="fa fa-angle-down"></i></button>'
+            + '<button type="button" class="quick-access-icon-clear" data-quick-icon-clear title="清除图标（显示默认链接图标）"><i class="fa fa-times"></i></button>'
+            + '</div>'
             + '<div class="quick-access-actions"><button type="button" class="webos-button primary compact" data-quick-save>保存</button>'
             + '<button type="button" class="webos-button secondary compact" data-quick-cancel>取消</button></div>'
             + '</div></div>';
+    }
+
+    /** 刷新表单图标预览（2.1.130）：按 hidden input 当前值渲染目录 SVG 或字体图标（含默认链接图标兜底） */
+    function updateQuickAccessIconPreview(form) {
+        var input = form.querySelector('[data-quick-icon]');
+        var preview = form.querySelector('.quick-access-icon-preview');
+        var text = form.querySelector('.quick-access-icon-value');
+        if (!input || !preview || !text) { return; }
+        var icon = input.value.trim();
+        preview.innerHTML = quickAccessIconMarkup(icon);
+        text.textContent = icon ? icon : '未选择（显示默认）';
+    }
+
+    /** 快捷菜单图标选择弹窗（2.1.130）：复用内置图标目录网格（与「图标设置」同款交互），点选写回表单并刷新预览 */
+    function openQuickAccessIconPicker(form) {
+        var catalog = window.WEBOS_ICON_CATALOG;
+        var layer = layuiLayer();
+        if (!catalog || !catalog.options || !layer) { toast('图标目录未就绪', 'error'); return; }
+        var input = form.querySelector('[data-quick-icon]');
+        if (!input) { return; }
+        layer.open({
+            type: 1,
+            title: '选择图标',
+            area: ['616px', '460px'],
+            btn: ['取消'],
+            content: '<div class="webos-icon-grid">' + catalog.options.map(function (option) {
+                var slug = option.slug || option.value;
+                return '<button class="webos-icon-option' + (input.value === slug ? ' is-active' : '') + '" type="button"'
+                    + ' data-icon-slug="' + escapeHtml(slug) + '" title="' + escapeHtml(option.label) + '">'
+                    + '<span class="webos-icon-option-svg">' + catalogIconSvg(catalog, slug) + '</span>'
+                    + '<small>' + escapeHtml(option.label) + '</small></button>';
+            }).join('') + '</div>',
+            success: function (layero, index) {
+                layero.on('click', '[data-icon-slug]', function () {
+                    input.value = this.dataset.iconSlug;
+                    updateQuickAccessIconPreview(form);
+                    layer.close(index);
+                });
+            }
+        });
     }
 
     /** 重绘弹窗菜单列表与计数 */
@@ -13697,7 +13753,7 @@
         } else {
             host.innerHTML = items.map(function (item, index) {
                 return '<div class="quick-access-row">'
-                    + '<span class="quick-access-icon"><i class="' + (item.icon || 'fa fa-link') + '"></i></span>'
+                    + '<span class="quick-access-icon">' + quickAccessIconMarkup(item.icon) + '</span>'
                     + '<span class="quick-access-label" title="' + escapeHtml(item.label) + '">' + escapeHtml(item.label) + '</span>'
                     + '<span class="quick-access-url" title="' + escapeHtml(item.url) + '">' + escapeHtml(item.url) + '</span>'
                     + '<span class="quick-access-ops">'
@@ -13727,6 +13783,7 @@
                 form.querySelector('[data-quick-label]').value = item ? item.label : '';
                 form.querySelector('[data-quick-url]').value = item ? item.url : '';
                 form.querySelector('[data-quick-icon]').value = item ? item.icon : '';
+                updateQuickAccessIconPreview(form);
                 bindQuickAccessForm(form);
             },
             end: function () {
@@ -13736,9 +13793,18 @@
         });
     }
 
-    /** 表单弹出层事件：保存校验写回并关闭，取消直接关闭 */
+    /** 表单弹出层事件：图标点选/清除、保存校验写回并关闭，取消直接关闭 */
     function bindQuickAccessForm(form) {
         form.addEventListener('click', function (event) {
+            if (event.target.closest('[data-quick-icon-pick]')) {
+                openQuickAccessIconPicker(form);
+                return;
+            }
+            if (event.target.closest('[data-quick-icon-clear]')) {
+                form.querySelector('[data-quick-icon]').value = '';
+                updateQuickAccessIconPreview(form);
+                return;
+            }
             if (event.target.closest('[data-quick-save]')) {
                 saveQuickAccessItem(form);
                 return;
