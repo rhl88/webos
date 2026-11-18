@@ -10010,6 +10010,8 @@
         var layer = layuiLayer();
         var app = findCatalogApp(appId);
         var currentVersion = (app && app.version) ? app.version : '?';
+        // 各候选版本完整更新详情：「详情」弹窗数据源，索引与 data-upgrade-notes-index 对应（2.1.127）
+        var upgradeNotes = [];
 
         var radioHtml = '<div style="padding:15px;">'
             + '<div style="margin-bottom:10px;color:#666;">当前版本：<strong style="color:#333;">v' + escapeHtml(String(currentVersion)) + '</strong></div>'
@@ -10028,7 +10030,7 @@
             } else {
                 tip = '（跳跃升级）';
             }
-            // 升级说明（2.1.123）：默认只显示第一行摘要，「详情」展开 Markdown 渲染的完整更新日志
+            // 升级说明：默认只显示第一行摘要，「详情」点击后 layui 弹窗展示该版本完整更新日志（2.1.127）
             var changelog = String(version.changelog || '');
             var firstLine = '';
             changelog.split(/\r?\n/).some(function (line) {
@@ -10037,10 +10039,9 @@
             });
             var notesHtml = '';
             if (changelog.trim()) {
-                notesHtml = '<a href="javascript:;" class="upgrade-notes-toggle" data-upgrade-notes-toggle>详情</a>'
-                    + '<div class="doc-markdown-body upgrade-notes-body" data-upgrade-notes-body hidden>'
-                    + upgradeNotesMarkdown(changelog)
-                    + '</div>';
+                var noteIndex = upgradeNotes.length;
+                upgradeNotes.push({ version: version.version, html: upgradeNotesMarkdown(changelog) });
+                notesHtml = '<a href="javascript:;" class="upgrade-notes-toggle" data-upgrade-notes-index="' + noteIndex + '">详情</a>';
             }
             radioHtml += '<div style="padding:8px 0;border-bottom:1px solid #f0f0f0;">'
                 + '<input type="radio" name="upgrade_version" value="' + escapeHtml(version.version) + '" title="v' + escapeHtml(version.version) + ' ' + tip + '" ' + checked + '>'
@@ -10069,14 +10070,17 @@
                 layero.find('#autoUpgradeTip').off('mouseenter').on('mouseenter', function () {
                     layer.tips('按版本自动升级到最新（逐级升级，任一步失败即停止）！', this, { tips: [1, '#666'] });
                 });
-                // 升级说明「详情」展开/收起（2.1.123）：toggle 与详情区为相邻兄弟节点，按 nextElementSibling 配对
-                layero[0].querySelectorAll('[data-upgrade-notes-toggle]').forEach(function (toggle) {
+                // 升级说明「详情」弹窗（2.1.127）：layui layer 弹出对应版本的完整更新详情
+                layero[0].querySelectorAll('[data-upgrade-notes-index]').forEach(function (toggle) {
                     toggle.addEventListener('click', function () {
-                        var body = toggle.nextElementSibling;
-                        if (!body || !body.hasAttribute('data-upgrade-notes-body')) { return; }
-                        var expanded = !body.hidden;
-                        body.hidden = expanded;
-                        toggle.textContent = expanded ? '详情' : '收起';
+                        var note = upgradeNotes[Number(toggle.getAttribute('data-upgrade-notes-index'))] || null;
+                        if (!note) { return; }
+                        layer.open({
+                            type: 1,
+                            title: '更新详情「' + escapeHtml(appDisplayName(app)) + '」v' + escapeHtml(String(note.version)),
+                            area: ['520px', 'auto'],
+                            content: '<div class="doc-markdown-body" style="padding:15px;max-height:60vh;overflow-y:auto;">' + note.html + '</div>'
+                        });
                     });
                 });
             },

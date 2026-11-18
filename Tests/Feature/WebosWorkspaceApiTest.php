@@ -2156,27 +2156,28 @@ class WebosWorkspaceApiTest extends WebosTestCase
         $this->assertStringContainsString('dropUpdatedApp(appId);', $script);
         $this->assertStringContainsString('promptEnableAfterUpgrade(appId);', $script);
 
-        // 2.1.123：升级说明默认只显示第一行摘要，「详情」展开/收起 Markdown 渲染的完整更新日志
+        // 2.1.123→2.1.127：升级说明默认只显示第一行摘要，完整更新日志经 Markdown 渲染
         // （复用全局 marked 与 .doc-markdown-body 样式，渲染失败回退纯文本段落）
         $this->assertStringContainsString('function upgradeNotesMarkdown(source)', $script);
         $this->assertStringContainsString('window.marked.parse(source)', $script);
         $this->assertStringContainsString("return '<p>' + escapeHtml(source) + '</p>';", $script);
-        $this->assertStringContainsString("'<a href=\"javascript:;\" class=\"upgrade-notes-toggle\" data-upgrade-notes-toggle>详情</a>'", $script);
-        $this->assertStringContainsString("'<div class=\"doc-markdown-body upgrade-notes-body\" data-upgrade-notes-body hidden>'", $script);
         $this->assertStringContainsString('changelog.split(/\\r?\\n/).some(function (line)', $script);
-        // 展开收起交互：toggle 与详情区按 nextElementSibling 配对，文案「详情/收起」切换
-        $this->assertStringContainsString("querySelectorAll('[data-upgrade-notes-toggle]')", $script);
-        $this->assertStringContainsString('var body = toggle.nextElementSibling;', $script);
-        $this->assertStringContainsString("toggle.textContent = expanded ? '详情' : '收起';", $script);
-        // 弹窗高度随展开内容自适应（固定 450px 会裁剪展开后的完整日志）
+        // 2.1.127：「详情」点击后 layui layer 弹窗展示对应版本完整更新详情（替代行内展开/收起）
+        $this->assertStringContainsString('var upgradeNotes = [];', $script);
+        $this->assertStringContainsString('upgradeNotes.push({ version: version.version, html: upgradeNotesMarkdown(changelog) });', $script);
+        $this->assertStringContainsString("'<a href=\"javascript:;\" class=\"upgrade-notes-toggle\" data-upgrade-notes-index=\"' + noteIndex + '\">详情</a>'", $script);
+        $this->assertStringContainsString("querySelectorAll('[data-upgrade-notes-index]')", $script);
+        $this->assertStringContainsString('var note = upgradeNotes[Number(toggle.getAttribute(\'data-upgrade-notes-index\'))] || null;', $script);
+        $this->assertStringContainsString("title: '更新详情「' + escapeHtml(appDisplayName(app)) + '」v' + escapeHtml(String(note.version)),", $script);
+        $this->assertStringContainsString("content: '<div class=\"doc-markdown-body\" style=\"padding:15px;max-height:60vh;overflow-y:auto;\">' + note.html + '</div>'", $script);
+        // 升级弹窗高度随内容自适应（固定 450px 会裁剪完整日志）
         $this->assertStringContainsString("area: ['500px', 'auto'],", $script);
 
-        // 2.1.123 样式：详情区内部滚动约束与主题色切换链接
+        // 样式：主题色「详情」链接（2.1.127 起详情改为弹窗展示，行内展开容器样式已移除）
         $stylesheet = file_get_contents(dirname(__DIR__, 2) . '/Assets/css/webos.css');
         $this->assertIsString($stylesheet);
         $this->assertStringContainsString('.upgrade-notes-toggle {', $stylesheet);
-        $this->assertStringContainsString('.upgrade-notes-body {', $stylesheet);
-        $this->assertStringContainsString('max-height: 200px;', $stylesheet);
+        $this->assertStringNotContainsString('.upgrade-notes-body', $stylesheet);
 
         // 升级链路停留在当前 Tab：reloadAppCenterCurrent 按当前 Tab 渲染（不切到已安装），
         // 更新 Tab 用本地数据渲染（updateChecked），升级成功 dropUpdatedApp 后列表即时移除该项

@@ -7794,8 +7794,8 @@ textarea.webos-widget-input {
     outline-offset: 1px;
 }
 
-/* 升级弹窗「详情」展开的完整更新日志（2.1.123）：详情区复用 .doc-markdown-body 的 Markdown 基础样式，
-   此处补充「详情/收起」切换链接与展开区容器约束（内部滚动，避免多版本展开后弹窗超出视口） */
+/* 升级弹窗「详情」链接（2.1.127）：点击后 layui layer 弹窗展示完整更新详情，
+   详情内容复用 .doc-markdown-body 的 Markdown 基础样式（2.1.123 的行内展开容器样式已移除） */
 .upgrade-notes-toggle {
     margin-left: 8px;
     color: var(--webos-primary);
@@ -7805,15 +7805,4 @@ textarea.webos-widget-input {
 
 .upgrade-notes-toggle:hover {
     text-decoration: underline;
-}
-
-.upgrade-notes-body {
-    margin-top: 6px;
-    max-height: 200px;
-    overflow-y: auto;
-    padding: 8px 10px;
-    background: #fafafa;
-    border: 1px solid #f0f0f0;
-    border-radius: 4px;
-    font-size: 12px;
 }
