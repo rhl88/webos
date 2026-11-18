@@ -5849,7 +5849,7 @@
             + '<small>仅对开启后新打开的应用窗口生效，已打开窗口保持原模式</small></span><i></i></button>'
             + '<button class="settings-toggle" type="button" data-toggle-webos-setting="tab_reload" aria-pressed="'
             + (preferences.tab_reload ? 'true' : 'false') + '"><span><strong>选项卡刷新</strong>'
-            + '<small>多选项卡模式下点击左侧菜单重新加载对应页面内容（始终显示最新）；关闭时仅切换选项卡，页面状态保留</small></span><i></i></button></section>'
+            + '<small>多选项卡模式下点击左侧菜单重新加载对应页面内容（始终显示最新）；<br>关闭时仅切换选项卡，页面状态保留</small></span><i></i></button></section>'
             + '<section class="settings-card"><div class="settings-card-title"><i class="fa fa-hand-pointer-o"></i><div>'
             + '<strong>点击菜单进入</strong><small>控制点击任务栏「菜单」按钮的行为</small></div></div>'
             + '<button class="settings-toggle" type="button" data-toggle-webos-setting="menu_open_launcher" aria-pressed="'

@@ -453,6 +453,8 @@ class WebosWorkspaceApiTest extends WebosTestCase
         $this->assertStringContainsString("(bool) (\$preferences['tab_reload'] ?? false)", $service);
         $this->assertStringContainsString("'preferences.tab_reload' => ['sometimes', 'boolean'],", $controller);
         $this->assertStringContainsString('data-toggle-webos-setting="tab_reload"', $script);
+        // 开关描述在分号处 <br> 换行：单行过长会把开关按钮挤出卡片（2.1.126 修正）
+        $this->assertStringContainsString('（始终显示最新）；<br>关闭时仅切换选项卡', $script);
         $this->assertStringContainsString('function tabReloadEnabled', $script);
         $this->assertStringContainsString('var reloadExisting = Boolean(existing) && tabReloadEnabled();', $script);
         $this->assertMatchesRegularExpression(
