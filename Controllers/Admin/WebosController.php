@@ -976,6 +976,8 @@ class WebosController extends Controller
             // 被忽略的可用更新（应用中心「忽略」按钮，app_id@版本号）：无规则声明时 $validated 会丢弃该键
             'preferences.ignored_updates' => ['sometimes', 'array', 'max:200'],
             'preferences.ignored_updates.*' => ['string', 'max:180'],
+            // 站点入口快捷访问菜单（2.1.129）：细项结构由 WorkspaceService::sanitizeQuickAccess 净化兜底
+            'preferences.quick_access' => ['sometimes', 'array'],
         ]));
 
         // 「覆盖传统后台」双开关为全局设置，仅超级管理员可改（2.1.104）：非超管提交的 override 键

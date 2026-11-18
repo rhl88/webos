@@ -220,6 +220,50 @@ class WebosWorkspaceApiTest extends WebosTestCase
     }
 
     /**
+     * 快捷访问菜单（2.1.129）：地球图标弹出菜单的菜单项按端持久化于 preferences.quick_access，
+     * 后端与前端同口径净化——非法链接/空名称整项丢弃、每端最多 8 项；
+     * 出厂默认后台含「用户中心」，用户端仅「访问首页」（用户本身已在用户中心）。
+     */
+    public function test_workspace_api_persists_quick_access_preferences(): void
+    {
+        $this->actingAdmin();
+
+        $this->getJson('/admin/cmspro/webos/api/workspace')
+            ->assertOk()
+            ->assertJsonPath('data.preferences.quick_access.admin.0.label', '访问首页')
+            ->assertJsonPath('data.preferences.quick_access.admin.1.label', '用户中心')
+            ->assertJsonPath('data.preferences.quick_access.user.0.label', '访问首页')
+            ->assertJsonPath('data.preferences.quick_access.user', fn (array $items) => count($items) === 1 && $items[0]['label'] === '访问首页');
+
+        $items = [];
+        for ($i = 0; $i < 10; $i++) {
+            $items[] = ['label' => '菜单' . $i, 'url' => '/path-' . $i, 'icon' => 'fa fa-link'];
+        }
+        // 混入非法项：非站内且非 http 外链、空名称，均应被净化丢弃（且排在截断位之外）
+        $items[] = ['label' => '坏链接', 'url' => 'javascript:alert(1)', 'icon' => ''];
+        $items[] = ['label' => '', 'url' => '/x', 'icon' => ''];
+
+        $this->putJson('/admin/cmspro/webos/api/workspace', [
+            'preferences' => [
+                'quick_access' => [
+                    'admin' => $items,
+                    'user' => [['label' => '门户', 'url' => 'https://example.com', 'icon' => 'fa fa-globe']],
+                ],
+            ],
+        ])->assertOk()->assertJsonPath('code', 0);
+
+        $workspace = $this->getJson('/admin/cmspro/webos/api/workspace')
+            ->assertOk()
+            ->assertJsonPath('data.preferences.quick_access.admin.7.label', '菜单7')
+            ->assertJsonPath('data.preferences.quick_access.user.0.label', '门户')
+            ->assertJsonPath('data.preferences.quick_access.user.0.url', 'https://example.com')
+            ->json('data.preferences.quick_access');
+
+        $this->assertCount(8, $workspace['admin']);
+        $this->assertCount(1, $workspace['user']);
+    }
+
+    /**
      * 桌面项数量上限与前端、服务层统一为 200（2.1.111）：
      * 2.1.63 已把服务层与前端上限由 48 提至 200，但接口校验规则漏改，
      * 导致桌面项超过 48 个时保存工作区报 40201「请求参数不合法」。
@@ -1183,23 +1227,33 @@ class WebosWorkspaceApiTest extends WebosTestCase
         $this->assertStringContainsString("viewsHost.querySelector('[data-browser-view=\"' + tab.id + '\"]')", $script);
         // 全屏下新标签页会退出全屏：站点入口菜单项改在桌面内置浏览器窗口打开（2.1.128 起菜单项共用该兜底）
         $this->assertStringContainsString('function openBrowserWithURL(url)', $script);
-        // 站点入口菜单（2.1.128）：地球图标点击弹出菜单（访问首页/用户中心），不再直接打开首页
+        // 站点入口菜单（2.1.129）：地球图标点击弹出快捷访问菜单，菜单项按端取自 quick_access 配置动态渲染，
+        // 并跟随地球按钮位置动态定位（修复固定 right 值漂移）
         $this->assertStringContainsString("togglePanel('website', elements.websitePanel, elements.websiteButton);", $script);
         $this->assertStringContainsString("['website', elements.websitePanel, elements.websiteButton]", $script);
         $this->assertStringContainsString("elements.websitePanel.addEventListener('click', function (event) {", $script);
-        $this->assertStringContainsString("var action = event.target.closest('[data-website-action]');", $script);
-        $this->assertStringContainsString('? elements.websiteButton.dataset.websiteUrl', $script);
-        $this->assertStringContainsString(': elements.websiteButton.dataset.userCenterUrl;', $script);
+        $this->assertStringContainsString("var action = event.target.closest('[data-website-index]');", $script);
+        $this->assertStringContainsString('function quickAccessItemsFor(terminal)', $script);
+        $this->assertStringContainsString('function renderWebsitePanel()', $script);
+        $this->assertStringContainsString('function positionWebsitePanel()', $script);
+        $this->assertStringContainsString('QUICK_ACCESS_DEFAULTS', $script);
+        $this->assertStringContainsString('访问首页', $script);
+        $this->assertStringContainsString('用户中心', $script);
         $this->assertStringContainsString('openBrowserWithURL(url);', $script);
         $this->assertStringContainsString('id="website-panel"', $view);
-        $this->assertStringContainsString('data-website-action="home"', $view);
-        $this->assertStringContainsString('data-website-action="user-center"', $view);
-        $this->assertStringContainsString('访问首页', $view);
-        $this->assertStringContainsString('用户中心', $view);
-        $this->assertStringContainsString('data-user-center-url=', $view);
+        $this->assertStringContainsString('class="website-actions"', $view);
         $this->assertStringContainsString('aria-haspopup="true"', $view);
+        // 快捷访问设置（2.1.129）：OS 设置基本设置卡片 + layui 管理弹窗（增删改查）
+        $this->assertStringContainsString('快捷访问设置', $script);
+        $this->assertStringContainsString('data-quick-access-open="admin"', $script);
+        $this->assertStringContainsString('data-quick-access-open="user"', $script);
+        $this->assertStringContainsString('function openQuickAccessDialog(terminal)', $script);
+        $this->assertStringContainsString('function saveQuickAccessItem()', $script);
+        $this->assertStringContainsString('function removeQuickAccessItem(index)', $script);
         $this->assertStringContainsString('.website-panel {', $stylesheet);
         $this->assertStringContainsString('.website-actions button {', $stylesheet);
+        $this->assertStringContainsString('.quick-access-dialog {', $stylesheet);
+        $this->assertStringContainsString('.settings-quick-button {', $stylesheet);
         // 桌面项加载过滤：内置浏览器空 path 与桌面原生项（文件夹 path 置空、URL 链接为外链、小工具 path 置空）均按特判/kind 放行，
         // 否则首次载入被 safePath 过滤导致浏览器图标、文件夹、URL 链接、小工具每次加载都不显示
         $this->assertMatchesRegularExpression(

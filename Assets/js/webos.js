@@ -6362,6 +6362,12 @@
             + '<strong>交互体验</strong><small>控制窗口与面板的过渡效果</small></div></div>'
             + '<button class="settings-toggle" type="button" data-toggle-webos-setting="motion" aria-pressed="'
             + (preferences.motion ? 'true' : 'false') + '"><span><strong>界面动效</strong><small>开启柔和的窗口和菜单动画</small></span><i></i></button></section>'
+            + '<section class="settings-card"><div class="settings-card-title"><i class="fa fa-globe"></i><div>'
+            + '<strong>快捷访问设置</strong><small>配置状态栏地球图标弹出菜单的访问入口（分别作用于后台与用户端）</small></div></div>'
+            + '<div class="settings-quick-grid">'
+            + (isUserTerminal ? '' : '<button class="settings-quick-button" type="button" data-quick-access-open="admin"><i class="fa fa-cogs"></i><span>设置后台</span></button>')
+            + '<button class="settings-quick-button" type="button" data-quick-access-open="user"><i class="fa fa-user-o"></i><span>设置用户</span></button>'
+            + '</div></section>'
             + '</div>';
         }
         shell.innerHTML = '<header class="settings-hero"><span><i class="fa fa-sliders"></i></span><div>'
@@ -13566,6 +13572,240 @@
         }
     }
 
+    /** 指定终端的快捷访问菜单项（2.1.129）：读工作区偏好并净化（后端已兜底默认值，删光即为空态） */
+    function quickAccessItemsFor(terminal) {
+        var quickAccess = sanitizeQuickAccess(state.workspace.preferences.quick_access);
+        return quickAccess[terminal] || [];
+    }
+
+    /** 按当前端配置重绘站点入口菜单（2.1.129）：菜单项由「快捷访问设置」驱动，支持空态 */
+    function renderWebsitePanel() {
+        var nav = elements.websitePanel.querySelector('.website-actions');
+        if (!nav) { return; }
+        var items = quickAccessItemsFor(isUserTerminal ? 'user' : 'admin');
+        if (!items.length) {
+            nav.innerHTML = '<p class="website-actions-empty">暂未配置快捷菜单</p>';
+            return;
+        }
+        nav.innerHTML = items.map(function (item, index) {
+            return '<button type="button" data-website-index="' + index + '">'
+                + '<i class="' + (item.icon || 'fa fa-link') + '"></i>' + escapeHtml(item.label) + '</button>';
+        }).join('');
+    }
+
+    /** 站点入口菜单动态定位（2.1.129）：按地球按钮实际位置计算坐标，修复固定 right 值漂移。
+     *  面板为 absolute 定位（相对桌面根节点），按钮矩形先换算到根节点坐标系再按停靠方向落位 */
+    function positionWebsitePanel() {
+        var panel = elements.websitePanel;
+        var buttonRect = elements.websiteButton.getBoundingClientRect();
+        var rootRect = root.getBoundingClientRect();
+        var width = panel.offsetWidth || 168;
+        var height = panel.offsetHeight || 96;
+        var margin = 12;
+        var buttonLeft = buttonRect.left - rootRect.left;
+        var buttonTop = buttonRect.top - rootRect.top;
+        panel.style.left = '';
+        panel.style.right = '';
+        panel.style.top = '';
+        panel.style.bottom = '';
+        var position = state.workspace.preferences.taskbar_position || 'bottom';
+        if (position === 'left' || position === 'right') {
+            var top = buttonTop + buttonRect.height / 2 - height / 2;
+            top = Math.max(8, Math.min(top, rootRect.height - height - 8));
+            panel.style.top = top + 'px';
+            panel.style.bottom = 'auto';
+            panel.style.left = (position === 'left' ? buttonLeft + buttonRect.width + margin : buttonLeft - width - margin) + 'px';
+            panel.style.right = 'auto';
+            return;
+        }
+        var left = buttonLeft + buttonRect.width / 2 - width / 2;
+        left = Math.max(8, Math.min(left, rootRect.width - width - 8));
+        panel.style.left = left + 'px';
+        panel.style.right = 'auto';
+        if (position === 'top') {
+            panel.style.top = (buttonTop + buttonRect.height + margin) + 'px';
+            panel.style.bottom = 'auto';
+            return;
+        }
+        panel.style.bottom = (rootRect.height - buttonTop + margin) + 'px';
+        panel.style.top = 'auto';
+    }
+
+    /* ==================== 快捷访问菜单管理弹窗（2.1.129） ==================== */
+
+    /** 弹窗会话状态：terminal=管理的端（admin/user）、index=正在编辑的项（-1 为新增）、layerIndex=layui 弹层句柄 */
+    var quickAccessDialog = { terminal: 'admin', index: -1, layerIndex: null, element: null };
+
+    /** 打开指定终端的快捷菜单管理弹窗：layui 弹层承载列表与表单，改动即时写回工作区偏好 */
+    function openQuickAccessDialog(terminal) {
+        var layer = layuiLayer();
+        if (!layer) { toast('弹窗组件未就绪', 'error'); return; }
+        quickAccessDialog.terminal = terminal;
+        quickAccessDialog.index = -1;
+        if (quickAccessDialog.layerIndex !== null) {
+            layer.close(quickAccessDialog.layerIndex);
+        }
+        quickAccessDialog.layerIndex = layer.open({
+            type: 1,
+            title: terminal === 'user' ? '快捷访问菜单 · 用户端' : '快捷访问菜单 · 后台',
+            area: ['560px', 'auto'],
+            content: quickAccessDialogMarkup(),
+            success: function (layero) {
+                quickAccessDialog.element = layero && layero[0] ? layero[0] : layero;
+                bindQuickAccessDialog();
+                renderQuickAccessList();
+            },
+            end: function () {
+                quickAccessDialog.layerIndex = null;
+                quickAccessDialog.element = null;
+            }
+        });
+    }
+
+    /** 弹窗骨架：工具栏（计数 + 新增）、菜单列表、编辑表单、填写提示 */
+    function quickAccessDialogMarkup() {
+        return '<div class="quick-access-dialog">'
+            + '<div class="quick-access-toolbar"><span data-quick-count></span>'
+            + '<button type="button" class="webos-button primary compact" data-quick-add><i class="fa fa-plus"></i>新增菜单</button></div>'
+            + '<div class="quick-access-list" data-quick-list></div>'
+            + '<div class="quick-access-form" data-quick-form hidden>'
+            + '<div class="quick-access-field"><label>名称</label><input type="text" maxlength="20" data-quick-label placeholder="如：访问首页"></div>'
+            + '<div class="quick-access-field"><label>链接</label><input type="text" maxlength="500" data-quick-url placeholder="以 / 或 https:// 开头"></div>'
+            + '<div class="quick-access-field"><label>图标</label><input type="text" maxlength="60" data-quick-icon placeholder="可选，如 fa fa-home"></div>'
+            + '<div class="quick-access-actions"><button type="button" class="webos-button primary compact" data-quick-save>保存</button>'
+            + '<button type="button" class="webos-button secondary compact" data-quick-cancel>取消</button></div>'
+            + '</div>'
+            + '<p class="quick-access-tip">链接支持站内路径（以 / 开头）或 http(s):// 外链；每端最多配置 8 项，保存后立即生效。</p>'
+            + '</div>';
+    }
+
+    /** 重绘弹窗菜单列表与计数，并收起编辑表单 */
+    function renderQuickAccessList() {
+        var host = quickAccessDialog.element && quickAccessDialog.element.querySelector('[data-quick-list]');
+        if (!host) { return; }
+        var items = quickAccessItemsFor(quickAccessDialog.terminal);
+        var count = quickAccessDialog.element.querySelector('[data-quick-count]');
+        if (count) { count.textContent = '共 ' + items.length + ' 项 · 最多 8 项'; }
+        if (!items.length) {
+            host.innerHTML = '<p class="quick-access-empty">暂无菜单项，点击「新增菜单」添加</p>';
+        } else {
+            host.innerHTML = items.map(function (item, index) {
+                return '<div class="quick-access-row">'
+                    + '<span class="quick-access-icon"><i class="' + (item.icon || 'fa fa-link') + '"></i></span>'
+                    + '<span class="quick-access-label" title="' + escapeHtml(item.label) + '">' + escapeHtml(item.label) + '</span>'
+                    + '<span class="quick-access-url" title="' + escapeHtml(item.url) + '">' + escapeHtml(item.url) + '</span>'
+                    + '<span class="quick-access-ops">'
+                    + '<button type="button" data-quick-edit="' + index + '">编辑</button>'
+                    + '<button type="button" class="danger" data-quick-delete="' + index + '">删除</button>'
+                    + '</span></div>';
+            }).join('');
+        }
+        quickAccessDialog.index = -1;
+        var form = quickAccessDialog.element.querySelector('[data-quick-form]');
+        if (form) { form.hidden = true; }
+    }
+
+    /** 把表单区切换为编辑/新增状态：item 为空表示新增 */
+    function showQuickAccessForm(item, index) {
+        var form = quickAccessDialog.element && quickAccessDialog.element.querySelector('[data-quick-form]');
+        if (!form) { return; }
+        form.querySelector('[data-quick-label]').value = item ? item.label : '';
+        form.querySelector('[data-quick-url]').value = item ? item.url : '';
+        form.querySelector('[data-quick-icon]').value = item ? item.icon : '';
+        quickAccessDialog.index = index;
+        form.hidden = false;
+    }
+
+    /** 校验并保存表单：写回当前端偏好数组，同步刷新地球菜单并静默保存工作区 */
+    function saveQuickAccessItem() {
+        var form = quickAccessDialog.element && quickAccessDialog.element.querySelector('[data-quick-form]');
+        if (!form) { return; }
+        var label = form.querySelector('[data-quick-label]').value.trim();
+        var url = form.querySelector('[data-quick-url]').value.trim();
+        var icon = form.querySelector('[data-quick-icon]').value.trim();
+        if (!label) { toast('请输入菜单名称', 'error'); return; }
+        var isSitePath = url.charAt(0) === '/' && url.charAt(1) !== '/';
+        if (!url || (!isSitePath && !/^https?:\/\//i.test(url))) { toast('链接需以 / 或 http(s):// 开头', 'error'); return; }
+        if (icon && !/^[A-Za-z0-9][A-Za-z0-9 _-]{0,59}$/.test(icon)) { icon = ''; }
+        var preferences = state.workspace.preferences;
+        if (!preferences.quick_access || typeof preferences.quick_access !== 'object') {
+            preferences.quick_access = { admin: [], user: [] };
+        }
+        var bucket = Array.isArray(preferences.quick_access[quickAccessDialog.terminal])
+            ? preferences.quick_access[quickAccessDialog.terminal] : [];
+        var item = { label: label, url: url, icon: icon };
+        if (quickAccessDialog.index >= 0 && quickAccessDialog.index < bucket.length) {
+            bucket[quickAccessDialog.index] = item;
+        } else {
+            if (bucket.length >= 8) { toast('每端最多配置 8 项', 'error'); return; }
+            bucket.push(item);
+        }
+        preferences.quick_access[quickAccessDialog.terminal] = bucket;
+        persistQuickAccess();
+        renderQuickAccessList();
+        toast('快捷菜单已更新');
+    }
+
+    /** 删除当前端指定菜单项：写回偏好并同步地球菜单与工作区 */
+    function removeQuickAccessItem(index) {
+        var preferences = state.workspace.preferences;
+        var bucket = preferences.quick_access && Array.isArray(preferences.quick_access[quickAccessDialog.terminal])
+            ? preferences.quick_access[quickAccessDialog.terminal] : [];
+        if (index < 0 || index >= bucket.length) { return; }
+        bucket.splice(index, 1);
+        preferences.quick_access[quickAccessDialog.terminal] = bucket;
+        persistQuickAccess();
+        renderQuickAccessList();
+        toast('菜单项已删除');
+    }
+
+    /** 弹窗改动落地：刷新地球弹出菜单（打开中则同步重定位）并静默保存工作区 */
+    function persistQuickAccess() {
+        renderWebsitePanel();
+        if (!elements.websitePanel.hidden) {
+            positionWebsitePanel();
+        }
+        saveWorkspace(false);
+    }
+
+    /** 弹窗事件委托：新增/编辑/删除/保存/取消 */
+    function bindQuickAccessDialog() {
+        if (!quickAccessDialog.element) { return; }
+        quickAccessDialog.element.addEventListener('click', function (event) {
+            var layer = layuiLayer();
+            var add = event.target.closest('[data-quick-add]');
+            if (add) {
+                if (quickAccessItemsFor(quickAccessDialog.terminal).length >= 8) { toast('每端最多配置 8 项', 'error'); return; }
+                showQuickAccessForm(null, -1);
+                return;
+            }
+            var edit = event.target.closest('[data-quick-edit]');
+            if (edit) {
+                var items = quickAccessItemsFor(quickAccessDialog.terminal);
+                var index = Number(edit.dataset.quickEdit);
+                if (items[index]) { showQuickAccessForm(items[index], index); }
+                return;
+            }
+            var remove = event.target.closest('[data-quick-delete]');
+            if (remove) {
+                var removeIndex = Number(remove.dataset.quickDelete);
+                if (!layer) { removeQuickAccessItem(removeIndex); return; }
+                layer.confirm('确定删除该菜单项？', { title: '删除确认' }, function (confirmIndex) {
+                    layer.close(confirmIndex);
+                    removeQuickAccessItem(removeIndex);
+                });
+                return;
+            }
+            if (event.target.closest('[data-quick-save]')) { saveQuickAccessItem(); return; }
+            var cancel = event.target.closest('[data-quick-cancel]');
+            if (cancel) {
+                quickAccessDialog.index = -1;
+                var form = quickAccessDialog.element.querySelector('[data-quick-form]');
+                if (form) { form.hidden = true; }
+            }
+        });
+    }
+
     function updateClock() {
         var now = new Date();
         var preferences = state.workspace.preferences || {};
@@ -13954,14 +14194,23 @@
         if (elements.notificationButton) {
             elements.notificationButton.addEventListener('click', function () { togglePanel('notifications', elements.notificationPanel, elements.notificationButton); });
         }
-        // 站点入口（2.1.128）：地球图标点击弹出菜单，菜单项按 data-website-action 分流
-        elements.websiteButton.addEventListener('click', function () { togglePanel('website', elements.websitePanel, elements.websiteButton); });
+        // 站点入口（2.1.129）：地球图标点击弹出菜单，菜单项来自「快捷访问设置」配置，
+        // 打开时按当前端重绘并跟随按钮位置动态定位（修复固定定位漂移）
+        elements.websiteButton.addEventListener('click', function () {
+            var opening = elements.websitePanel.hidden;
+            if (opening) {
+                renderWebsitePanel();
+            }
+            togglePanel('website', elements.websitePanel, elements.websiteButton);
+            if (opening) {
+                positionWebsitePanel();
+            }
+        });
         elements.websitePanel.addEventListener('click', function (event) {
-            var action = event.target.closest('[data-website-action]');
+            var action = event.target.closest('[data-website-index]');
             if (!action) { return; }
-            var url = action.getAttribute('data-website-action') === 'home'
-                ? elements.websiteButton.dataset.websiteUrl
-                : elements.websiteButton.dataset.userCenterUrl;
+            var item = quickAccessItemsFor(isUserTerminal ? 'user' : 'admin')[Number(action.dataset.websiteIndex)];
+            var url = item ? item.url : '';
             closePanels();
             if (!url) { return; }
             // 默认新标签页打开；全屏下新标签页会退出全屏，改在桌面内置浏览器窗口打开
@@ -15007,6 +15256,13 @@
                 setWebosPreference(settingName, !state.workspace.preferences[settingName], 'WebOS 设置已更新');
             }
 
+            // 快捷访问设置（2.1.129）：点击「设置后台/设置用户」打开对应终端的菜单管理弹窗
+            var quickAccessOpen = event.target.closest('[data-quick-access-open]');
+            if (quickAccessOpen) {
+                openQuickAccessDialog(quickAccessOpen.dataset.quickAccessOpen === 'user' ? 'user' : 'admin');
+                return;
+            }
+
             var resetToggle = event.target.closest('[data-reset-workspace]');
             if (resetToggle) {
                 var confirmRow = resetToggle.parentElement.querySelector('.workspace-reset-confirm');
@@ -15280,9 +15536,45 @@
         return Array.from(seen).slice(0, 200);
     }
 
+    /** 站点入口快捷访问菜单出厂默认（2.1.129）：后台含「用户中心」；用户端本身就在用户中心，仅保留「访问首页」 */
+    var QUICK_ACCESS_DEFAULTS = {
+        admin: [
+            { label: '访问首页', url: '/', icon: 'fa fa-home' },
+            { label: '用户中心', url: '/user', icon: 'fa fa-user-circle-o' }
+        ],
+        user: [
+            { label: '访问首页', url: '/', icon: 'fa fa-home' }
+        ]
+    };
+
+    /** 净化站点入口快捷访问菜单（2.1.129）：与后端 WorkspaceService::sanitizeQuickAccess 同口径——
+     *  label/url 必填（label ≤20、url ≤500），url 仅允许站内路径（单个 / 开头）或 http(s) 外链，
+     *  icon 为可选字体图标类名；每端最多 8 项，非法项直接丢弃 */
+    function sanitizeQuickAccess(value) {
+        var source = value && typeof value === 'object' && !Array.isArray(value) ? value : {};
+        var sanitized = {};
+        ['admin', 'user'].forEach(function (terminal) {
+            var items = Array.isArray(source[terminal]) ? source[terminal] : [];
+            var clean = [];
+            items.slice(0, 8).forEach(function (item) {
+                if (!item || typeof item !== 'object') { return; }
+                var label = String(item.label || '').trim();
+                var url = String(item.url || '').trim();
+                var icon = String(item.icon || '').trim();
+                if (!label || !url || label.length > 20 || url.length > 500) { return; }
+                var isSitePath = url.charAt(0) === '/' && url.charAt(1) !== '/';
+                if (!isSitePath && !/^https?:\/\//i.test(url)) { return; }
+                if (icon && !/^[A-Za-z0-9][A-Za-z0-9 _-]{0,59}$/.test(icon)) { icon = ''; }
+                clean.push({ label: label, url: url, icon: icon });
+            });
+            sanitized[terminal] = clean;
+        });
+        return sanitized;
+    }
+
     /** 归一化工作区偏好设置：补齐默认值 */
     function normalizePreferences(preferences) {
-        return Object.assign({
+        var normalized = Object.assign({
             wallpaper: 'webos-default',
             wallpaper_url: '',
             icon_size: 'medium',
@@ -15301,8 +15593,14 @@
             taskbar_locked: false,
             taskbar_button_style: 'icon',
             usage_stats: {},
-            ignored_updates: []
+            ignored_updates: [],
+            quick_access: QUICK_ACCESS_DEFAULTS
         }, preferences || {});
+        // 快捷访问菜单（2.1.129）：与后端同口径净化，旧工作区缺省时回退出厂默认
+        normalized.quick_access = preferences && preferences.quick_access !== undefined
+            ? sanitizeQuickAccess(preferences.quick_access)
+            : sanitizeQuickAccess(QUICK_ACCESS_DEFAULTS);
+        return normalized;
     }
 
     /**

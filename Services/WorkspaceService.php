@@ -34,6 +34,17 @@ class WorkspaceService
         'override_user_home' => false,
         'usage_stats' => [],
         'ignored_updates' => [],
+        // 站点入口快捷访问菜单（2.1.129）：任务栏地球图标弹出菜单按端取用；
+        // 用户端默认不配置「用户中心」（用户本身就在用户中心）
+        'quick_access' => [
+            'admin' => [
+                ['label' => '访问首页', 'url' => '/', 'icon' => 'fa fa-home'],
+                ['label' => '用户中心', 'url' => '/user', 'icon' => 'fa fa-user-circle-o'],
+            ],
+            'user' => [
+                ['label' => '访问首页', 'url' => '/', 'icon' => 'fa fa-home'],
+            ],
+        ],
     ];
 
     /** 后台预设的用户端桌面在 workspaces 表中的占位归属（terminal=preset + 用户 ID 0） */
@@ -745,6 +756,8 @@ class WorkspaceService
         $preferences['usage_stats'] = $this->sanitizeUsageStats($preferences['usage_stats']);
         // 被忽略的可用更新（应用中心「忽略」按钮）：app_id@版本号，仅忽略当前版本，应用发布更新版本后重新提示
         $preferences['ignored_updates'] = $this->sanitizeIgnoredUpdates($preferences['ignored_updates'] ?? []);
+        // 站点入口快捷访问菜单（2.1.129）：后台/用户端各一份，OS 设置「快捷访问设置」可增删改查
+        $preferences['quick_access'] = $this->sanitizeQuickAccess($preferences['quick_access'] ?? []);
 
         return $preferences;
     }
@@ -865,5 +878,41 @@ class WorkspaceService
         }
 
         return array_slice(array_keys($sanitized), 0, 200);
+    }
+
+    /**
+     * 站点入口快捷访问菜单（2.1.129）：按端净化为 {label,url,icon} 列表。
+     * label 1-20 字符；url 仅允许站内路径（单个 / 开头，拒绝协议相对地址 //）或 http(s) 外链，≤500 字符；
+     * icon 为可选的字体图标类名（字母数字与短横线/空格，≤60 字符）；每端最多 8 项，非法项直接丢弃。
+     */
+    protected function sanitizeQuickAccess(mixed $value): array
+    {
+        $sanitized = [];
+        foreach (['admin', 'user'] as $terminal) {
+            $items = is_array($value[$terminal] ?? null) ? $value[$terminal] : [];
+            $clean = [];
+            foreach (array_slice($items, 0, 8) as $item) {
+                if (! is_array($item)) {
+                    continue;
+                }
+                $label = trim((string) ($item['label'] ?? ''));
+                $url = trim((string) ($item['url'] ?? ''));
+                $icon = trim((string) ($item['icon'] ?? ''));
+                if ($label === '' || $url === '' || mb_strlen($label) > 20 || mb_strlen($url) > 500) {
+                    continue;
+                }
+                $isSitePath = str_starts_with($url, '/') && ! str_starts_with($url, '//');
+                if (! $isSitePath && ! preg_match('#^https?://#i', $url)) {
+                    continue;
+                }
+                if ($icon !== '' && ! preg_match('/^[A-Za-z0-9][A-Za-z0-9 _-]{0,59}$/', $icon)) {
+                    $icon = '';
+                }
+                $clean[] = ['label' => $label, 'url' => $url, 'icon' => $icon];
+            }
+            $sanitized[$terminal] = $clean;
+        }
+
+        return $sanitized;
     }
 }

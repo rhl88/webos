@@ -2391,6 +2391,198 @@ textarea:focus-visible,
     background: #f0f4f7;
 }
 
+/* 站点入口菜单空态（2.1.129）：快捷菜单被清空时的占位提示 */
+.website-actions-empty {
+    margin: 0;
+    padding: 18px 12px;
+    font-size: 12px;
+    color: #8a97a5;
+    text-align: center;
+}
+
+/* OS 设置·快捷访问设置卡片按钮（2.1.129）：设置后台 / 设置用户 */
+.settings-quick-grid {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+
+.settings-quick-button {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    min-width: 128px;
+    padding: 10px 16px;
+    border: 1px solid #d7e2ec;
+    border-radius: 8px;
+    background: #fff;
+    color: #24425c;
+    font-size: 13px;
+    cursor: pointer;
+    transition: border-color 0.15s ease, box-shadow 0.15s ease, color 0.15s ease;
+}
+
+.settings-quick-button i {
+    color: #2f6fed;
+}
+
+.settings-quick-button:hover {
+    border-color: #2f6fed;
+    color: #2f6fed;
+    box-shadow: 0 2px 8px rgba(47, 111, 237, 0.14);
+}
+
+/* 快捷访问菜单管理弹窗（2.1.129）：layui 弹层内容区 */
+.quick-access-dialog {
+    padding: 16px 18px 18px;
+    font-size: 13px;
+    color: #24425c;
+}
+
+.quick-access-toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 10px;
+    color: #6b7a88;
+    font-size: 12px;
+}
+
+.quick-access-list {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    max-height: 300px;
+    overflow-y: auto;
+}
+
+.quick-access-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 10px;
+    border: 1px solid #e3ebf2;
+    border-radius: 8px;
+    background: #fafcfe;
+}
+
+.quick-access-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    border-radius: 6px;
+    background: #eef4fb;
+    color: #2f6fed;
+    flex: none;
+}
+
+.quick-access-label {
+    flex: none;
+    max-width: 130px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-weight: 600;
+}
+
+.quick-access-url {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: #6b7a88;
+    font-size: 12px;
+}
+
+.quick-access-ops {
+    display: flex;
+    gap: 6px;
+    flex: none;
+}
+
+.quick-access-ops button {
+    padding: 4px 10px;
+    border: 1px solid #d7e2ec;
+    border-radius: 6px;
+    background: #fff;
+    color: #24425c;
+    font-size: 12px;
+    cursor: pointer;
+}
+
+.quick-access-ops button:hover {
+    border-color: #2f6fed;
+    color: #2f6fed;
+}
+
+.quick-access-ops button.danger:hover {
+    border-color: #e5484d;
+    color: #e5484d;
+}
+
+.quick-access-empty {
+    margin: 0;
+    padding: 22px 0;
+    text-align: center;
+    color: #8a97a5;
+    font-size: 12px;
+}
+
+.quick-access-form {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    margin-top: 12px;
+    padding: 12px;
+    border: 1px dashed #c9d8e6;
+    border-radius: 8px;
+    background: #f7fafd;
+}
+
+.quick-access-field {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.quick-access-field label {
+    width: 42px;
+    flex: none;
+    color: #6b7a88;
+    font-size: 12px;
+}
+
+.quick-access-field input {
+    flex: 1;
+    min-width: 0;
+    padding: 7px 10px;
+    border: 1px solid #d7e2ec;
+    border-radius: 6px;
+    font-size: 13px;
+    color: #24425c;
+    outline: none;
+}
+
+.quick-access-field input:focus {
+    border-color: #2f6fed;
+}
+
+.quick-access-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+}
+
+.quick-access-tip {
+    margin: 10px 0 0;
+    color: #8a97a5;
+    font-size: 12px;
+}
+
 .webos-dialog {
     position: fixed;
     inset: 0;

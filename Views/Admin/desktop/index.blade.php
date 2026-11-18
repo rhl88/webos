@@ -163,12 +163,9 @@
         </nav>
     </section>
 
-    {{-- 站点入口菜单（2.1.128）：任务栏地球图标点击弹出，访问首页 / 用户中心均新标签页打开 --}}
+    {{-- 站点入口菜单（2.1.129）：任务栏地球图标点击弹出，菜单项由「快捷访问设置」配置驱动，JS 按当前端动态渲染 --}}
     <section id="website-panel" class="webos-panel website-panel" aria-label="站点入口" hidden>
-        <nav class="website-actions">
-            <button type="button" data-website-action="home"><i class="fa fa-home"></i>访问首页</button>
-            <button type="button" data-website-action="user-center"><i class="fa fa-user-circle-o"></i>用户中心</button>
-        </nav>
+        <nav class="website-actions"></nav>
     </section>
 
     {{-- 会话恢复层：419/401 过期时弹出，iframe 复用 /admin/login 完整安全机制，登录成功后自动重放失败请求 --}}
@@ -261,8 +258,8 @@
             <i class="fa fa-angle-right" aria-hidden="true"></i>
         </button>
         <div class="taskbar-spacer"></div>
-        {{-- 站点入口（2.1.128）：点击弹出菜单（访问首页/用户中心），取代原「点击直接打开首页」 --}}
-        <button id="website-button" class="taskbar-button website-button" type="button" aria-label="站点入口" aria-haspopup="true" aria-expanded="false" data-website-url="{{ url('/') }}" data-user-center-url="{{ url('/user') }}">
+        {{-- 站点入口（2.1.129）：点击弹出快捷访问菜单，菜单项按端取自工作区偏好 quick_access --}}
+        <button id="website-button" class="taskbar-button website-button" type="button" aria-label="站点入口" aria-haspopup="true" aria-expanded="false">
             <i class="fa fa-globe" aria-hidden="true"></i>
         </button>
         @if ($webosTerminal === 'admin')
