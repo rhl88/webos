@@ -9094,6 +9094,7 @@
         if (!shell || !appId) {
             return;
         }
+        var kind = source || 'installed';
         var app = findLocalApp(appId, source);
         if (!app) {
             return;
@@ -9101,8 +9102,50 @@
         closeMarketDetail(shell);
         var panel = document.createElement('section');
         panel.className = 'market-detail';
-        panel.innerHTML = localDetailMarkup(app, source || 'installed');
+        // 标记详情归属应用：异步补全返回时据此确认覆盖层未被关闭或替换
+        panel.dataset.localDetailId = String(app.app_id || appId);
+        panel.innerHTML = localDetailMarkup(app, kind);
         shell.appendChild(panel);
+        // 目录与更新列表的应用数据字段精简（无描述与作者），统一用市场详情补全后重渲染，
+        // 与已安装、未安装入口的应用详情展示保持一致；未上架应用或读取失败静默保留本地字段
+        enrichLocalDetail(shell, app, kind);
+    }
+
+    /** 本地详情市场数据补全：命中市场数据缓存直接补，否则请求市场详情接口；
+     *  仅补本地缺失的描述/作者/论坛链接，不覆盖版本、状态等本地字段 */
+    function enrichLocalDetail(shell, app, source) {
+        var appId = app.app_id;
+        if (!appId || (app.description && app.author)) {
+            return;
+        }
+        var apply = function (detail) {
+            var merged = Object.assign({}, app);
+            ['description', 'author', 'forum_url'].forEach(function (key) {
+                if (!merged[key] && detail && detail[key]) {
+                    merged[key] = detail[key];
+                }
+            });
+            renderLocalDetail(shell, merged, source);
+        };
+        var cached = state.marketApps.get(appId);
+        if (cached && (cached.description || cached.author)) {
+            apply(cached);
+            return;
+        }
+        api('/api/admin/market/apps/' + encodeURIComponent(appId)).then(function (detail) {
+            apply(detail || {});
+        }).catch(function () {
+            // 未上架应用或市场服务不可用：保留本地字段展示，不打扰用户
+        });
+    }
+
+    /** 重渲染本地详情内容：覆盖层已被关闭或已切换为其它应用详情时静默跳过 */
+    function renderLocalDetail(shell, app, source) {
+        var panel = shell ? shell.querySelector('.market-detail') : null;
+        if (!panel || !panel.isConnected || panel.dataset.localDetailId !== String(app.app_id || '')) {
+            return;
+        }
+        panel.innerHTML = localDetailMarkup(app, source);
     }
 
     /** 查找本地应用数据：按打开来源取对应列表，取不到时回退已安装目录 */

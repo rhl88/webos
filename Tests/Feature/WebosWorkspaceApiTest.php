@@ -1439,6 +1439,15 @@ class WebosWorkspaceApiTest extends WebosTestCase
         $this->assertStringContainsString('data-local-source="installed"', $script);
         $this->assertStringContainsString("data-local-source=\"' + (mode === 'updates' ? 'updates' : 'local') + '\"", $script);
         $this->assertStringContainsString('strong.app-card-title', $stylesheet);
+        // 本地详情补全（2.1.132）：目录与更新列表数据字段精简（无描述/作者），
+        // 打开后按市场详情补齐并重渲染，与已安装/未安装入口展示一致
+        $this->assertStringContainsString('function enrichLocalDetail(shell, app, source)', $script);
+        $this->assertStringContainsString('function renderLocalDetail(shell, app, source)', $script);
+        $this->assertStringContainsString("api('/api/admin/market/apps/' + encodeURIComponent(appId))", $script);
+        $this->assertStringContainsString("['description', 'author', 'forum_url'].forEach", $script);
+        // 异步补全返回时校验覆盖层归属，详情已关闭或切换应用后静默跳过
+        $this->assertStringContainsString('panel.dataset.localDetailId', $script);
+        $this->assertStringContainsString('panel.isConnected', $script);
     }
 
     /** 未安装列表：导出对等已安装、右上角 × 物理删除（悬停显示）；卸载/删除确认弹窗 layui 无毛玻璃 */
