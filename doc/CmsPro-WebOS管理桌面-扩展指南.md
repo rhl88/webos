@@ -1,7 +1,7 @@
 # CmsPro WebOS 管理桌面 · 扩展指南
 
-> 文档版本：2.1.130 | 更新日期：2026-11-18
-> 应用版本：2.1.130 | 应用 ID：`cmspro.webos`
+> 文档版本：2.1.131 | 更新日期：2026-11-19
+> 应用版本：2.1.131 | 应用 ID：`cmspro.webos`
 
 ## 一、概述
 
@@ -25,7 +25,7 @@
 | 出现在开始菜单/桌面/任务栏 | manifest `menus` + 角色分配菜单 | 否（安装即生效） |
 | 应用窗口与左侧菜单树 | 菜单层级 + `app_id` 聚合 + `open_type` | 否 |
 | 应用图标 | 应用根目录 `icon.svg` / `icon.png` / manifest `icon` | 放置图标文件即可 |
-| 窗口标题栏「前台菜单」下拉 | manifest `home_menus`（前台终端菜单） | 声明清单即可 |
+| 窗口标题栏「前台/用户菜单」下拉 | manifest `home_menus`（前台终端菜单）+ `user_menus`（用户端终端菜单，仅后台端窗口显示） | 声明清单即可 |
 | 通知中心推送通知 | 系统服务 `NotificationService::push()` | 调用框架服务 |
 | 通知中心待办聚合 | HookManager filter `admin.notifications.todos` | 注册 filter 回调 |
 | 应用设置弹窗 | manifest `config_groups` | 声明配置组 |
@@ -393,18 +393,18 @@ manifest `form` 声明片段（可直接照抄）：
 - 对 `_component` 片段的额外要求：选项卡模式下同一窗口的多个片段共存于桌面主文档，片段必须用应用前缀类名与命名空间，不得互相覆盖全局变量（单页模式下只有一个片段，风险更低）。
 - `_blank`（新建窗口）与 `_layer`（弹窗网页）菜单不进入选项卡，行为不变。
 
-### 「前台菜单」对接机制（应用如何让窗口内出现前台菜单下拉）
+### 「前台/用户菜单」对接机制（应用如何让窗口内出现前台/用户菜单下拉）
 
-数据流：应用 manifest 声明 `home_menus` → 安装时以 `terminal_type=home` 写入系统 `admin_menus` 表（安装弹窗显示「前端菜单挂载位置」）→ WebOS 打开应用窗口时按终端请求菜单树接口（后台端 `GET /api/admin/menus/tree?terminal_type=home`；用户端 `GET /user/cmspro/webos/api/menus/tree`）→ 前端按窗口应用的 `app_id` 递归收集叶子节点（叶子必须具备 `name` 与 `path`）→ 在窗口标题栏「收起左侧菜单」按钮左侧注入「前台」下拉按钮。
+数据流：应用 manifest 声明 `home_menus` → 安装时以 `terminal_type=home` 写入系统 `admin_menus` 表（安装弹窗显示「前端菜单挂载位置」）→ WebOS 打开应用窗口时按终端请求菜单树接口（后台端 `GET /api/admin/menus/tree?terminal_type=home`；用户端 `GET /user/cmspro/webos/api/menus/tree`）→ 前端按窗口应用的 `app_id` 递归收集叶子节点（叶子必须具备 `name` 与 `path`）→ 在窗口标题栏「收起左侧菜单」按钮左侧注入「前台」下拉按钮。应用声明 `user_menus`（安装时以 `terminal_type=user` 写库）时，后台端桌面还会在「前台 ▾」右侧注入「用户 ▾」下拉按钮（2.1.131 起，仅后台端显示——用户端桌面窗口左侧菜单本身就是用户端菜单；后台端菜单树走 `GET /api/admin/menus/tree?terminal_type=user`）。
 
 > **终端路由隔离**：用户端（`/user/cmspro/webos`）未登录后台时不得请求 admin 受保护接口，否则会触发会话恢复层误报「会话过期」；因此前台菜单树与 URL 转换接口在用户端均由 WebOS 自有 user 路由提供（输出与 admin 端同构）。
 
 行为细节：
 
-- 下拉按钮为固定宽度 58px 的文字按钮「前台 + 下拉箭头」，下拉项只显示菜单名称（不带图标），点击以浏览器新标签页打开前台地址。
-- **链接域名绑定兼容（1.9.80）**：菜单树接口返回的是原始存储路径，域名绑定应用（如论坛绑定 forum.example.com）的路径在主站不可达。前端收集叶子后会按终端请求 URL 转换接口（后台端 `GET /admin/cmspro/webos/api/home-menu-urls?app_ids[]=`；用户端 `GET /user/cmspro/webos/api/home-menu-urls?app_ids[]=`，内部复用框架 `menu_path()`）把原始路径换算为可直达 URL——域名绑定应用返回绑定域名根、普通应用返回主站地址（兼容子域名部署）、外链原样返回；转换失败回退原始路径，不阻断菜单显示。应用侧无需任何声明，安装即自动兼容。
-- 应用没有前台菜单时不注入任何元素；系统应用（`is_system`）不注入；接口读取失败静默降级，不影响窗口本身。
-- 每应用的前台菜单叶子按 `app_id` 缓存（`homeMenusCache`，含转换后的 url），重复打开窗口不重复请求。
+- 下拉按钮为固定宽度 58px 的文字按钮「前台/用户 + 下拉箭头」，下拉项只显示菜单名称（不带图标），点击以浏览器新标签页打开对应终端地址。
+- **链接域名绑定兼容（1.9.80）**：菜单树接口返回的是原始存储路径，域名绑定应用（如论坛绑定 forum.example.com）的路径在主站不可达。前端收集叶子后会按终端请求 URL 转换接口（后台端 `GET /admin/cmspro/webos/api/home-menu-urls?app_ids[]=`；用户端 `GET /user/cmspro/webos/api/home-menu-urls?app_ids[]=`，内部复用框架 `menu_path()`）把原始路径换算为可直达 URL——域名绑定应用返回绑定域名根、普通应用返回主站地址（兼容子域名部署）、外链原样返回；转换失败回退原始路径，不阻断菜单显示。应用侧无需任何声明，安装即自动兼容。该转换仅作用于前台菜单——用户端菜单路径即最终地址（`/user/...` 站内路径或外链），框架 `menu_path()` 的域名绑定仅换算前台终端，无需转换。
+- 应用没有对应终端菜单时不注入对应下拉按钮；系统应用（`is_system`）不注入；接口读取失败静默降级，不影响窗口本身。
+- 每应用的终端菜单叶子按 `terminal + app_id` 缓存（`terminalMenusCache`，前台含转换后的 url），重复打开窗口不重复请求；无菜单不缓存以便后续重试。
 - 注意：前台页面自身的访问控制由前台路由与应用自行决定，WebOS 只负责展示与跳转，不做额外校验。
 
 ### URL/表单直达启动（外部直达应用窗口，2.1.102）
@@ -779,6 +779,7 @@ app(HookManager::class)->registerFilter(
 
 | 版本 | 日期 | 更新人 | 说明 |
 |---|---|---|---|
+| 2.1.131 | 2026-11-19 | CmsPro | **应用窗口「前台」右侧新增「用户」下拉（用户需求「在应用窗口 前台右侧增加 用户，用来显示用户端的菜单（如果有就显示）」）**：① 重构共用——`homeMenusCache`→`terminalMenusCache`（key `terminal:appId`）、`windowHomeMenuMarkup`→`windowTerminalMenuMarkup(terminal, leaves)`（前台/用户文案由 `terminal` 决定，容器带 `data-terminal`）、`collectHomeMenuLeaves`→`collectTerminalMenuLeaves`、`loadWindowHomeMenu`→`loadWindowTerminalMenu(windowState, terminal)`，新增入口 `loadWindowTerminalMenus(windowState)`（home 始终加载；user 仅 `!isUserTerminal` 时加载——用户端桌面窗口左侧菜单即用户端菜单，不重复展示）；② 注入顺序——「前台」锚定 `.sidebar-toggle` beforebegin、「用户」锚定 `[data-terminal="home"]` afterend（前台未到时先占其左侧位），两个下拉异步到达时序不影响最终顺序（前台 · 用户 · 收起左侧菜单）；复用 `.window-home-menu` 全套类名与既有 toggle-home-menu 委托（点外收起/新标签页打开），零 CSS 新增、零委托改动；③ 数据源——后台端 user 菜单树走框架接口 `GET /api/admin/menus/tree?terminal_type=user`（auth:admin，与安装弹窗同模式）；user 菜单路径即最终地址（`menu_path()` 域名绑定仅作用于前台终端，无需 home-menu-urls 转换）；无菜单不缓存以便重试，`is_system` 应用跳过；④ 调用点——窗口创建/activateWindowEntry 双分支共 3 处改调 `loadWindowTerminalMenus`；⑤ 测试——`test_window_terminal_menu_dropdowns_injected_when_app_has_terminal_menus` 改终端菜单口径并新增用户下拉断言（用户端不加载/路径免转换/时序无关注入），271 用例 / 2742 断言全绿 |
 | 2.1.130 | 2026-11-18 | CmsPro | **快捷访问菜单图标支持点选（用户需求「新增编辑快捷访问菜单时，图标支持选择」）**：① 表单——`quickAccessFormMarkup()` 的「图标」由手填 input 改为 `hidden input[data-quick-icon]` + 预览按钮（`data-quick-icon-pick`，内含 `.quick-access-icon-preview` 即时回显 + `.quick-access-icon-value` 显示当前 slug）+ 清除按钮（`data-quick-icon-clear`，恢复默认链接图标）；② 选择弹窗——`openQuickAccessIconPicker(form)` 复用 `WEBOS_ICON_CATALOG` 与 `.webos-icon-grid/.webos-icon-option` 网格（616×460，当前值 `is-active` 高亮），点选写回 hidden input 并 `updateQuickAccessIconPreview()` 刷新预览后关层，与桌面「图标设置」同款交互；③ 渲染复用——内嵌 `catalogSvg()` 提升为顶层 `catalogIconSvg(catalog, slug)`（openFolderIconDialog 同步改用），新增 `quickAccessIconMarkup(icon)`：命中目录 slug 输出内联 SVG（`.quick-icon` 16px 容器），否则按字体图标类名渲染（缺省 `fa fa-link`），`renderWebsitePanel()` 与 `renderQuickAccessList()` 统一改用，存量 `fa fa-*` 配置完全兼容；④ 校验——slug（如 `house`、`fa-weixin`）与既有 icon 正则 `/^[A-Za-z0-9][A-Za-z0-9 _-]{0,59}$/` 兼容，前后端净化与 Controller 验证均无需调整；⑤ CSS——新增 `.quick-icon`（菜单/列表通用 SVG 容器）与 `.quick-access-icon-picker/-preview/-value/-clear` 表单样式；⑥ 测试——新增 8 条静态断言（quickAccessIconMarkup/catalogIconSvg/openQuickAccessIconPicker/updateQuickAccessIconPreview/data-quick-icon-pick/data-quick-icon-clear/.quick-access-icon-picker/.quick-icon），271 用例 / 2734 断言全绿 |
 | 2.1.129 | 2026-11-18 | CmsPro | **站点入口菜单跟随地球图标定位 + OS 设置新增「快捷访问设置」（用户需求「弹出菜单应跟随地球图标位置；OS 设置基本设置交互体验后增加快捷访问设置，控制后台和用户端点击地球的访问菜单；用户端菜单不显示用户中心；设置后台/设置用户 layui 弹窗增删改查」）**：① 定位修复——`positionWebsitePanel()` 按地球按钮 `getBoundingClientRect()` 换算到桌面根节点坐标系后四向动态落位（bottom/top 停靠水平居中并 clamp、left/right 停靠垂直居中贴按钮），打开面板时先 `renderWebsitePanel()` 再定位，取代 2.1.128 的固定 `right:132px`（CSS 值保留为无 JS 兜底）；② 菜单数据化——菜单项改由工作区偏好 `preferences.quick_access`（`{admin:[],user:[]}`，每项 `{label,url,icon}`，每端最多 8 项）驱动，`renderWebsitePanel()` 按当前端渲染 `data-website-index` 菜单项 + 空态，点击委托按索引取 URL；blade `#website-panel` 改空容器、移除 `data-website-url`/`data-user-center-url` 静态属性；③ 净化三层同口径——服务层 `sanitizeQuickAccess()`（label 1-20 字符、url `/` 站内路径或 http(s) 外链、icon 正则、slice 0-8）、Controller 保存验证 `preferences.quick_access sometimes array`、前端 `sanitizeQuickAccess()` + `QUICK_ACCESS_DEFAULTS`（normalizePreferences 缺省回退：后台「访问首页/用户中心」、用户端仅「访问首页」）；④ OS 设置——基本设置「交互体验」后新增「快捷访问设置」卡片（`.settings-quick-grid` 双按钮，用户端经 `isUserTerminal` 仅显示「设置用户」），设置面板委托 `data-quick-access-open` 分发 `openQuickAccessDialog()`；⑤ 管理弹窗——layui `layer.open` 承载菜单列表（`quickAccessDialogMarkup/renderQuickAccessList`），新增/编辑点击后弹**独立表单弹层**（`quickAccessFormMarkup/showQuickAccessForm/bindQuickAccessForm/closeQuickAccessForm`，保存 `saveQuickAccessItem(form)` 校验写回后关层刷新列表），删除走 layer.confirm 确认（`removeQuickAccessItem`），改动即时写回偏好并 `saveWorkspace(false)` 静默保存、同步重绘地球菜单；⑥ 测试——`test_workspace_api_persists_quick_access_preferences`（默认值含用户中心仅后台端/非法项丢弃/超 8 项截断/外链保留）+ 静态断言更新为动态渲染与弹窗口径（271 用例 / 2726 断言全绿） |
 | 2.1.128 | 2026-11-18 | CmsPro | **任务栏地球图标改为弹出站点入口菜单（用户需求「状态栏->地球图标 点击后弹出菜单 访问首页 用户中心」）**：① blade `#website-button` 改为菜单触发按钮（`aria-haspopup` + `data-user-center-url="{{ url('/user') }}"`），新增 `#website-panel` 面板（`webos-panel website-panel`，菜单项 `data-website-action="home/user-center"`）；② JS `elements.websitePanel` 纳入 `closePanels`/`isPanelToggle` 通用面板体系，点击地球按钮 `togglePanel('website', …)`，面板内点击委托按 `data-website-action` 取 `data-website-url`（首页）或 `data-user-center-url`（用户中心），点后 `closePanels()` 并新标签页打开，全屏时复用 `openBrowserWithURL()` 兜底；③ CSS `.website-panel` 定位随任务栏四向停靠适配（默认 `right:132px`、bottom 计算式，top/left/right 停靠各自覆盖），`.website-actions` 菜单按钮样式与账号面板一致；④ 测试——内置浏览器测试新增 16 条断言（面板结构/双动作分流/closePanels·isPanelToggle 纳入/togglePanel 绑定/CSS 规则） |

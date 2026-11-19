@@ -5005,31 +5005,34 @@
             + '<i class="fa ' + (collapsed ? 'fa-indent' : 'fa-outdent') + '"></i></button>';
     }
 
-    /** 应用前台菜单叶子缓存（appId → 叶子数组）：home 菜单树同一应用跨窗口复用，无菜单不缓存以便后续重试 */
-    var homeMenusCache = new Map();
+    /** 应用终端菜单叶子缓存（terminal:appId → 叶子数组）：菜单树同一应用跨窗口复用，无菜单不缓存以便后续重试 */
+    var terminalMenusCache = new Map();
 
-    /** 窗口标题栏前台菜单下拉框：仅在应用声明并安装了前台（home）菜单时由 loadWindowHomeMenu 注入 */
-    function windowHomeMenuMarkup(leaves) {
+    /** 窗口标题栏终端菜单下拉框（2.1.131：前台/用户共用，terminal 决定文案）：仅在应用声明并安装了对应终端菜单时由 loadWindowTerminalMenu 注入 */
+    function windowTerminalMenuMarkup(terminal, leaves) {
+        var labels = terminal === 'user'
+            ? { button: '用户', menu: '用户菜单' }
+            : { button: '前台', menu: '前台菜单' };
         var items = leaves.map(function (leaf) {
             return '<button type="button" class="window-home-menu-item" data-home-url="' + escapeHtml(leaf.url || leaf.path) + '">'
                 + '<span>' + escapeHtml(leaf.name) + '</span></button>';
         }).join('');
 
-        return '<div class="window-home-menu" data-window-home-menu>'
+        return '<div class="window-home-menu" data-window-home-menu data-terminal="' + escapeHtml(terminal) + '">'
             + '<button class="window-control home-menu-trigger" type="button" data-window-action="toggle-home-menu"'
-            + ' aria-haspopup="true" aria-expanded="false" title="前台菜单">'
-            + '前台 <i class="fa fa-caret-down" aria-hidden="true"></i></button>'
+            + ' aria-haspopup="true" aria-expanded="false" title="' + labels.menu + '">'
+            + labels.button + ' <i class="fa fa-caret-down" aria-hidden="true"></i></button>'
             + '<nav class="window-home-menu-list" hidden>' + items + '</nav></div>';
     }
 
-    /** 递归收集应用在前台终端（home）的菜单叶子：app_id 匹配且具备访问路径的节点 */
-    function collectHomeMenuLeaves(nodes, appId) {
+    /** 递归收集应用在指定终端（home/user）的菜单叶子：app_id 匹配且具备访问路径的节点 */
+    function collectTerminalMenuLeaves(nodes, appId) {
         var leaves = [];
         (Array.isArray(nodes) ? nodes : []).forEach(function (node) {
             if (!node || typeof node !== 'object') { return; }
             var children = Array.isArray(node.children) ? node.children : [];
             if (children.length) {
-                leaves = leaves.concat(collectHomeMenuLeaves(children, appId));
+                leaves = leaves.concat(collectTerminalMenuLeaves(children, appId));
                 return;
             }
             if (String(node.app_id || '') !== String(appId) || !node.path || !node.name) { return; }
@@ -5040,46 +5043,60 @@
     }
 
     /**
-     * 加载窗口对应应用的前台菜单并在「收起左侧菜单」左侧注入下拉框。
-     * 数据源：前台菜单树接口 terminal_type=home（安装时 home_menus 已写入 admin_menus 表），
-     * 前端按窗口应用的 app_id 筛选叶子；应用没有前台菜单时不注入任何元素。
-     * 接口按终端分流：user 端走 WebOS 自有 user 路由，避免请求 admin 受保护接口时
-     * 未登录后台触发会话恢复层（表现为「会话过期」）。
+     * 加载窗口对应应用的终端菜单并注入标题栏下拉框：home（前台）注入「收起左侧菜单」左侧，
+     * user（用户端菜单）注入前台按钮右侧；应用没有对应终端菜单时不注入任何元素。
+     * 数据源：后台端为框架菜单树接口（terminal_type=home/user），用户端为 WebOS 自有 user 路由
+     * （仅前台菜单）；接口按终端分流，避免 user 端请求 admin 受保护接口时未登录后台触发会话恢复层。
      */
-    function loadWindowHomeMenu(windowState) {
+    function loadWindowTerminalMenu(windowState, terminal) {
         if (!windowState || !windowState.entry) { return; }
         var entry = windowState.entry;
         var appId = entry.app_id;
         var application = appId ? findApplication(appId) : null;
         if (!appId || (application && application.is_system)) { return; }
+        var cacheKey = terminal + ':' + appId;
 
         var inject = function (leaves) {
             if (!leaves || !leaves.length || !document.contains(windowState.element)) { return; }
             var controls = windowState.element.querySelector('.window-controls');
             if (!controls) { return; }
-            var existing = controls.querySelector('.window-home-menu');
+            var existing = controls.querySelector('.window-home-menu[data-terminal="' + terminal + '"]');
             if (existing) { existing.remove(); }
-            // 前台菜单固定锚定「收起左侧菜单」按钮左侧：与选项卡条/溢出导航的注入时序无关，始终紧挨
+            var markup = windowTerminalMenuMarkup(terminal, leaves);
+            // 用户菜单固定排在「前台」按钮右侧：前台未到时先占其左侧位，前台后到插到更左，
+            // 两个下拉的到达时序不影响最终顺序（前台 · 用户 · 收起左侧菜单）
+            if (terminal === 'user') {
+                var homeMenu = controls.querySelector('.window-home-menu[data-terminal="home"]');
+                if (homeMenu) {
+                    homeMenu.insertAdjacentHTML('afterend', markup);
+                    return;
+                }
+            }
             var anchor = controls.querySelector('.sidebar-toggle');
             if (anchor) {
-                anchor.insertAdjacentHTML('beforebegin', windowHomeMenuMarkup(leaves));
+                anchor.insertAdjacentHTML('beforebegin', markup);
                 return;
             }
-            controls.insertAdjacentHTML('afterbegin', windowHomeMenuMarkup(leaves));
+            controls.insertAdjacentHTML('afterbegin', markup);
         };
 
-        if (homeMenusCache.has(appId)) {
-            inject(homeMenusCache.get(appId));
+        if (terminalMenusCache.has(cacheKey)) {
+            inject(terminalMenusCache.get(cacheKey));
             return;
         }
-        // 前台菜单树与 URL 转换接口：user 端为 user 路由，admin 端为框架 / 应用 admin 路由
-        var homeTreeUrl = isUserTerminal ? webosApiUrl('menus/tree') : '/api/admin/menus/tree?terminal_type=home';
-        var homeMenuUrlsUrl = isUserTerminal ? webosApiUrl('home-menu-urls') : '/admin/cmspro/webos/api/home-menu-urls';
-        api(homeTreeUrl).then(function (payload) {
-            var leaves = collectHomeMenuLeaves(Array.isArray(payload) ? payload : [], appId);
+        var treeUrl = isUserTerminal ? webosApiUrl('menus/tree') : '/api/admin/menus/tree?terminal_type=' + terminal;
+        api(treeUrl).then(function (payload) {
+            var leaves = collectTerminalMenuLeaves(Array.isArray(payload) ? payload : [], appId);
             if (!leaves.length) { return; }
+            // 用户菜单路径即最终地址（/user/ 站内路径或外链，menu_path 域名绑定仅作用于前台终端），无需转换
+            if (terminal !== 'home') {
+                terminalMenusCache.set(cacheKey, leaves);
+                inject(leaves);
+                return;
+            }
             // 前台链接兼容转换：域名绑定应用的原始路径（如 /forum）在主站不可达，需换算为绑定域名；
             // 转换失败或非绑定应用回退原始路径（url 字段由应用侧 home-menu-urls 接口按 menu_path 生成）
+            var homeMenuUrlsUrl = isUserTerminal ? webosApiUrl('home-menu-urls') : '/admin/cmspro/webos/api/home-menu-urls';
             api(homeMenuUrlsUrl + '?app_ids[]=' + encodeURIComponent(appId))
                 .then(function (urls) {
                     var urlMap = {};
@@ -5092,12 +5109,20 @@
                 })
                 .catch(function () {})
                 .then(function () {
-                    homeMenusCache.set(appId, leaves);
+                    terminalMenusCache.set(cacheKey, leaves);
                     inject(leaves);
                 });
         }).catch(function () {
-            // 前台菜单获取失败静默：不显示下拉框，不影响窗口本身
+            // 终端菜单获取失败静默：不显示下拉框，不影响窗口本身
         });
+    }
+
+    /** 窗口标题栏终端菜单入口（2.1.131）：前台菜单始终加载；用户端菜单仅后台端加载（用户端窗口左侧菜单即用户菜单，不重复展示） */
+    function loadWindowTerminalMenus(windowState) {
+        loadWindowTerminalMenu(windowState, 'home');
+        if (!isUserTerminal) {
+            loadWindowTerminalMenu(windowState, 'user');
+        }
     }
 
     /** 已展开的侧栏菜单分组，key 取菜单自身标识，跨窗口共享不会串台 */
@@ -7203,8 +7228,8 @@
         if (windowState.tabs) {
             syncWindowTabsBar(windowState);
         }
-        // 应用有前台（home）菜单时在「收起左侧菜单」左侧注入前台菜单下拉框
-        loadWindowHomeMenu(windowState);
+        // 应用有终端（home/user）菜单时在「收起左侧菜单」左侧按序注入终端菜单下拉框
+        loadWindowTerminalMenus(windowState);
         focusWindow(key);
         bindWindowGestures(key);
         renderTaskbarWindows();
@@ -7248,7 +7273,7 @@
             windowState.activeTabId = existing.id;
             windowState.entry = entry;
             rerenderWindowNav(windowState, true);
-            loadWindowHomeMenu(windowState);
+            loadWindowTerminalMenus(windowState);
             if (reloadExisting) {
                 reloadWindowTab(windowState, existing);
             } else {
@@ -7263,8 +7288,8 @@
         renderWindowPage(windowState, entry);
         windowState.entry = entry;
         rerenderWindowNav(windowState, true);
-        // 切换入口后按新应用同步前台菜单下拉框（缓存命中无开销）
-        loadWindowHomeMenu(windowState);
+        // 切换入口后按新应用同步终端菜单下拉框（缓存命中无开销）
+        loadWindowTerminalMenus(windowState);
         windowState.element.querySelector('.window-brand strong').innerHTML = escapeHtml(identity.title)
             + '<small>' + escapeHtml(identity.subtitle) + '</small>';
         renderTaskbarWindows();

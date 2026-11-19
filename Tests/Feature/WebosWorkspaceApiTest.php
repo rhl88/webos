@@ -865,27 +865,38 @@ class WebosWorkspaceApiTest extends WebosTestCase
         $this->assertStringNotContainsString('flex-basis: 176px;', $stylesheet);
     }
 
-    /** 应用窗口标题栏前台菜单下拉框：仅有前台（home）菜单的应用注入，点击菜单项新标签页打开前台地址 */
-    public function test_window_home_menu_dropdown_injected_when_app_has_home_menus(): void
+    /** 应用窗口标题栏终端菜单下拉框（2.1.131）：前台/用户下拉仅在应用有对应终端菜单时注入，点击菜单项新标签页打开 */
+    public function test_window_terminal_menu_dropdowns_injected_when_app_has_terminal_menus(): void
     {
         $script = file_get_contents(dirname(__DIR__, 2) . '/Assets/js/webos.js');
         $stylesheet = file_get_contents(dirname(__DIR__, 2) . '/Assets/css/webos.css');
 
         $this->assertIsString($script);
         $this->assertIsString($stylesheet);
-        // 数据链路：前台菜单树接口按前台终端过滤，前端按窗口应用 app_id 筛选叶子；
+        // 数据链路：菜单树接口按终端过滤（home/user），前端按窗口应用 app_id 筛选叶子；
         // 接口按终端分流：用户端走 WebOS 自有 user 路由（请求 admin 受保护接口会让未登录后台的用户端误报「会话过期」）
-        $this->assertStringContainsString("isUserTerminal ? webosApiUrl('menus/tree') : '/api/admin/menus/tree?terminal_type=home'", $script);
+        $this->assertStringContainsString("isUserTerminal ? webosApiUrl('menus/tree') : '/api/admin/menus/tree?terminal_type=' + terminal", $script);
         $this->assertStringContainsString("isUserTerminal ? webosApiUrl('home-menu-urls') : '/admin/cmspro/webos/api/home-menu-urls'", $script);
-        $this->assertStringContainsString('function loadWindowHomeMenu', $script);
-        $this->assertStringContainsString('function collectHomeMenuLeaves', $script);
-        $this->assertStringContainsString('function windowHomeMenuMarkup', $script);
-        // 挂载点：打开窗口与切换入口后均以窗口状态注入前台菜单下拉框
-        $this->assertStringContainsString('loadWindowHomeMenu(windowState);', $script);
+        $this->assertStringContainsString('function loadWindowTerminalMenu', $script);
+        $this->assertStringContainsString('function collectTerminalMenuLeaves', $script);
+        $this->assertStringContainsString('function windowTerminalMenuMarkup', $script);
+        // 用户菜单路径即最终地址（menu_path 域名绑定仅作用于前台终端），仅前台链接走 home-menu-urls 转换
+        $this->assertStringContainsString("if (terminal !== 'home')", $script);
+        // 挂载点：打开窗口与切换入口后均以窗口状态注入终端菜单下拉框
+        $this->assertStringContainsString('function loadWindowTerminalMenus', $script);
+        $this->assertStringContainsString('loadWindowTerminalMenus(windowState);', $script);
+        $this->assertStringContainsString("loadWindowTerminalMenu(windowState, 'home')", $script);
+        // 用户菜单仅后台端加载：用户端窗口左侧菜单即用户菜单，不重复展示
+        $this->assertStringContainsString('if (!isUserTerminal) {', $script);
+        $this->assertStringContainsString("loadWindowTerminalMenu(windowState, 'user')", $script);
+        // 下拉容器按终端区分文案（前台/用户），用户按钮固定排在「前台」按钮右侧（时序无关）
+        $this->assertStringContainsString('data-terminal="', $script);
+        $this->assertStringContainsString("? { button: '用户', menu: '用户菜单' }", $script);
+        $this->assertStringContainsString("homeMenu.insertAdjacentHTML('afterend', markup);", $script);
         // 注入锚点：固定「收起左侧菜单」按钮左侧，与选项卡条/溢出导航的注入时序无关
         $this->assertStringContainsString("controls.querySelector('.sidebar-toggle')", $script);
-        $this->assertStringContainsString("anchor.insertAdjacentHTML('beforebegin', windowHomeMenuMarkup(leaves));", $script);
-        // 交互：触发器切换展开/收起，菜单项携带前台地址新标签页打开
+        $this->assertStringContainsString("anchor.insertAdjacentHTML('beforebegin', markup);", $script);
+        // 交互：触发器切换展开/收起，菜单项携带终端地址新标签页打开
         $this->assertStringContainsString("data-window-action=\"toggle-home-menu\"", $script);
         $this->assertStringContainsString("window.open(homeMenuItem.dataset.homeUrl, '_blank', 'noopener');", $script);
         $this->assertStringContainsString('[data-home-url]', $script);
