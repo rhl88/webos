@@ -677,6 +677,46 @@ class WebosWorkspaceApiTest extends WebosTestCase
             ->assertJsonPath('data.preferences.override_user_home', false);
     }
 
+    /** 「覆盖传统后台」为全局设置（2.1.133）：任一超级管理员开启后所有账号生效，重置个人工作区不影响 */
+    public function test_override_preferences_are_global_across_accounts(): void
+    {
+        // 超级管理员在 OS 设置开启：写入全局占位行（terminal=setting + 用户 ID 0）
+        $this->actingAsSuperAdmin();
+        $this->putJson('/admin/cmspro/webos/api/workspace', [
+            'preferences' => ['override_admin_home' => true, 'override_user_home' => true],
+        ])->assertOk()
+            ->assertJsonPath('data.preferences.override_admin_home', true)
+            ->assertJsonPath('data.preferences.override_user_home', true);
+        $this->assertDatabaseHas('app_cmspro_webos_workspaces', [
+            'terminal' => 'setting',
+            'admin_user_id' => 0,
+        ]);
+
+        // 另一个管理员登录读取工作区：看到同一全局开启状态，不因账号不同而不同
+        $other = $this->actingAdmin();
+        $this->getJson('/admin/cmspro/webos/api/workspace')
+            ->assertOk()
+            ->assertJsonPath('data.preferences.override_admin_home', true)
+            ->assertJsonPath('data.preferences.override_user_home', true);
+
+        // 账号工作区保留默认关闭值：全局开启状态只存全局行，不写入个人工作区
+        $row = DB::table('app_cmspro_webos_workspaces')
+            ->where('terminal', 'admin')
+            ->where('admin_user_id', $other->id)
+            ->first(['preferences']);
+        $this->assertNotNull($row);
+        $preferences = json_decode((string) $row->preferences, true) ?: [];
+        $this->assertFalse((bool) ($preferences['override_admin_home'] ?? false));
+
+        // 重置个人工作区不影响全局开关（开关只在全局行维护）
+        $this->postJson('/admin/cmspro/webos/api/workspace/reset')->assertOk();
+        $this->assertTrue(WorkspaceService::anyAdminOverridesAdminHome());
+        $this->assertTrue(WorkspaceService::anyAdminOverridesUserHome());
+        $this->getJson('/admin/cmspro/webos/api/workspace')
+            ->assertOk()
+            ->assertJsonPath('data.preferences.override_admin_home', true);
+    }
+
     /** 「点击菜单进入」偏好持久化：HTTP 链路 menu_open_launcher=true 保存后再读保持开启 */
     public function test_workspace_api_persists_menu_open_launcher_preference(): void
     {

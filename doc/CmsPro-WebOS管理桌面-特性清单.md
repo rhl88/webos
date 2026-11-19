@@ -1,7 +1,7 @@
 # CmsPro WebOS 管理桌面 · 特性清单
 
-> 文档版本：2.1.132 | 更新日期：2026-11-19
-> 应用版本：2.1.132 | 应用 ID：`cmspro.webos`
+> 文档版本：2.1.133 | 更新日期：2026-11-19
+> 应用版本：2.1.133 | 应用 ID：`cmspro.webos`
 
 ## 一、应用定位
 
@@ -138,6 +138,8 @@ WebOS 管理桌面是 CmsPro 后台的可选交互层，不替换系统后台框
 96. 小工具卡片像素级自由尺寸（2.1.115，用户需求「不是浏览器尺寸，是固定在桌面的小工具，可以随意拖动改变大小；现在的固定大小用户体验很差」）：小工具卡片拖拽手柄不再吸附尺寸档位，按像素跟手调整宽高——拖动中实时显示「宽 × 高」像素值，最小 1 格（宽/高各不小于 `cell - 6`），最宽 4 格、最高 3 格且不越出桌面可视区；拖西/北边时对侧边缘固定，左/上缘落在非格线时以 `px_left`/`px_top` 记录像素位置，其余情况按 `x`/`y` 整格对齐；松手按像素矩形做占位校验，空间不足回退原状并提示。存储：桌面项新增 `px_width`/`px_height`（1–4096）与 `px_left`/`px_top`（0–20000），`w`/`h` 退为降级兼容字段（按像素向上取整换算并钳至宽 1–4 / 高 1–3），普通入口与既有 `w`/`h` 数据无需迁移；新建卡片仍按 manifest `sizes`/`default_size` 换算初始像素大小。268 测试 2588 断言通过。
 97. 应用更新中的应用详情补全（2.1.132，用户需求「应用中心->应用更新->点击应用名称显示应用详情，需要与已安装/未安装中点击应用名称显示一致；现在应用更新中的应用详情显示的不完整」）：更新检查接口（`/api/admin/apps/check-updates`）只返回 app_id/name/版本/更新说明，本地应用目录（`catalog.applications`）亦仅含名称/图标/版本/状态，二者均无 `description`/`author`，导致更新来源详情缺「作者」与「应用介绍」（`marketDetailDescMarkup` 无描述时整段不渲染）。修复：`openLocalDetail` 渲染后调用 `enrichLocalDetail`——命中 `state.marketApps` 市场数据缓存直接补，否则请求 `GET /api/admin/market/apps/{appId}`，仅补本地缺失的 `description`/`author`/`forum_url`（不覆盖本地版本、状态）；补全后经 `renderLocalDetail` 重渲染，覆盖层带 `data-local-detail-id` 归属标记并做 `isConnected` 校验，详情已关闭或切换应用时静默跳过；未上架应用或市场服务不可用静默降级保留本地字段。已安装/未安装/应用更新三入口详情展示一致。补 6 条断言（271 用例 / 2748 断言全绿）。
 
+98. 「覆盖传统后台」改为全局设置（2.1.133，用户反馈「OS设置中的 覆盖传统后台 是全局设置，一旦开启所有账号都是覆盖，而不是单独某个账号」）：此前双开关（后台首页直达 / 用户首页直达）保存在各管理员自己的工作区偏好，后台首页直达只对开启者生效，而登录页接管与用户首页中间件按「任一管理员开启即全局」判定，两条链路口径不一致。现统一改为全局记录行——复用工作区表新增占位记录（`terminal='setting'`、`admin_user_id=0`，与账号工作区的 `(terminal, admin_user_id)` 联合唯一隔离），`saveFor()` 将 `preferences` 中的 `override_admin_home`/`override_user_home` 抽出写入全局行、账号工作区剥离该键；`getFor()` 读取时以全局值回填（仅内存不落库）；`anyAdminOverridesAdminHome()`/`anyAdminOverridesUserHome()` 改为读全局行；`ServiceProvider` 后台首页直达改用 `anyAdminOverridesAdminHome()`，任意管理员访问 `/admin` 均直达 WebOS。超级管理员权限约束不变（普通管理员/用户端提交全局键由控制器静默剔除）。存量兼容：全局行未配置该键时回退「任一管理员个人偏好开启即生效」口径，升级后无需重新开启；重置个人工作区不影响全局开关。前端两个开关说明文案标注「对所有账号生效」。
+
 ## 四、数据结构
 
 ### `app_cmspro_webos_workspaces`
@@ -149,7 +151,7 @@ WebOS 管理桌面是 CmsPro 后台的可选交互层，不替换系统后台框
 | `desktop_items` | JSON | 桌面快捷方式、所属应用 `app_id`、路径和网格位置；2.1.28 起含类型 `kind`（空=菜单入口 / `folder`=文件夹 / `url`=URL 链接）与所属文件夹 `parent_folder` |
 | `taskbar_items` | JSON | 任务栏固定项（结构同桌面项但无坐标，最多 12 个），与桌面快捷方式相互独立 |
 | `preset_sync_ids` | JSON | 2.1.89 起新增，已下发的后台预设桌面项 ID 列表（差异化同步台账，仅服务端内部使用，接口不返回） |
-| `preferences` | JSON | 壁纸、图标尺寸、多选项卡、任务栏、时钟、动效、窗口默认宽高、覆盖传统后台、常用入口统计和被忽略的可用更新（`ignored_updates`，`app_id@版本号` 列表） |
+| `preferences` | JSON | 壁纸、图标尺寸、多选项卡、任务栏、时钟、动效、窗口默认宽高、常用入口统计和被忽略的可用更新（`ignored_updates`，`app_id@版本号` 列表）；2.1.133 起「覆盖传统后台」双开关（`override_admin_home`/`override_user_home`）不再存个人偏好，改为全局记录行（`terminal='setting'`、`admin_user_id=0`），读取时由服务端回填 |
 | `status` | TINYINT | 0 禁用，1 启用 |
 | `create_time` | TIMESTAMP | 创建时间 |
 | `update_time` | TIMESTAMP | 更新时间 |
@@ -192,6 +194,7 @@ CmsproWebos/
 
 | 版本 | 日期 | 说明 |
 |---|---|---|
+| 2.1.133 | 2026-11-19 | **「覆盖传统后台」改为真正的全局设置**（用户反馈「OS设置中的 覆盖传统后台 是全局设置，一旦开启所有账号都是覆盖，而不是单独某个账号」）：① 根因——双开关存于各管理员自己的工作区 `preferences`，后台首页直达（`ServiceProvider` 读当前账号偏好）只对开启者生效，而登录页接管 / 用户首页中间件按「任一管理员开启即全局」判定，两条链路口径不一致；② 全局记录行——复用工作区表新增占位记录（`terminal='setting'`、`admin_user_id=0`），`WorkspaceService` 新增 `GLOBAL_PREFERENCES` 常量（`override_admin_home`/`override_user_home`）与 `globalPreferences()/resolvedGlobalPreferences()/saveGlobalPreferences()/withGlobalPreferences()`；`saveFor()` 抽取全局键写全局行、账号工作区剥离该键（不再落个人偏好），`getFor()` 读取时回填全局值（仅内存不落库），`anyAdminOverridesAdminHome/UserHome()` 改为读全局行；③ 生效链路——`ServiceProvider` 后台首页直达改用 `WorkspaceService::anyAdminOverridesAdminHome()`（任意账号），用户首页/登录页中间件语义天然一致；④ 权限——超管判定仍在控制器剔除（2.1.104），普通管理员/用户端提交全局键被静默忽略；⑤ 存量兼容——全局行未配置该键时回退「任一管理员个人偏好开启即生效」口径，升级无需重新开启；⑥ 前端文案注明「对所有账号生效」；⑦ 测试——新增 1 用例（跨账号读取同一状态、账号行不落全局值、重置个人工作区不影响全局），修订 1 条既有断言（普通管理员提交被剔除后响应回填全局状态），272 用例 / 2762 断言全绿 |
 | 2.1.132 | 2026-11-19 | **应用更新中的应用详情补全**（用户需求「应用中心->应用更新->点击应用名称显示应用详情，需要与已安装/未安装中点击应用名称显示一致；现在应用更新中的应用详情显示的不完整」）：`openLocalDetail` 渲染后新增 `enrichLocalDetail` 补全——更新检查接口与本地应用目录均无 `description`/`author`，命中市场数据缓存直接补、否则请求 `GET /api/admin/market/apps/{appId}`，仅补缺失的描述/作者/论坛链接（不覆盖本地版本与状态），经 `renderLocalDetail` 重渲染；覆盖层 `data-local-detail-id` 归属标记 + `isConnected` 校验，详情关闭/切换应用时静默跳过；未上架或市场不可用静默降级；新增 6 条断言（271 用例 / 2748 断言全绿） |
 | 2.1.131 | 2026-11-19 | **应用窗口「前台」右侧新增「用户」下拉**（用户需求「在应用窗口 前台右侧增加 用户，用来显示用户端的菜单（如果有就显示）」）：`windowHomeMenuMarkup`/`loadWindowHomeMenu`/`collectHomeMenuLeaves`/`homeMenusCache` 重构为 `windowTerminalMenuMarkup(terminal, leaves)`/`loadWindowTerminalMenu(windowState, terminal)`/`collectTerminalMenuLeaves`/`terminalMenusCache`（前台/用户共用一套渲染与加载逻辑，`terminal` 决定文案与数据源）；应用声明并安装用户端（user）菜单时标题栏「前台 ▾」右侧注入「用户 ▾」（复用 `.window-home-menu` 全套类名与交互，容器带 `data-terminal` 区分，加载时序无关、显示顺序恒定）；用户下拉仅后台端加载（用户端窗口左侧菜单即用户菜单，不重复展示）；后台端菜单树走框架接口 `terminal_type=user`，用户菜单路径即最终地址不做域名绑定换算；测试断言改终端菜单口径并新增用户下拉断言（271 用例 / 2742 断言全绿） |
 | 2.1.130 | 2026-11-18 | **快捷访问菜单图标支持点选**（用户需求「新增编辑快捷访问菜单时，图标支持选择」）：新增/编辑弹出层表单「图标」改为 hidden input + 预览按钮（`data-quick-icon-pick`）+ 清除按钮（`data-quick-icon-clear`），点击预览按钮弹出 616×460 图标选择弹窗（`openQuickAccessIconPicker()`，复用 `WEBOS_ICON_CATALOG` 与 `.webos-icon-grid` 网格，当前值高亮，点选写回并即时回显）；`catalogSvg()` 提升为顶层 `catalogIconSvg(catalog, slug)` 供「图标设置」与快捷菜单共用；地球菜单与快捷菜单列表统一经 `quickAccessIconMarkup()` 渲染——命中目录 slug 输出内联 SVG（`.quick-icon` 容器），否则按字体图标类名渲染，存量 `fa fa-*` 配置完全兼容；图标 slug 与既有校验正则兼容，后端无需调整；新增 8 条静态断言（271 用例 / 2734 断言全绿） |

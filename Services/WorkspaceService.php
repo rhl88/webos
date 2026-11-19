@@ -55,6 +55,14 @@ class WorkspaceService
     /** 「管理桌面」按后台角色预设的管理员桌面占位归属（terminal=admin_preset + 角色 ID） */
     protected const ADMIN_PRESET_TERMINAL = 'admin_preset';
 
+    /** 全局设置占位归属（terminal=setting + 用户 ID 0）：承载跨账号的全局开关，与账号工作区以联合唯一约束隔离 */
+    protected const SETTING_TERMINAL = 'setting';
+
+    protected const SETTING_USER_ID = 0;
+
+    /** 全局开关键（OS 设置「覆盖传统后台」双开关）：任一超级管理员配置即对所有账号生效，不按账号隔离 */
+    public const GLOBAL_PREFERENCES = ['override_admin_home', 'override_user_home'];
+
     /** 小工具桌面项实例参数上限（键数量）：多实例场景由 picker 选中值写入 */
     public const MAX_WIDGET_PARAMS = 3;
 
@@ -116,7 +124,9 @@ class WorkspaceService
             $this->syncAdminRolePresets($workspace, $userId);
         }
 
-        return $workspace;
+        // 全局开关不随账号隔离：以全局设置为准回填，所有账号读取到同一状态
+        // （放在预设同步之后，避免回填值被同步流程连带写入账号工作区）
+        return $this->withGlobalPreferences($workspace);
     }
 
     /**
@@ -451,40 +461,97 @@ class WorkspaceService
     }
 
     /**
-     * 是否存在任一后台管理员开启了「覆盖传统后台」：登录页接管中间件的判定依据。
-     * 登录页处于未登录状态、无 per-admin 偏好可查，以「任一管理员开启即生效」口径
-     * 全表扫描 preferences JSON（管理员数量有限，不缓存以保开关切换即时生效）。
-     * 仅扫描 admin 终端：用户端无该能力，其工作区不参与判定。
+     * 「覆盖传统后台」全局设置（2.1.133）：双开关不再按账号隔离，统一读写全局占位行
+     * （terminal=setting + admin_user_id=0），任一超级管理员配置即对所有账号生效。
+     *
+     * 兼容存量：全局行尚未配置该键时，回退「任一管理员个人偏好开启即生效」口径，
+     * 升级后无需用户重新开启；下一次在 OS 设置中切换即写入全局行，个人偏好不再参与判定。
      */
     public static function anyAdminOverridesAdminHome(): bool
     {
-        $rows = WebosWorkspace::query()->where('terminal', 'admin')->get(['preferences']);
+        return (bool) (static::resolvedGlobalPreferences()['override_admin_home'] ?? false);
+    }
 
-        foreach ($rows as $row) {
-            if (! empty($row->preferences['override_admin_home'])) {
-                return true;
-            }
-        }
-
-        return false;
+    /** 「用户首页直达 WebOS」全局设置（判定口径与 anyAdminOverridesAdminHome 完全一致） */
+    public static function anyAdminOverridesUserHome(): bool
+    {
+        return (bool) (static::resolvedGlobalPreferences()['override_user_home'] ?? false);
     }
 
     /**
-     * 是否存在任一后台管理员开启了「用户首页直达 WebOS」（2.1.82）：
-     * 判定口径与 anyAdminOverridesAdminHome 一致——任一管理员开启即全局生效
-     * （开关仅后台 OS 设置可配，用户端工作区不参与判定）。
+     * 全局设置读取（terminal=setting + admin_user_id=0 占位行）：
+     * 行不存在时返回空数组且不落库，避免只读请求产生写表。
+     *
+     * @return array<string,mixed>
      */
-    public static function anyAdminOverridesUserHome(): bool
+    public static function globalPreferences(): array
     {
-        $rows = WebosWorkspace::query()->where('terminal', 'admin')->get(['preferences']);
+        $row = WebosWorkspace::query()
+            ->where('terminal', self::SETTING_TERMINAL)
+            ->where('admin_user_id', self::SETTING_USER_ID)
+            ->first(['preferences']);
 
-        foreach ($rows as $row) {
-            if (! empty($row->preferences['override_user_home'])) {
-                return true;
-            }
+        return is_array($row?->preferences) ? $row->preferences : [];
+    }
+
+    /**
+     * 解析后的全局开关：全局行已配置的键直接采用；缺失的键（存量环境首次升级）
+     * 回退扫描管理员工作区，任一开启即视为开启。
+     *
+     * @return array<string,bool>
+     */
+    protected static function resolvedGlobalPreferences(): array
+    {
+        $global = static::globalPreferences();
+        $missing = array_diff(self::GLOBAL_PREFERENCES, array_keys($global));
+        if ($missing === []) {
+            return array_map(static fn ($value): bool => (bool) $value, $global);
         }
 
-        return false;
+        $legacy = [];
+        $rows = WebosWorkspace::query()->where('terminal', 'admin')->get(['preferences']);
+        foreach ($rows as $row) {
+            foreach ($missing as $key) {
+                if (! empty($row->preferences[$key])) {
+                    $legacy[$key] = true;
+                }
+            }
+        }
+        foreach ($missing as $key) {
+            $global[$key] = $legacy[$key] ?? false;
+        }
+
+        return array_map(static fn ($value): bool => (bool) $value, $global);
+    }
+
+    /** 全局开关写入：占位行不存在则创建；仅接受 GLOBAL_PREFERENCES 声明的键 */
+    protected function saveGlobalPreferences(array $values): void
+    {
+        $workspace = WebosWorkspace::query()->firstOrCreate(
+            ['terminal' => self::SETTING_TERMINAL, 'admin_user_id' => self::SETTING_USER_ID],
+            ['desktop_items' => [], 'taskbar_items' => [], 'preferences' => [], 'status' => 1]
+        );
+        $preferences = is_array($workspace->preferences) ? $workspace->preferences : [];
+        foreach (self::GLOBAL_PREFERENCES as $key) {
+            if (array_key_exists($key, $values)) {
+                $preferences[$key] = (bool) $values[$key];
+            }
+        }
+        $workspace->preferences = $preferences;
+        $workspace->save();
+    }
+
+    /** 响应回填全局开关（仅内存，不落库）：各账号读取到同一全局状态 */
+    protected function withGlobalPreferences(WebosWorkspace $workspace): WebosWorkspace
+    {
+        $preferences = is_array($workspace->preferences) ? $workspace->preferences : [];
+        $global = static::resolvedGlobalPreferences();
+        foreach (self::GLOBAL_PREFERENCES as $key) {
+            $preferences[$key] = (bool) ($global[$key] ?? false);
+        }
+        $workspace->preferences = $preferences;
+
+        return $workspace;
     }
 
     /** 桌面项保存上限（含文件夹子项）：与前端添加入口的容量预检查、控制器校验规则共用同一口径 */
@@ -512,15 +579,28 @@ class WorkspaceService
         }
 
         if (array_key_exists('preferences', $payload)) {
+            $incoming = is_array($payload['preferences'] ?? null) ? $payload['preferences'] : [];
+            // 「覆盖传统后台」双开关为全局设置（2.1.133）：抽取后写入全局占位行，
+            // 不落账号工作区——任一超级管理员开启即对所有账号生效（仅超管可改由控制器剔除保证）
+            $globalValues = array_intersect_key($incoming, array_flip(self::GLOBAL_PREFERENCES));
+            if ($globalValues !== []) {
+                $this->saveGlobalPreferences($globalValues);
+            }
+            // 账号工作区剥离全局键：避免残留历史个人值，后续判定只看全局行
+            $current = is_array($workspace->preferences) ? $workspace->preferences : [];
+            foreach (self::GLOBAL_PREFERENCES as $key) {
+                unset($current[$key]);
+            }
             $workspace->preferences = $this->sanitizePreferences(
-                $workspace->preferences ?? [],
-                $payload['preferences'] ?? []
+                $current,
+                array_diff_key($incoming, array_flip(self::GLOBAL_PREFERENCES))
             );
         }
 
         $workspace->save();
 
-        return $workspace->refresh();
+        // 响应回填全局状态（仅内存），前端各账号展示同一开关状态
+        return $this->withGlobalPreferences($workspace->refresh());
     }
 
     /** @return array<int,array<string,mixed>> */

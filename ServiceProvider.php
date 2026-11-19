@@ -66,13 +66,12 @@ class ServiceProvider extends BaseServiceProvider
             $factory->startPush('page_styles', '<link rel="stylesheet" href="'
                 . asset('apps/cmspro.webos/css/entry.css') . '?v=' . $entryVersion . '">');
 
-            // 「覆盖传统后台」：管理员在 OS 设置开启后，访问后台首页（admin.index）
-            // 直接进入 WebOS 桌面。放 head 内尽早执行减少传统首页闪现；
+            // 「覆盖传统后台」：全局设置开启后，任意管理员访问后台首页（admin.index）
+            // 直接进入 WebOS 桌面（不区分账号）。放 head 内尽早执行减少传统首页闪现；
             // 地址带 skip_webos=1 可临时绕过；仅在首页路由判断，其余页面零开销。
             if (request()->routeIs('admin.index') && ! request()->boolean('skip_webos') && auth('admin')->check()) {
                 try {
-                    $preferences = app(WorkspaceService::class)->getForAdmin((int) auth('admin')->id())->preferences;
-                    if (! empty($preferences['override_admin_home'])) {
+                    if (WorkspaceService::anyAdminOverridesAdminHome()) {
                         $factory->startPush('page_styles', '<script>location.replace("' . $webosUrl . '");</script>');
                     }
                 } catch (Throwable) {

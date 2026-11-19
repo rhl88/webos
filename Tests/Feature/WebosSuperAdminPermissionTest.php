@@ -98,13 +98,14 @@ class WebosSuperAdminPermissionTest extends WebosTestCase
         ])->assertOk()->assertJsonPath('data.preferences.override_admin_home', true);
         $this->assertTrue(WorkspaceService::anyAdminOverridesAdminHome());
 
-        // 普通管理员：开启类提交（override_user_home）与关闭类提交（override_admin_home）均被剔除
+        // 普通管理员：开启类提交（override_user_home）与关闭类提交（override_admin_home）均被剔除，
+        // 响应回填全局状态——超管已开启的开关仍为 true，未被开启的开关保持 false（2.1.133 全局设置）
         $this->actingAdmin();
         $this->putJson('/admin/cmspro/webos/api/workspace', [
             'desktop_items' => [],
             'preferences' => ['override_admin_home' => false, 'override_user_home' => true],
         ])->assertOk()
-            ->assertJsonPath('data.preferences.override_admin_home', false)
+            ->assertJsonPath('data.preferences.override_admin_home', true)
             ->assertJsonPath('data.preferences.override_user_home', false);
 
         // 全局判定：超管开启的开关未被普通管理员的关闭提交影响；普通管理员的开启提交未生效
