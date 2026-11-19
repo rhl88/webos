@@ -1,7 +1,7 @@
 # CmsPro WebOS 管理桌面 · 特性清单
 
-> 文档版本：2.1.134 | 更新日期：2026-11-19
-> 应用版本：2.1.134 | 应用 ID：`cmspro.webos`
+> 文档版本：2.1.135 | 更新日期：2026-11-19
+> 应用版本：2.1.135 | 应用 ID：`cmspro.webos`
 
 ## 一、应用定位
 
@@ -140,6 +140,8 @@ WebOS 管理桌面是 CmsPro 后台的可选交互层，不替换系统后台框
 
 98. 「覆盖传统后台」改为全局设置（2.1.133，用户反馈「OS设置中的 覆盖传统后台 是全局设置，一旦开启所有账号都是覆盖，而不是单独某个账号」）：此前双开关（后台首页直达 / 用户首页直达）保存在各管理员自己的工作区偏好，后台首页直达只对开启者生效，而登录页接管与用户首页中间件按「任一管理员开启即全局」判定，两条链路口径不一致。现统一改为全局记录行——复用工作区表新增占位记录（`terminal='setting'`、`admin_user_id=0`，与账号工作区的 `(terminal, admin_user_id)` 联合唯一隔离），`saveFor()` 将 `preferences` 中的 `override_admin_home`/`override_user_home` 抽出写入全局行、账号工作区剥离该键；`getFor()` 读取时以全局值回填（仅内存不落库）；`anyAdminOverridesAdminHome()`/`anyAdminOverridesUserHome()` 改为读全局行；`ServiceProvider` 后台首页直达改用 `anyAdminOverridesAdminHome()`，任意管理员访问 `/admin` 均直达 WebOS。超级管理员权限约束不变（普通管理员/用户端提交全局键由控制器静默剔除）。存量兼容：全局行未配置该键时回退「任一管理员个人偏好开启即生效」口径，升级后无需重新开启；重置个人工作区不影响全局开关。前端两个开关说明文案标注「对所有账号生效」。
 
+99. 后退 / 刷新 / 前进按钮仅多选项卡模式显示（2.1.135，用户需求「应用窗口中的 后退 刷新 前进 按钮，只有开启tab下显示；未开启不显示」）：`windowMarkup()` 中后退（`data-window-action="history-back"`）与前进（`history-forward`）按钮的渲染条件由 `hasPageHost` 收紧为 `hasPageHost && windowTabsEnabled()`，与刷新按钮（`windowTabsEnabled()`）条件一致——未开启多选项卡模式的新窗口标题栏不渲染这三个按钮；已打开的多选项卡窗口不受影响（开关仅对新窗口生效）。`syncWindowHistoryButtons()` 对 `.window-history` 按钮缺失做 `!buttons.length` 兜底返回，无按钮时零副作用；按钮显隐仍按 iframe 同源性判定（跨域外链/组件页隐藏）。
+
 ## 四、数据结构
 
 ### `app_cmspro_webos_workspaces`
@@ -194,6 +196,7 @@ CmsproWebos/
 
 | 版本 | 日期 | 说明 |
 |---|---|---|
+| 2.1.135 | 2026-11-19 | **后退/刷新/前进按钮仅多选项卡模式显示**（用户需求「应用窗口中的 后退 刷新 前进 按钮，只有开启tab下显示；未开启不显示」）：`windowMarkup()` 中 `history-back` / `history-forward` 渲染条件由 `hasPageHost` 收紧为 `hasPageHost && windowTabsEnabled()`，与刷新按钮条件统一——未开启多选项卡的窗口标题栏不渲染这三个按钮；`syncWindowHistoryButtons()` 对按钮缺失有 `!buttons.length` 兜底；多选项卡窗口内显隐仍按 iframe 同源性判定。新增 `WebosWindowHistoryButtonsTest::test_history_buttons_render_only_in_tabs_mode` 用例（273 用例 / 2768 断言全绿） |
 | 2.1.134 | 2026-11-19 | **状态栏日历面板加宽**（用户反馈「点击时间弹出的日历宽度加宽 40px，现在的宽度『今天是……』换行了」）：`.calendar-panel` 宽度 312px → 352px（+40px），修复「今天 2026年11月19日 星期四·农历十月十」副标题折行；任务栏四个方位的面板定位规则不变，日历网格随之等比例变宽 |
 | 2.1.133 | 2026-11-19 | **「覆盖传统后台」改为真正的全局设置**（用户反馈「OS设置中的 覆盖传统后台 是全局设置，一旦开启所有账号都是覆盖，而不是单独某个账号」）：① 根因——双开关存于各管理员自己的工作区 `preferences`，后台首页直达（`ServiceProvider` 读当前账号偏好）只对开启者生效，而登录页接管 / 用户首页中间件按「任一管理员开启即全局」判定，两条链路口径不一致；② 全局记录行——复用工作区表新增占位记录（`terminal='setting'`、`admin_user_id=0`），`WorkspaceService` 新增 `GLOBAL_PREFERENCES` 常量（`override_admin_home`/`override_user_home`）与 `globalPreferences()/resolvedGlobalPreferences()/saveGlobalPreferences()/withGlobalPreferences()`；`saveFor()` 抽取全局键写全局行、账号工作区剥离该键（不再落个人偏好），`getFor()` 读取时回填全局值（仅内存不落库），`anyAdminOverridesAdminHome/UserHome()` 改为读全局行；③ 生效链路——`ServiceProvider` 后台首页直达改用 `WorkspaceService::anyAdminOverridesAdminHome()`（任意账号），用户首页/登录页中间件语义天然一致；④ 权限——超管判定仍在控制器剔除（2.1.104），普通管理员/用户端提交全局键被静默忽略；⑤ 存量兼容——全局行未配置该键时回退「任一管理员个人偏好开启即生效」口径，升级无需重新开启；⑥ 前端文案注明「对所有账号生效」；⑦ 测试——新增 1 用例（跨账号读取同一状态、账号行不落全局值、重置个人工作区不影响全局），修订 1 条既有断言（普通管理员提交被剔除后响应回填全局状态），272 用例 / 2762 断言全绿 |
 | 2.1.132 | 2026-11-19 | **应用更新中的应用详情补全**（用户需求「应用中心->应用更新->点击应用名称显示应用详情，需要与已安装/未安装中点击应用名称显示一致；现在应用更新中的应用详情显示的不完整」）：`openLocalDetail` 渲染后新增 `enrichLocalDetail` 补全——更新检查接口与本地应用目录均无 `description`/`author`，命中市场数据缓存直接补、否则请求 `GET /api/admin/market/apps/{appId}`，仅补缺失的描述/作者/论坛链接（不覆盖本地版本与状态），经 `renderLocalDetail` 重渲染；覆盖层 `data-local-detail-id` 归属标记 + `isConnected` 校验，详情关闭/切换应用时静默跳过；未上架或市场不可用静默降级；新增 6 条断言（271 用例 / 2748 断言全绿） |

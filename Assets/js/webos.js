@@ -5696,8 +5696,9 @@
             + '<div class="window-brand">' + brandIcon + '<strong>'
             + escapeHtml(identity.title) + '<small>' + escapeHtml(identity.subtitle) + '</small></strong></div>'
             // 标题栏前进/后退按钮：后退在刷新按钮左侧、前进在刷新按钮右侧，操作当前页面 iframe 内部历史；
-            // 仅普通应用窗口渲染（特殊窗口内容由前端渲染无 iframe），初始隐藏，渲染页面后按同源性同步显隐
-            + (hasPageHost
+            // 仅多选项卡模式的普通应用窗口渲染（2.1.135：未开启多选项卡时不显示后退/刷新/前进），
+            // 初始隐藏，渲染页面后按同源性同步显隐
+            + (hasPageHost && windowTabsEnabled()
                 ? '<button class="window-control window-history" type="button" data-window-action="history-back" aria-label="后退" title="后退" hidden><i class="fa fa-angle-left"></i></button>'
                 : '')
             // 选项卡模式标题栏刷新按钮：置于品牌区右侧（标题栏直属，不随选项卡条/控制区布局变化），
@@ -5705,7 +5706,7 @@
             + (windowTabsEnabled()
                 ? '<button class="window-control window-refresh" type="button" data-window-action="refresh" aria-label="刷新当前页面" title="刷新当前页面"><i class="fa fa-refresh"></i></button>'
                 : '')
-            + (hasPageHost
+            + (hasPageHost && windowTabsEnabled()
                 ? '<button class="window-control window-history" type="button" data-window-action="history-forward" aria-label="前进" title="前进" hidden><i class="fa fa-angle-right"></i></button>'
                 : '')
             + '<div class="window-controls">'

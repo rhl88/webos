@@ -30,6 +30,33 @@ class WebosWindowHistoryButtonsTest extends WebosTestCase
         $this->assertTrue($back < $refresh && $refresh < $forward, '按钮顺序应为 后退 → 刷新 → 前进');
     }
 
+    /** 2.1.135：后退/前进按钮仅多选项卡模式窗口渲染，未开启多选项卡时不显示（刷新按钮同口径） */
+    public function test_history_buttons_render_only_in_tabs_mode(): void
+    {
+        $script = $this->script();
+        foreach (['history-back', 'history-forward'] as $action) {
+            $this->assertMatchesRegularExpression(
+                '/\(hasPageHost && windowTabsEnabled\(\)\s*\?\s*\'<button class="window-control window-history"'
+                . '[^>]*data-window-action="' . $action . '"/',
+                $script,
+                $action . ' 按钮应由 hasPageHost && windowTabsEnabled() 双重条件控制'
+            );
+            $this->assertDoesNotMatchRegularExpression(
+                '/\(hasPageHost\s*\n\s*\?\s*\'<button class="window-control window-history"'
+                . '[^>]*data-window-action="' . $action . '"/',
+                $script,
+                $action . ' 按钮不应存在不判断多选项卡模式的渲染分支'
+            );
+        }
+        $this->assertMatchesRegularExpression(
+            "/windowTabsEnabled\(\)\s*\?\s*'<button class=\"window-control window-refresh\"/",
+            $script,
+            '刷新按钮应仅多选项卡模式渲染'
+        );
+        // 无页面容器时（特殊窗口）后退/前进本就不渲染；显隐同步对按钮缺失做兜底
+        $this->assertStringContainsString('if (!buttons.length)', $script);
+    }
+
     /** 点击接线：窗口动作委托分发到 history-back / history-forward */
     public function test_history_buttons_dispatch_window_actions(): void
     {
