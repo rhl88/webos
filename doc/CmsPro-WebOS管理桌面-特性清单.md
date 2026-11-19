@@ -1,7 +1,7 @@
 # CmsPro WebOS 管理桌面 · 特性清单
 
-> 文档版本：2.1.133 | 更新日期：2026-11-19
-> 应用版本：2.1.133 | 应用 ID：`cmspro.webos`
+> 文档版本：2.1.134 | 更新日期：2026-11-19
+> 应用版本：2.1.134 | 应用 ID：`cmspro.webos`
 
 ## 一、应用定位
 
@@ -194,6 +194,7 @@ CmsproWebos/
 
 | 版本 | 日期 | 说明 |
 |---|---|---|
+| 2.1.134 | 2026-11-19 | **状态栏日历面板加宽**（用户反馈「点击时间弹出的日历宽度加宽 40px，现在的宽度『今天是……』换行了」）：`.calendar-panel` 宽度 312px → 352px（+40px），修复「今天 2026年11月19日 星期四·农历十月十」副标题折行；任务栏四个方位的面板定位规则不变，日历网格随之等比例变宽 |
 | 2.1.133 | 2026-11-19 | **「覆盖传统后台」改为真正的全局设置**（用户反馈「OS设置中的 覆盖传统后台 是全局设置，一旦开启所有账号都是覆盖，而不是单独某个账号」）：① 根因——双开关存于各管理员自己的工作区 `preferences`，后台首页直达（`ServiceProvider` 读当前账号偏好）只对开启者生效，而登录页接管 / 用户首页中间件按「任一管理员开启即全局」判定，两条链路口径不一致；② 全局记录行——复用工作区表新增占位记录（`terminal='setting'`、`admin_user_id=0`），`WorkspaceService` 新增 `GLOBAL_PREFERENCES` 常量（`override_admin_home`/`override_user_home`）与 `globalPreferences()/resolvedGlobalPreferences()/saveGlobalPreferences()/withGlobalPreferences()`；`saveFor()` 抽取全局键写全局行、账号工作区剥离该键（不再落个人偏好），`getFor()` 读取时回填全局值（仅内存不落库），`anyAdminOverridesAdminHome/UserHome()` 改为读全局行；③ 生效链路——`ServiceProvider` 后台首页直达改用 `WorkspaceService::anyAdminOverridesAdminHome()`（任意账号），用户首页/登录页中间件语义天然一致；④ 权限——超管判定仍在控制器剔除（2.1.104），普通管理员/用户端提交全局键被静默忽略；⑤ 存量兼容——全局行未配置该键时回退「任一管理员个人偏好开启即生效」口径，升级无需重新开启；⑥ 前端文案注明「对所有账号生效」；⑦ 测试——新增 1 用例（跨账号读取同一状态、账号行不落全局值、重置个人工作区不影响全局），修订 1 条既有断言（普通管理员提交被剔除后响应回填全局状态），272 用例 / 2762 断言全绿 |
 | 2.1.132 | 2026-11-19 | **应用更新中的应用详情补全**（用户需求「应用中心->应用更新->点击应用名称显示应用详情，需要与已安装/未安装中点击应用名称显示一致；现在应用更新中的应用详情显示的不完整」）：`openLocalDetail` 渲染后新增 `enrichLocalDetail` 补全——更新检查接口与本地应用目录均无 `description`/`author`，命中市场数据缓存直接补、否则请求 `GET /api/admin/market/apps/{appId}`，仅补缺失的描述/作者/论坛链接（不覆盖本地版本与状态），经 `renderLocalDetail` 重渲染；覆盖层 `data-local-detail-id` 归属标记 + `isConnected` 校验，详情关闭/切换应用时静默跳过；未上架或市场不可用静默降级；新增 6 条断言（271 用例 / 2748 断言全绿） |
 | 2.1.131 | 2026-11-19 | **应用窗口「前台」右侧新增「用户」下拉**（用户需求「在应用窗口 前台右侧增加 用户，用来显示用户端的菜单（如果有就显示）」）：`windowHomeMenuMarkup`/`loadWindowHomeMenu`/`collectHomeMenuLeaves`/`homeMenusCache` 重构为 `windowTerminalMenuMarkup(terminal, leaves)`/`loadWindowTerminalMenu(windowState, terminal)`/`collectTerminalMenuLeaves`/`terminalMenusCache`（前台/用户共用一套渲染与加载逻辑，`terminal` 决定文案与数据源）；应用声明并安装用户端（user）菜单时标题栏「前台 ▾」右侧注入「用户 ▾」（复用 `.window-home-menu` 全套类名与交互，容器带 `data-terminal` 区分，加载时序无关、显示顺序恒定）；用户下拉仅后台端加载（用户端窗口左侧菜单即用户菜单，不重复展示）；后台端菜单树走框架接口 `terminal_type=user`，用户菜单路径即最终地址不做域名绑定换算；测试断言改终端菜单口径并新增用户下拉断言（271 用例 / 2742 断言全绿） |

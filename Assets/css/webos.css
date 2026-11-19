@@ -2144,7 +2144,8 @@ textarea:focus-visible,
 .calendar-panel {
     right: 26px;
     bottom: calc(var(--taskbar-height) + 12px);
-    width: 312px;
+    /* 2.1.134：加宽 40px（312→352），保证「今天 2026年11月19日 星期四·农历十月十」整行显示不换行 */
+    width: 352px;
     padding-bottom: 14px;
 }
 
