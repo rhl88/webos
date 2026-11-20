@@ -17,6 +17,8 @@ class WorkspaceService
         'wallpaper_url' => '',
         'icon_size' => 'medium',
         'label_effect' => 'none',
+        // 界面主题（2.1.136 OS 设置「界面主题」Tab）：default=CmsPro 经典、win11=Win11 浅色（Fluent Design）
+        'ui_theme' => 'default',
         'window_tabs' => false,
         'tab_reload' => false,
         'menu_open_launcher' => false,
@@ -799,6 +801,10 @@ class WorkspaceService
         $preferences['label_effect'] = in_array($preferences['label_effect'] ?? '', ['none', 'shadow', 'shield'], true)
             ? $preferences['label_effect']
             : self::DEFAULT_PREFERENCES['label_effect'];
+        // 界面主题（OS 设置「界面主题」Tab，2.1.136）：default=CmsPro 经典、win11=Win11 浅色，非法值回退默认
+        $preferences['ui_theme'] = in_array($preferences['ui_theme'] ?? '', ['default', 'win11'], true)
+            ? $preferences['ui_theme']
+            : self::DEFAULT_PREFERENCES['ui_theme'];
         // 应用窗口多选项卡（OS 设置开关，默认关闭）
         $preferences['window_tabs'] = (bool) ($preferences['window_tabs'] ?? false);
         // 选项卡刷新（OS 设置开关，默认关闭）：多选项卡模式下点击左侧菜单重新加载对应页面内容

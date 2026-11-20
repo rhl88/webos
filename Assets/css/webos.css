@@ -8135,3 +8135,89 @@ textarea.webos-widget-input {
 .upgrade-notes-toggle:hover {
     text-decoration: underline;
 }
+
+/* ============================================================
+   界面主题（2.1.136）：桌面容器 [data-ui-theme] 驱动的变量级换肤，
+   仅覆盖桌面 UI 表面（任务栏、窗口、开始菜单、设置面板等），
+   应用窗口 iframe 内的页面与桌面壁纸不跟随换肤。
+   Win11 浅色主题：映射 CmsproWin11os 的 Fluent Design light 规格
+   （accent #005fb8、Mica #f3f3f3、Acrylic #f9f9f9、8px 圆角、Segoe UI 字体）。
+   ============================================================ */
+
+.webos-desktop[data-ui-theme="win11"] {
+    --webos-primary: #005fb8;
+    --webos-primary-dark: #0054a4;
+    --webos-blue: #005fb8;
+    --webos-focus: #005fb8;
+    --webos-text: #1a1a1a;
+    --webos-muted: rgba(0, 0, 0, 0.66);
+    --webos-line: rgba(0, 0, 0, 0.07);
+    --webos-soft: #f3f3f3;
+    --webos-surface: #f9f9f9;
+    --webos-taskbar: rgba(243, 243, 243, 0.88);
+    --webos-shadow: 0 16px 44px rgba(0, 0, 0, 0.22);
+    --webos-radius: 8px;
+    font-family: "Segoe UI Variable Display", "Segoe UI", "Microsoft YaHei UI", "Microsoft YaHei", -apple-system, "PingFang SC", Arial, sans-serif;
+}
+
+/* Win11 浅色：窗口本体由纯白改为 Fluent 细节底色与中性浅描边（默认主题为白底蓝描边） */
+.webos-desktop[data-ui-theme="win11"] .app-window {
+    background: #f9f9f9;
+    border-color: rgba(0, 0, 0, 0.07);
+}
+
+/* Win11 浅色：窗口左侧菜单栏由冷灰改为 Mica 底色 */
+.webos-desktop[data-ui-theme="win11"] .window-sidebar {
+    background: #f3f3f3;
+}
+
+/* Win11 浅色：任务栏由深蓝改为浅色 Mica，描边与投影改中性色
+   （border-color 同时覆盖底部/顶部/左右停靠的边框变体） */
+.webos-desktop[data-ui-theme="win11"] .webos-taskbar {
+    border-color: rgba(0, 0, 0, 0.06);
+    box-shadow: 0 -8px 24px rgba(0, 0, 0, 0.08);
+}
+
+.webos-desktop[data-ui-theme="win11"][data-taskbar-position="top"] .webos-taskbar {
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.08);
+}
+
+.webos-desktop[data-ui-theme="win11"][data-taskbar-position="left"] .webos-taskbar {
+    box-shadow: 8px 0 24px rgba(0, 0, 0, 0.08);
+}
+
+.webos-desktop[data-ui-theme="win11"][data-taskbar-position="right"] .webos-taskbar {
+    box-shadow: -8px 0 24px rgba(0, 0, 0, 0.08);
+}
+
+/* Win11 浅色：任务栏文字/图标由白改深（浅色 Mica 底上白字不可读） */
+.webos-desktop[data-ui-theme="win11"] .taskbar-button,
+.webos-desktop[data-ui-theme="win11"] .taskbar-app-button,
+.webos-desktop[data-ui-theme="win11"] .taskbar-scroll-btn,
+.webos-desktop[data-ui-theme="win11"] .account-button,
+.webos-desktop[data-ui-theme="win11"] .clock-button {
+    color: var(--webos-text);
+}
+
+.webos-desktop[data-ui-theme="win11"] .taskbar-button:hover,
+.webos-desktop[data-ui-theme="win11"] .taskbar-button.is-active,
+.webos-desktop[data-ui-theme="win11"] .taskbar-app-button:hover,
+.webos-desktop[data-ui-theme="win11"] .taskbar-app-button.is-active,
+.webos-desktop[data-ui-theme="win11"] .taskbar-scroll-btn:hover,
+.webos-desktop[data-ui-theme="win11"] .account-button:hover,
+.webos-desktop[data-ui-theme="win11"] .clock-button:hover {
+    background: rgba(0, 0, 0, 0.06);
+}
+
+.webos-desktop[data-ui-theme="win11"] .taskbar-divider {
+    background: rgba(0, 0, 0, 0.12);
+}
+
+/* 界面主题 Tab 的说明小字（2.1.136，各主题通用） */
+.settings-hint {
+    display: block;
+    margin-top: 10px;
+    color: var(--webos-muted);
+    font-size: 12px;
+    line-height: 1.6;
+}

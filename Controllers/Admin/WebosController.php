@@ -972,6 +972,10 @@ class WebosController extends Controller
             'preferences.taskbar_autohide' => ['sometimes', 'boolean'],
             'preferences.taskbar_locked' => ['sometimes', 'boolean'],
             'preferences.taskbar_button_style' => ['sometimes', 'in:icon,text'],
+            // 界面主题（OS 设置「界面主题」Tab，2.1.136）：default=CmsPro 经典、win11=Win11 浅色
+            'preferences.ui_theme' => ['sometimes', 'in:default,win11'],
+            // 图标文字效果（OS 设置单选，2.1.128）：无规则声明时 $validated 会丢弃该键，保存后刷新即回退
+            'preferences.label_effect' => ['sometimes', 'in:none,shadow,shield'],
             'preferences.usage_stats' => ['sometimes', 'array', 'max:80'],
             // 被忽略的可用更新（应用中心「忽略」按钮，app_id@版本号）：无规则声明时 $validated 会丢弃该键
             'preferences.ignored_updates' => ['sometimes', 'array', 'max:200'],

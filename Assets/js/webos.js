@@ -73,6 +73,7 @@
             taskbar_items: [],
             preferences: {
                 wallpaper: 'webos-default',
+                ui_theme: 'default',
                 taskbar_alignment: 'left',
                 taskbar_position: 'bottom',
                 clock_format: '24h',
@@ -5742,6 +5743,7 @@
     function osSettingsTabBarMarkup() {
         var tabs = [
             ['general', 'fa-sliders', '基本设置'],
+            ['theme', 'fa-paint-brush', '界面主题'],
             ['wallpaper', 'fa-picture-o', '背景设置'],
             ['system', 'fa-cogs', '系统设置']
         ];
@@ -5758,6 +5760,17 @@
                 + ' aria-selected="' + (osSettingsTab === tab[0] ? 'true' : 'false') + '" data-settings-tab="' + tab[0] + '">'
                 + '<i class="fa ' + tab[1] + '"></i>' + tab[2] + '</button>';
         }).join('') + '</nav>';
+    }
+
+    /** 界面主题（2.1.136）：桌面 UI 配色风格单选；主题作用于任务栏、窗口、开始菜单等桌面界面，
+     *  应用窗口 iframe 内的页面不跟随（与壁纸、图标效果等偏好独立叠加） */
+    function themeSectionMarkup(preferences) {
+        return '<section class="settings-card"><div class="settings-card-title"><i class="fa fa-paint-brush"></i><div>'
+            + '<strong>界面主题</strong><small>切换桌面 UI 配色与质感（任务栏、窗口、开始菜单等）</small></div></div>'
+            + '<div class="settings-choice-grid is-two">'
+            + settingsChoice('set-ui-theme', 'default', 'fa-circle-o', '默认主题', (preferences.ui_theme || 'default') !== 'win11')
+            + settingsChoice('set-ui-theme', 'win11', 'fa-windows', 'Win11 浅色', preferences.ui_theme === 'win11')
+            + '</div><small class="settings-hint">主题仅影响桌面界面本身，应用窗口内打开的页面不跟随换肤。</small></section>';
     }
 
     /** 背景设置：壁纸风格选择、自定义壁纸上传与当前壁纸预览 */
@@ -6348,7 +6361,9 @@
             ['left', 'fa-arrow-left', '左侧'], ['right', 'fa-arrow-right', '右侧']
         ];
         var content;
-        if (osSettingsTab === 'wallpaper') {
+        if (osSettingsTab === 'theme') {
+            content = '<div class="settings-grid">' + themeSectionMarkup(preferences) + '</div>';
+        } else if (osSettingsTab === 'wallpaper') {
             content = '<div class="settings-grid">' + wallpaperSectionMarkup(preferences) + '</div>';
         } else if (osSettingsTab === 'system') {
             content = '<div class="settings-grid">' + systemSectionMarkup(preferences) + '</div>';
@@ -13569,6 +13584,8 @@
     function applyWorkspacePreferences() {
         var preferences = state.workspace.preferences;
         root.dataset.wallpaper = preferences.wallpaper || 'webos-default';
+        // 界面主题（2.1.136）：挂桌面容器 data 属性，CSS 侧 [data-ui-theme="win11"] 覆盖 --webos-* 变量换肤
+        root.dataset.uiTheme = preferences.ui_theme === 'win11' ? 'win11' : 'default';
         // 图标文字效果挂桌面容器 data 属性（CSS 作用域切换：none/shadow/shield），避免逐个图标改类
         if (elements.desktopIcons) {
             elements.desktopIcons.dataset.labelEffect = preferences.label_effect || 'none';
@@ -15373,6 +15390,10 @@
 
             var wallpaper = event.target.closest('[data-set-webos-wallpaper]');
             if (wallpaper) { setWebosPreference('wallpaper', wallpaper.dataset.setWebosWallpaper, '桌面外观已更新'); }
+
+            // 界面主题（2.1.136）：default=CmsPro 经典、win11=Win11 浅色，dataset 驱动 CSS 变量切换
+            var uiTheme = event.target.closest('[data-set-ui-theme]');
+            if (uiTheme) { setWebosPreference('ui_theme', uiTheme.dataset.setUiTheme, '界面主题已更新'); }
 
             // 图标文字效果三选一（无效果/文字阴影/深色底衬），随工作区偏好持久化
             var labelEffect = event.target.closest('[data-set-label-effect]');
