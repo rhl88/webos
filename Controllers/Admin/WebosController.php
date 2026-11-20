@@ -976,7 +976,9 @@ class WebosController extends Controller
             'preferences.ui_theme' => ['sometimes', 'in:default,win11'],
             // 图标文字效果（OS 设置单选，2.1.128）：无规则声明时 $validated 会丢弃该键，保存后刷新即回退
             'preferences.label_effect' => ['sometimes', 'in:none,shadow,shield'],
-            'preferences.usage_stats' => ['sometimes', 'array', 'max:80'],
+            // 入口使用统计条数上限复用服务层常量（2.1.137：原硬编码 80 与前端不裁剪叠加，
+            // 菜单较多时超限会让含桌面布局的整单保存被 422 拒绝）
+            'preferences.usage_stats' => ['sometimes', 'array', 'max:' . WorkspaceService::USAGE_STATS_LIMIT],
             // 被忽略的可用更新（应用中心「忽略」按钮，app_id@版本号）：无规则声明时 $validated 会丢弃该键
             'preferences.ignored_updates' => ['sometimes', 'array', 'max:200'],
             'preferences.ignored_updates.*' => ['string', 'max:180'],

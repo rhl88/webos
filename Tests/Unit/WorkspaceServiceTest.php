@@ -293,6 +293,36 @@ class WorkspaceServiceTest extends WebosTestCase
         $this->assertArrayNotHasKey('无效 键', $workspace->preferences['usage_stats']);
     }
 
+    /**
+     * 使用统计超限裁剪（2.1.137）：原实现按插入顺序截断前 80 条，且菜单较多时整个工作区
+     * 保存会被控制器 max 校验拒绝；现按最近打开时间降序保留最近的 USAGE_STATS_LIMIT 条。
+     */
+    public function test_it_keeps_the_most_recent_usage_statistics_when_exceeding_limit(): void
+    {
+        $admin = $this->actingAdmin();
+        $base = strtotime('2026-01-01 00:00:00');
+        $overflow = WorkspaceService::USAGE_STATS_LIMIT + 5;
+        $statistics = [];
+        for ($index = 1; $index <= $overflow; $index++) {
+            $statistics['menu:' . $index] = [
+                'count' => $index,
+                'last_opened_at' => date('Y-m-d H:i:s', $base + $index * 60),
+            ];
+        }
+
+        $workspace = app(WorkspaceService::class)->saveForAdmin($admin->id, [
+            'preferences' => ['usage_stats' => $statistics],
+        ]);
+
+        $saved = $workspace->preferences['usage_stats'];
+        $this->assertCount(WorkspaceService::USAGE_STATS_LIMIT, $saved);
+        // 最近打开的保留，最久未用的（menu:1 ~ menu:5）被裁剪
+        $this->assertArrayHasKey('menu:' . $overflow, $saved);
+        $this->assertArrayHasKey('menu:6', $saved);
+        $this->assertArrayNotHasKey('menu:5', $saved);
+        $this->assertArrayNotHasKey('menu:1', $saved);
+    }
+
     public function test_it_rejects_external_desktop_paths(): void
     {
         $admin = $this->actingAdmin();

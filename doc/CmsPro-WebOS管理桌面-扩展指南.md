@@ -1,7 +1,7 @@
 # CmsPro WebOS 管理桌面 · 扩展指南
 
-> 文档版本：2.1.136 | 更新日期：2026-11-20
-> 应用版本：2.1.136 | 应用 ID：`cmspro.webos`
+> 文档版本：2.1.137 | 更新日期：2026-11-20
+> 应用版本：2.1.137 | 应用 ID：`cmspro.webos`
 
 ## 一、概述
 
@@ -675,7 +675,7 @@ app(HookManager::class)->registerFilter(
 | `window_height` | int | `80` | 40–100 |
 | `override_admin_home` | bool | `false` | 覆盖传统后台首页（`/admin` 直达 WebOS）；**2.1.133 起为全局设置**——不存个人偏好，统一存全局记录行（`terminal='setting'`、`admin_user_id=0`），`saveFor()` 抽取该键写全局行、`getFor()` 读取回填（仅内存），`WorkspaceService::anyAdminOverridesAdminHome()` 判定，任一超管开启即对所有账号生效；**仅超管可设置**（2.1.104 起前端仅超管渲染、服务端对非超管提交静默剔除） |
 | `override_user_home` | bool | `false` | 用户首页直达 WebOS（`/user` 直达 `/user/cmspro/webos`，2.1.82，`?skip_webos=1` 可绕过）；**2.1.133 起为全局设置**（同 `override_admin_home`，存全局记录行），`WorkspaceService::anyAdminOverridesUserHome()` 判定；**仅超管可设置**（同上前置约束） |
-| `usage_stats` | object | `[]` | 入口使用统计，见下节 |
+| `usage_stats` | object | `[]` | 入口使用统计（最多 200 条，超限按最近打开时间裁剪），见下节 |
 
 ### 新增偏好键的「多层同步」教训（1.9.67/1.9.68 踩坑）
 
@@ -690,7 +690,9 @@ app(HookManager::class)->registerFilter(
 
 ### 使用统计（`recordEntryUsage`）
 
-- `usage_stats` 的键为入口标识（正则 `[A-Za-z0-9:._-]{1,100}`），值为 `{ count, last_opened_at }`（`count` 1–999999，`last_opened_at` 格式 `Y-m-d H:i:s`）；最多保留 80 个键。
+- `usage_stats` 的键为入口标识（正则 `[A-Za-z0-9:._-]{1,100}`），值为 `{ count, last_opened_at }`（`count` 1–999999，`last_opened_at` 格式 `Y-m-d H:i:s`）；最多保留 200 个键（`WorkspaceService::USAGE_STATS_LIMIT`，2.1.137 起，原为 80）。
+- 超限裁剪口径（2.1.137）：前端 `trimUsageStats()` 在写入统计与提交保存载荷（`preferencesPayload()`）两处按 `last_opened_at` 降序、`count` 降序保留最近 200 条；服务端 `sanitizeUsageStats()` 同口径兜底。原实现按插入顺序截断前 80 条且前端不裁剪，菜单较多的账号统计键超限后，含桌面布局与偏好的整单保存会被控制器 `max` 校验 422 拒绝（表现：桌面拖动/设置保存全部失效）。
+- 控制器 `saveWorkspace()` 的 `preferences.usage_stats` 上限直接引用 `WorkspaceService::USAGE_STATS_LIMIT`，避免与服务层再次漂移；超限请求仍由验证层兜底拒绝（请求体有界保护）。
 - 前端 `recordEntryUsage(entry)` 在每次 `openEntry` 打开入口时累加（含 `_blank`/`_layer` 菜单的打开分支）并静默 `saveWorkspace` 持久化；开始菜单「常用」分组按 `count` 降序、`last_opened_at` 降序显示最多 6 个入口。
 - 排除项：内置且自动打开的窗口不计入——`webos-settings`（OS 设置）与 `webos-official-news`（官网动态，仅超管进桌面时自动打开）。「常用」统计按管理员隔离，数据只用于本管理员的排序展示。
 - 其它应用没有直接写入使用统计的场景；统计键由 WebOS 前端自维护，服务端仅做白名单校验。
@@ -780,6 +782,7 @@ app(HookManager::class)->registerFilter(
 
 | 版本 | 日期 | 更新人 | 说明 |
 |---|---|---|---|
+| 2.1.137 | 2026-11-20 | CmsPro | **修复入口使用统计超限导致工作区整单保存失败（用户反馈「接口 `/admin/cmspro/webos/api/workspace` 返回 请求参数不合法：`preferences.usage_stats` 最多 80 项」）**：① 常量——`WorkspaceService` 新增公开常量 `USAGE_STATS_LIMIT = 200`（原 80）；② 服务层——`sanitizeUsageStats()` 取消 `array_slice` 前 80 条的插入顺序截断，改为先全量净化（键正则/时间格式/次数范围校验不变）再按 `last_opened_at` 降序、`count` 降序 `uasort` 后保留前 200 条（旧实现会随机丢弃常用入口且静默）；③ 验证——控制器 `'preferences.usage_stats'` 由硬编码 `'max:80'` 改为 `'max:' . WorkspaceService::USAGE_STATS_LIMIT`，与服务层同源不漂移，超限请求仍 422（请求体有界保护）；④ 前端——新增 `var USAGE_STATS_LIMIT = 200` 常量与 `trimUsageStats(statistics)`（`Object.keys` 按 `last_opened_at` 降序、`count` 降序排序取前 200），`recordEntryUsage()` 写回内存时裁剪，新增 `preferencesPayload()` 在 `saveWorkspace()` 提交前对 `usage_stats` 兜底裁剪（其它写入路径与历史超限数据一并覆盖）；⑤ 故障链说明——超限后 422 拒绝的是含 `desktop_items`/`taskbar_items`/`preferences` 的整单保存，桌面拖动与 OS 设置写入一并失效，且静默保存吞错，故表现为「改动丢失」；⑥ 测试——新增 `WorkspaceServiceTest::test_it_keeps_the_most_recent_usage_statistics_when_exceeding_limit`（205 条 → 200 条、最旧 5 条被丢弃）与 `WebosWorkspaceApiTest::test_workspace_api_accepts_usage_stats_up_to_shared_limit`（满额 200 条保存成功、201 条 422、JS 接线静态断言），278 用例 / 2799 断言全绿 |
 | 2.1.136 | 2026-11-20 | CmsPro | **OS 设置新增「界面主题」Tab，支持 Win11 浅色主题（用户需求「在OS设置中增加 界面主题Tab，可以对界面UI进行设置，并且新增 Win11的主题」）**：① 偏好——`WorkspaceService::DEFAULT_PREFERENCES` 在 `label_effect` 后新增 `'ui_theme' => 'default'`，`sanitizePreferences()` 逐键枚举校验（`in_array(..., ['default','win11'], true)`，非法回退 `default`）；② 验证——`Admin/WebosController::saveWorkspace()` 新增 `'preferences.ui_theme' => ['sometimes', 'in:default,win11']`（非法值 422 不落库，与 wallpaper 偏好同范式），并补齐既有缺陷 `'preferences.label_effect' => ['sometimes', 'in:none,shadow,shield']`（2.1.128 起该键漏写验证规则，`$validated` 丢键导致图标文字效果保存后刷新回退）；③ 前端——`osSettingsTabBarMarkup()` tabs 数组在 general 后插入 `['theme', 'fa-paint-brush', '界面主题']`，新增 `themeSectionMarkup(preferences)` 以 `settingsChoice` 渲染双卡片（默认主题 `fa-circle-o` / Win11 浅色 `fa-windows`），`renderWebosSettings()` 增加 `osSettingsTab === 'theme'` 分支，点击委托 `closest('[data-set-ui-theme]')` 走既有 `setWebosPreference('ui_theme', ...)` 通道，`applyWorkspacePreferences()` 同步 `root.dataset.uiTheme`（非 `win11` 一律写 `default`，前端兜底）；④ CSS——`webos.css` 末尾新增 `.webos-desktop[data-ui-theme="win11"]` 变量覆盖块：`--webos-primary:#005fb8`、`--webos-primary-dark:#0054a4`、`--webos-text:#1a1a1a`、`--webos-muted:rgba(0,0,0,0.66)`、`--webos-line:rgba(0,0,0,0.07)`、`--webos-soft:#f3f3f3`（Mica）、`--webos-surface:#f9f9f9`（Acrylic）、`--webos-taskbar:rgba(243,243,243,0.88)`、`--webos-shadow`、`--webos-radius:8px` 与 Segoe UI 字体栈（视觉规格取自 CmsproWin11os 应用 `win11.css` light 主题），`.app-window`/`.window-sidebar`/`.webos-taskbar` 浅色适配，任务栏五类按钮 `color: var(--webos-text)` 反转（浅色任务栏上原白字不可读）并新增通用 `.settings-hint` 样式；⑤ 测试——新增 `Tests/Feature/WebosUiThemeTest.php` 3 用例（`test_ui_theme_preference_roundtrip`：win11 保存 roundtrip + 非法值 422 不落库、`test_ui_theme_defaults_to_default`、`test_ui_theme_frontend_wiring` 静态接线断言），276 用例 / 2786 断言全绿；⑥ 产物——`public/apps/cmspro.webos/` 的 js/css 同步（部署产物不入库） |
 | 2.1.135 | 2026-11-19 | CmsPro | **后退/刷新/前进按钮仅多选项卡模式显示（用户需求「应用窗口中的 后退 刷新 前进 按钮，只有开启tab下显示；未开启不显示」）**：`windowMarkup()` 中后退（`data-window-action="history-back"`）与前进（`history-forward`）按钮的渲染条件由 `hasPageHost` 收紧为 `hasPageHost && windowTabsEnabled()`，与刷新按钮（`windowTabsEnabled()`）口径统一；`windowTabsEnabled()` 读 `preferences.window_tabs`，开关仅对新打开窗口生效，已打开窗口模式不变故无需运行时增删按钮；`syncWindowHistoryButtons()` 以 `querySelectorAll('.window-history')` 取按钮并有 `!buttons.length` 兜底，单页面窗口无按钮时零副作用；点击委托（`history-back`/`history-forward`）与 `stepWindowHistory()` 不变。测试新增 `WebosWindowHistoryButtonsTest::test_history_buttons_render_only_in_tabs_mode`（正则校验双条件渲染 + 反证无旧分支），273 用例 / 2768 断言全绿 |
 | 2.1.134 | 2026-11-19 | CmsPro | **状态栏日历面板加宽（用户反馈「点击时间弹出的日历宽度加宽 40px，现在的宽度『今天是……』换行了」）**：`.calendar-panel` 宽度由 312px 调整为 352px（+40px），修复「今天 YYYY年M月D日 星期X·农历…」副标题折行；面板任务栏四方位定位（`data-taskbar-position` top/left/right）规则不变；`.calendar-weekdays/.calendar-grid` 为 7 列 `minmax(0,1fr)` 网格，随面板等比例变宽，无需额外调整；测试仅断言 `.calendar-panel` 选择器存在，无宽度硬编码，272 用例 / 2762 断言全绿 |

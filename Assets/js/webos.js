@@ -62,6 +62,10 @@
     // 小工具卡片配色（2.1.109）：数据契约 color 仅接受以下枚举，其余（含缺省）按默认深蓝渲染
     var WIDGET_TONE_WHITELIST = ['red', 'orange', 'green', 'blue', 'purple'];
 
+    // 入口使用统计保留上限（2.1.137）：与服务端 WorkspaceService::USAGE_STATS_LIMIT 保持同一口径。
+    // 超出时前端按最近打开时间裁剪，避免全量请求体被服务端校验拒绝、连带桌面布局保存一并失败
+    var USAGE_STATS_LIMIT = 200;
+
     /** 当前桌面图标尺寸档位（非法值回退中图标默认档） */
     function desktopIconSize() {
         var size = state.workspace.preferences.icon_size;
@@ -982,6 +986,17 @@
         });
     }
 
+    /**
+     * 工作区保存载荷中的偏好（2.1.137）：使用统计按上限裁剪后再提交。
+     * 兜底历史超限数据（旧版本未裁剪时累计的键）与其它写入路径，
+     * 避免 preferences.usage_stats 超出服务端 max 校验导致整单 422、布局一并保存失败。
+     */
+    function preferencesPayload() {
+        var preferences = Object.assign({}, state.workspace.preferences);
+        preferences.usage_stats = trimUsageStats(preferences.usage_stats);
+        return preferences;
+    }
+
     function saveWorkspace(showMessage) {
         // 预设编辑会话中：编辑的是后台预设而非当前管理员工作区，改走预设保存接口
         if (state.presetEditing) {
@@ -1003,7 +1018,7 @@
                         group_title: item.group_title || '应用'
                     };
                 }),
-                preferences: state.workspace.preferences
+                preferences: preferencesPayload()
             }
         }).then(function (workspace) {
             // 丢弃晚到的旧响应：body 每次都从当前 state 全量构造，最新响应必然包含全部改动，
@@ -3148,6 +3163,32 @@
         return entry.folder_id ? 'folder:' + entry.folder_id : 'menu:' + entry.id;
     }
 
+    /**
+     * 使用统计裁剪（2.1.137）：按最近打开时间降序、次数降序保留前 USAGE_STATS_LIMIT 条。
+     * 统计键随打开过的入口持续增长（无 app_id 的菜单按 menu:id 单独计），超限后若不裁剪，
+     * 整个工作区保存请求会被服务端 `max` 校验拒绝，桌面布局与偏好也随之保存失败。
+     */
+    function trimUsageStats(statistics) {
+        if (!statistics || typeof statistics !== 'object' || Array.isArray(statistics)) {
+            return {};
+        }
+        var keys = Object.keys(statistics);
+        if (keys.length <= USAGE_STATS_LIMIT) {
+            return statistics;
+        }
+        keys.sort(function (left, right) {
+            var leftStatistic = statistics[left] || {};
+            var rightStatistic = statistics[right] || {};
+            return String(rightStatistic.last_opened_at || '').localeCompare(String(leftStatistic.last_opened_at || ''))
+                || Number(rightStatistic.count || 0) - Number(leftStatistic.count || 0);
+        });
+        var trimmed = {};
+        keys.slice(0, USAGE_STATS_LIMIT).forEach(function (key) {
+            trimmed[key] = statistics[key];
+        });
+        return trimmed;
+    }
+
     function recordEntryUsage(entry) {
         // OS 设置与官网动态窗口为内置入口且自动打开，不计入应用使用统计
         if (!entry || entry.id === 'webos-settings' || entry.id === 'webos-official-news') {
@@ -3163,7 +3204,7 @@
             count: Math.min(999999, Number(current.count || 0) + 1),
             last_opened_at: formatLocalDateTime(new Date())
         };
-        state.workspace.preferences.usage_stats = statistics;
+        state.workspace.preferences.usage_stats = trimUsageStats(statistics);
         renderStartMenu();
         saveWorkspace(false).catch(function () {});
     }

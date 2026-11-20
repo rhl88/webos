@@ -220,6 +220,45 @@ class WebosWorkspaceApiTest extends WebosTestCase
     }
 
     /**
+     * 入口使用统计上限（2.1.137）：原控制器硬编码 max:80 且前端不裁剪，菜单较多时统计键超限，
+     * 含桌面布局与偏好的整单保存被 422 拒绝；现上限与服务层常量同口径，前端写入/提交两处
+     * 均按最近打开时间裁剪，合法满额可正常保存，超限仍由验证层兜底拒绝。
+     */
+    public function test_workspace_api_accepts_usage_stats_up_to_shared_limit(): void
+    {
+        $this->actingAdmin();
+        $base = strtotime('2026-01-01 00:00:00');
+
+        $statistics = [];
+        for ($index = 1; $index <= WorkspaceService::USAGE_STATS_LIMIT; $index++) {
+            $statistics['menu:' . $index] = [
+                'count' => 1,
+                'last_opened_at' => date('Y-m-d H:i:s', $base + $index * 60),
+            ];
+        }
+
+        // 上限与服务层常量同口径：满额统计可正常保存（原硬编码 80 会在菜单较多时整单 422）
+        $this->putJson('/admin/cmspro/webos/api/workspace', [
+            'preferences' => ['usage_stats' => $statistics],
+        ])->assertOk()
+            ->assertJsonCount(WorkspaceService::USAGE_STATS_LIMIT, 'data.preferences.usage_stats');
+
+        // 超出上限仍由验证层拒绝（请求体有界保护）；正常路径前端提交前已按最近打开时间裁剪
+        $statistics['menu:overflow'] = ['count' => 1, 'last_opened_at' => date('Y-m-d H:i:s', $base)];
+        $this->putJson('/admin/cmspro/webos/api/workspace', [
+            'preferences' => ['usage_stats' => $statistics],
+        ])->assertStatus(422);
+
+        // 前端接线：写入与提交两处均裁剪，避免历史超限数据导致保存失败
+        $script = file_get_contents(dirname(__DIR__, 2) . '/Assets/js/webos.js');
+        $this->assertIsString($script);
+        $this->assertStringContainsString('var USAGE_STATS_LIMIT = ' . WorkspaceService::USAGE_STATS_LIMIT . ';', $script);
+        $this->assertStringContainsString('function trimUsageStats(statistics)', $script);
+        $this->assertStringContainsString('state.workspace.preferences.usage_stats = trimUsageStats(statistics);', $script);
+        $this->assertStringContainsString('preferences.usage_stats = trimUsageStats(preferences.usage_stats);', $script);
+    }
+
+    /**
      * 快捷访问菜单（2.1.129）：地球图标弹出菜单的菜单项按端持久化于 preferences.quick_access，
      * 后端与前端同口径净化——非法链接/空名称整项丢弃、每端最多 8 项；
      * 出厂默认后台含「用户中心」，用户端仅「访问首页」（用户本身已在用户中心）。

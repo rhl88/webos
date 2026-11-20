@@ -49,6 +49,11 @@ class WorkspaceService
         ],
     ];
 
+    /** 入口使用统计保留上限（2.1.137）：与前端 USAGE_STATS_LIMIT 同一口径。
+     *  超出时按最近打开时间裁剪（而非整单拒绝），统计键随打开过的菜单持续增长，
+     *  上限过小会让保存请求连同桌面布局一起失败。 */
+    public const USAGE_STATS_LIMIT = 200;
+
     /** 后台预设的用户端桌面在 workspaces 表中的占位归属（terminal=preset + 用户 ID 0） */
     protected const PRESET_TERMINAL = 'preset';
 
@@ -920,7 +925,7 @@ class WorkspaceService
         }
 
         $sanitized = [];
-        foreach (array_slice($statistics, 0, 80, true) as $key => $statistic) {
+        foreach ($statistics as $key => $statistic) {
             if (
                 ! is_string($key)
                 || ! preg_match('/^[A-Za-z0-9:._-]{1,100}$/', $key)
@@ -938,6 +943,15 @@ class WorkspaceService
                 'count' => min(999999, max(1, (int) ($statistic['count'] ?? 0))),
                 'last_opened_at' => $lastOpenedAt,
             ];
+        }
+
+        // 超限裁剪（2.1.137）：按最近打开时间降序、次数降序保留前 USAGE_STATS_LIMIT 条，
+        // 丢弃最久未用的统计，而不是按插入顺序截断（旧实现会随机丢掉常用入口且不报错）
+        if (count($sanitized) > self::USAGE_STATS_LIMIT) {
+            uasort($sanitized, static function (array $left, array $right): int {
+                return [$right['last_opened_at'], $right['count']] <=> [$left['last_opened_at'], $left['count']];
+            });
+            $sanitized = array_slice($sanitized, 0, self::USAGE_STATS_LIMIT, true);
         }
 
         return $sanitized;
