@@ -8540,10 +8540,13 @@
     }
 
     function applicationIconMarkup(app, className) {
-        if (isImageIcon(app.icon_url)) {
+        // 图片图标源：icon_url 为服务端解析结果；历史数据的 icon 也可能直接存图片路径
+        // （如 /uploads/2026/06/26/xxx.png），此前只认 icon_url，这类应用会回落成空白字体图标
+        var imageSource = isImageIcon(app.icon_url) ? app.icon_url : (isImageIcon(app.icon) ? app.icon : '');
+        if (imageSource) {
             // is-app-icon 统一在源头声明：所有调用位的图片图标共享等比缩放约束，避免新渲染位遗漏
             return '<span class="' + className + ' is-app-icon"><img data-app-icon-primary src="'
-                + escapeHtml(app.icon_url) + '" decoding="async" alt="">'
+                + escapeHtml(imageSource) + '" decoding="async" alt="">'
                 + appIconFallbackMarkup(app) + '</span>';
         }
         return '<span class="' + className + '"><i class="'
@@ -8562,9 +8565,9 @@
     }
 
     function cardIconMarkup(app, className) {
-        // 更新列表等不含图标数据的记录：合并本地目录应用的图标——icon_url 由服务端
-        // 按全局规则 icon.svg → icon.png 解析，catalog.icon 为 manifest.json 的 icon 兜底
-        if (!app.icon_url && !app.icon) {
+        // 缺服务端解析图标（更新列表等记录只有 icon 无 icon_url）时合并本地目录应用：
+        // icon_url 由服务端按全局规则 icon.svg → icon.png 解析，catalog.icon 为 manifest.json 的 icon 兜底
+        if (!app.icon_url) {
             var catalogApp = findCatalogApp(app.app_id);
             if (catalogApp) {
                 app = Object.assign({}, catalogApp, app);
@@ -9292,7 +9295,9 @@
             links.push('作者 ' + escapeHtml(app.author));
         }
 
-        return '<div class="market-detail-header">' + applicationIconMarkup(app, 'market-detail-icon')
+        // 图标与列表卡片同源（2.1.140）：「应用更新」条目只有 icon 没有 icon_url，
+        // cardIconMarkup 会合并本地目录应用拿到服务端解析好的图标，避免详情头部只剩默认立方体
+        return '<div class="market-detail-header">' + cardIconMarkup(app, 'market-detail-icon')
             + '<div class="market-detail-identity"><h2>' + escapeHtml(app.name || app.app_id || '应用详情') + '</h2>'
             + (links.length ? '<p>' + links.join('<i>·</i>') + '</p>' : '') + '</div>'
             + '<div class="market-detail-actions">' + localDetailActionMarkup(app, source) + '</div></div>';

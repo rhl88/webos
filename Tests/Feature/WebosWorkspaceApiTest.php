@@ -2281,7 +2281,9 @@ class WebosWorkspaceApiTest extends WebosTestCase
         $this->assertStringContainsString('function dropUpdatedApp(appId)', $script);
 
         // 更新列表等无图标数据的记录：合并目录应用图标（icon_url 全局规则 icon.svg→icon.png，icon 为 manifest 兜底）
-        $this->assertStringContainsString('if (!app.icon_url && !app.icon) {' . "\n" . '            var catalogApp = findCatalogApp(app.app_id);', $script);
+        // 2.1.140 起只按 icon_url 判断：更新条目通常有 icon（类名或图片路径）但无 icon_url，
+        // 旧条件 `!app.icon_url && !app.icon` 会跳过合并，详情头部回落成默认立方体
+        $this->assertStringContainsString('if (!app.icon_url) {' . "\n" . '            var catalogApp = findCatalogApp(app.app_id);', $script);
         $this->assertStringContainsString('app = Object.assign({}, catalogApp, app);', $script);
 
         // 底层窗口 iframe 点击聚焦：未聚焦窗口 iframe 覆盖透明遮罩，点击遮罩冒泡聚焦窗口后移除
@@ -2375,6 +2377,16 @@ class WebosWorkspaceApiTest extends WebosTestCase
         $this->assertStringContainsString("+ (source === 'updates' ? localDetailUpdateNotesMarkup(app) : '')", $script);
         $this->assertStringContainsString("marketDetailSectionMarkup('fa-history', '本次更新'", $script);
         $this->assertStringContainsString("var versions = Array.isArray(app.available_versions) ? app.available_versions : [];", $script);
+
+        // 2.1.140：更新详情图标与列表同源；icon 为图片路径的历史数据也按图片渲染
+        $this->assertStringContainsString(
+            "return '<div class=\"market-detail-header\">' + cardIconMarkup(app, 'market-detail-icon')",
+            $script
+        );
+        $this->assertStringContainsString(
+            "var imageSource = isImageIcon(app.icon_url) ? app.icon_url : (isImageIcon(app.icon) ? app.icon : '');",
+            $script
+        );
 
         // 样式：主题色「详情」链接（2.1.127 起详情改为弹窗展示，行内展开容器样式已移除）
         $stylesheet = file_get_contents(dirname(__DIR__, 2) . '/Assets/css/webos.css');
