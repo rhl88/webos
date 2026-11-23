@@ -9258,7 +9258,27 @@
             + localDetailHeaderMarkup(app, source)
             + localDetailMetaMarkup(app, source)
             + marketDetailDescMarkup(app)
+            + (source === 'updates' ? localDetailUpdateNotesMarkup(app) : '')
             + '</div>';
+    }
+
+    /**
+     * 「本次更新」区块（2.1.139）：应用更新来源的详情页在应用介绍下方展示待更新版本的完整
+     * 更新说明，按 Markdown 渲染（复用升级弹窗的 upgradeNotesMarkdown，失败回退纯文本）。
+     * 数据源为更新检查接口的 changelog；仅有 available_versions 时取首个版本（升级目标）的说明。
+     */
+    function localDetailUpdateNotesMarkup(app) {
+        var changelog = String(app.changelog || '');
+        if (!changelog.trim()) {
+            var versions = Array.isArray(app.available_versions) ? app.available_versions : [];
+            changelog = String((versions[0] && versions[0].changelog) || '');
+        }
+        if (!changelog.trim()) {
+            return '';
+        }
+
+        return marketDetailSectionMarkup('fa-history', '本次更新', '<div class="market-detail-desc doc-markdown-body">'
+            + upgradeNotesMarkdown(changelog) + '</div>');
     }
 
     /** 本地详情头部：图标走全局应用图标链（icon_url → icon 字段），操作按钮复用安装/更新点击委托 */

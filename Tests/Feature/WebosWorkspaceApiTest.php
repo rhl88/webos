@@ -2370,6 +2370,12 @@ class WebosWorkspaceApiTest extends WebosTestCase
         $this->assertStringContainsString('max-width: 700px;', $style);
         $this->assertStringContainsString('text-overflow: ellipsis;', $style);
 
+        // 2.1.139：应用更新来源的详情页在应用介绍下方渲染「本次更新」Markdown 说明
+        $this->assertStringContainsString('function localDetailUpdateNotesMarkup(app)', $script);
+        $this->assertStringContainsString("+ (source === 'updates' ? localDetailUpdateNotesMarkup(app) : '')", $script);
+        $this->assertStringContainsString("marketDetailSectionMarkup('fa-history', '本次更新'", $script);
+        $this->assertStringContainsString("var versions = Array.isArray(app.available_versions) ? app.available_versions : [];", $script);
+
         // 样式：主题色「详情」链接（2.1.127 起详情改为弹窗展示，行内展开容器样式已移除）
         $stylesheet = file_get_contents(dirname(__DIR__, 2) . '/Assets/css/webos.css');
         $this->assertIsString($stylesheet);
