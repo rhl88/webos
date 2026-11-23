@@ -2353,6 +2353,23 @@ class WebosWorkspaceApiTest extends WebosTestCase
         // 升级弹窗高度随内容自适应（固定 450px 会裁剪完整日志）
         $this->assertStringContainsString("area: ['500px', 'auto'],", $script);
 
+        // 2.1.138：应用详情「版本记录」更新说明单行展示 + 详情弹层 Markdown 渲染
+        $this->assertStringContainsString('function marketDetailVersionsMarkup(app)', $script);
+        $this->assertStringContainsString('var summary = changelog.replace(/\s+/g, \' \').trim();', $script);
+        $this->assertStringContainsString("'<span class=\"market-version-notes-text\">' + escapeHtml(summary || '-') + '</span>'", $script);
+        $this->assertStringContainsString('data-market-version-index="', $script);
+        $this->assertStringContainsString('function openMarketVersionNotes(appId, index)', $script);
+        $this->assertStringContainsString('var app = state.marketApps.get(appId);', $script);
+        $this->assertStringContainsString('+ upgradeNotesMarkdown(changelog) + ', $script);
+        $this->assertStringContainsString("var versionNotes = event.target.closest('[data-market-version-notes]');", $script);
+        $this->assertStringContainsString('openMarketVersionNotes(versionNotes.dataset.marketVersionNotes,', $script);
+        // 单行省略样式：最大宽度 700px + 省略号
+        $style = file_get_contents(dirname(__DIR__, 2) . '/Assets/css/webos.css');
+        $this->assertIsString($style);
+        $this->assertStringContainsString('.market-version-notes-text {', $style);
+        $this->assertStringContainsString('max-width: 700px;', $style);
+        $this->assertStringContainsString('text-overflow: ellipsis;', $style);
+
         // 样式：主题色「详情」链接（2.1.127 起详情改为弹窗展示，行内展开容器样式已移除）
         $stylesheet = file_get_contents(dirname(__DIR__, 2) . '/Assets/css/webos.css');
         $this->assertIsString($stylesheet);

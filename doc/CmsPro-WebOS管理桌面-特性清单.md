@@ -1,7 +1,7 @@
 # CmsPro WebOS 管理桌面 · 特性清单
 
-> 文档版本：2.1.137 | 更新日期：2026-11-20
-> 应用版本：2.1.137 | 应用 ID：`cmspro.webos`
+> 文档版本：2.1.138 | 更新日期：2026-11-23
+> 应用版本：2.1.138 | 应用 ID：`cmspro.webos`
 
 ## 一、应用定位
 
@@ -196,6 +196,7 @@ CmsproWebos/
 
 | 版本 | 日期 | 说明 |
 |---|---|---|
+| 2.1.138 | 2026-11-23 | **应用详情版本记录更新说明单行展示 + 详情弹层**（用户需求「版本记录的更新说明只需要显示 1 行（最大宽度 700px）超出隐藏，并出现详情，点击详情弹出层查看详细更新说明（需渲染 Markdown）」）：`marketDetailVersionsMarkup()` 更新说明单元格改为 `<span class="market-version-notes-text">` 单行摘要（`changelog.replace(/\s+/g, ' ').trim()` 折叠换行）+「详情」链接（`data-market-version-notes` 应用标识 + `data-market-version-index` 版本下标）；新增 `openMarketVersionNotes(appId, index)` 从 `state.marketApps` 取该版本 changelog，复用 `upgradeNotesMarkdown()`（全局 marked）渲染到 layui 弹层，尺寸 `560px × auto`、内容区 `max-height:60vh` 滚动；点击委托在应用中心 click 处理器（`data-market-version-notes`）；CSS 新增 `.market-version-notes-text`（`max-width:700px` + `text-overflow:ellipsis` + `white-space:nowrap`）与 `.market-version-notes-toggle`；顺带补齐 `normalizePreferences()` 默认对象缺失的 `ui_theme: 'default'`（2.1.136 遗漏）；测试在应用中心用例追加 8 条 JS 接线与 3 条 CSS 断言，278 用例 / 2812 断言全绿 |
 | 2.1.137 | 2026-11-20 | **修复入口使用统计超限导致工作区整单保存失败**（用户反馈「接口 `/admin/cmspro/webos/api/workspace` 返回 请求参数不合法：`preferences.usage_stats` 最多 80 项」）：根因是统计键随打开过的入口持续增长（无 `app_id` 的菜单按 `menu:id` 计）、上限 80 且前端不裁剪，超限后每次全量保存都被验证层 422 拒绝，桌面图标拖动/OS 设置等全部写入连带失效，且 `saveWorkspace` 静默吞错使改动看似丢失；`WorkspaceService` 新增公开常量 `USAGE_STATS_LIMIT = 200`，`sanitizeUsageStats()` 先全量净化再按 `last_opened_at` 降序、`count` 降序裁剪（原实现 `array_slice` 按插入顺序截断前 80 条，会随机丢弃常用入口）；控制器 `preferences.usage_stats` 规则改为 `'max:' . WorkspaceService::USAGE_STATS_LIMIT`；前端新增 `USAGE_STATS_LIMIT` 常量与 `trimUsageStats()`，`recordEntryUsage` 写入后裁剪、`saveWorkspace` 经 `preferencesPayload()` 提交前兜底裁剪；新增服务层裁剪用例（205 条 → 保留最近 200、最旧被丢弃）与 API 用例（满额 200 条保存成功、201 条仍 422、前端接线静态断言），278 用例 / 2799 断言全绿 |
 | 2.1.136 | 2026-11-20 | **OS 设置新增「界面主题」Tab，支持 Win11 浅色主题**（用户需求「在OS设置中增加 界面主题Tab，可以对界面UI进行设置，并且新增 Win11的主题」）：`ui_theme` 偏好加入 `DEFAULT_PREFERENCES` 白名单（`default`/`win11`，非法值服务层兜底回退 `default`）与控制器保存验证（`in:default,win11`，非法值 422 不落库）；顺带修复既有缺陷——`preferences.label_effect`（2.1.128 图标文字效果）一直缺失控制器验证规则导致保存后刷新回退，本次补上 `in:none,shadow,shield` 规则；前端 OS 设置 Tab 栏新增「界面主题」（`fa-paint-brush` 图标，位于基本设置之后），`themeSectionMarkup()` 以 `settingsChoice` 双卡片选择，`applyWorkspacePreferences()` 同步 `root.dataset.uiTheme`；CSS 末尾新增 `.webos-desktop[data-ui-theme="win11"]` 变量覆盖块（12 个 `--webos-*` 变量 + Segoe UI 字体栈 + 任务栏五类按钮文字反转）；新增 `WebosUiThemeTest` 3 用例（偏好 roundtrip + 默认值 + 前端接线静态断言），276 用例 / 2786 断言全绿 |
 | 2.1.135 | 2026-11-19 | **后退/刷新/前进按钮仅多选项卡模式显示**（用户需求「应用窗口中的 后退 刷新 前进 按钮，只有开启tab下显示；未开启不显示」）：`windowMarkup()` 中 `history-back` / `history-forward` 渲染条件由 `hasPageHost` 收紧为 `hasPageHost && windowTabsEnabled()`，与刷新按钮条件统一——未开启多选项卡的窗口标题栏不渲染这三个按钮；`syncWindowHistoryButtons()` 对按钮缺失有 `!buttons.length` 兜底；多选项卡窗口内显隐仍按 iframe 同源性判定。新增 `WebosWindowHistoryButtonsTest::test_history_buttons_render_only_in_tabs_mode` 用例（273 用例 / 2768 断言全绿） |

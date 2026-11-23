@@ -9106,20 +9106,52 @@
         }
     }
 
-    /** 版本记录表格：版本号、更新说明、包大小、发布时间 */
+    /**
+     * 版本记录表格：版本号、更新说明、包大小、发布时间（2.1.138）
+     * 更新说明单行展示（最大宽度 700px，超出省略），完整内容通过「详情」弹层按 Markdown 渲染。
+     */
     function marketDetailVersionsMarkup(app) {
         var versions = Array.isArray(app.versions) ? app.versions : [];
         if (!versions.length) {
             return '';
         }
 
+        var appId = String(app.app_id || '');
         return marketDetailSectionMarkup('fa-history', '版本记录', '<table class="market-detail-versions">'
             + '<thead><tr><th>版本</th><th>更新说明</th><th>大小</th><th>发布时间</th></tr></thead><tbody>'
-            + versions.map(function (item) {
-                return '<tr><td>v' + escapeHtml(item.version || '-') + '</td><td>' + escapeHtml(item.changelog || '-')
+            + versions.map(function (item, index) {
+                var changelog = String(item.changelog || '');
+                // 换行压缩为空格：单行展示只保留摘要，完整换行结构在详情弹层中渲染
+                var summary = changelog.replace(/\s+/g, ' ').trim();
+                return '<tr><td>v' + escapeHtml(item.version || '-') + '</td><td class="market-version-notes">'
+                    + '<span class="market-version-notes-text">' + escapeHtml(summary || '-') + '</span>'
+                    + (summary && appId ? '<a href="javascript:;" class="market-version-notes-toggle"'
+                        + ' data-market-version-notes="' + escapeHtml(appId) + '"'
+                        + ' data-market-version-index="' + index + '">详情</a>' : '')
                     + '</td><td>' + formatFileSize(item.package_size) + '</td><td>'
                     + escapeHtml(item.create_time || '-') + '</td></tr>';
             }).join('') + '</tbody></table>');
+    }
+
+    /**
+     * 版本记录「更新说明」详情弹层（2.1.138）：数据源为详情页缓存（state.marketApps），
+     * Markdown 渲染复用升级弹窗的 upgradeNotesMarkdown（全局 marked + 失败回退纯文本）。
+     */
+    function openMarketVersionNotes(appId, index) {
+        var app = state.marketApps.get(appId);
+        var version = app && Array.isArray(app.versions) ? app.versions[index] : null;
+        var changelog = version ? String(version.changelog || '') : '';
+        if (!changelog.trim()) {
+            return;
+        }
+
+        layuiLayer().open({
+            type: 1,
+            title: '更新详情「' + escapeHtml(app.name || appId) + '」v' + escapeHtml(String(version.version || '-')),
+            area: ['560px', 'auto'],
+            content: '<div class="doc-markdown-body" style="padding:15px;max-height:60vh;overflow-y:auto;">'
+                + upgradeNotesMarkdown(changelog) + '</div>'
+        });
     }
 
     /** 详情操作按钮：沿用列表卡片的 data-upgrade-id / data-install-id / data-purchase-id 点击委托 */
@@ -15281,6 +15313,13 @@
                 refreshMarketHomeRandom(homeRefresh);
             }
 
+            // 版本记录「更新说明」详情（2.1.138）：弹出层按 Markdown 渲染该版本完整更新说明
+            var versionNotes = event.target.closest('[data-market-version-notes]');
+            if (versionNotes) {
+                openMarketVersionNotes(versionNotes.dataset.marketVersionNotes,
+                    Number(versionNotes.dataset.marketVersionIndex));
+            }
+
             // 市场卡片整卡可点击进入详情，卡内的安装/更新按钮与链接保持自身行为
             var marketDetail = event.target.closest('[data-market-detail]');
             if (marketDetail && !event.target.closest('button, a, input, select, label')) {
@@ -15808,6 +15847,7 @@
             wallpaper_url: '',
             icon_size: 'medium',
             label_effect: 'none',
+            ui_theme: 'default',
             window_tabs: false,
             tab_reload: false,
             menu_open_launcher: false,

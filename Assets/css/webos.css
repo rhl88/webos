@@ -4582,6 +4582,26 @@ textarea:focus-visible,
     color: #4d5f74;
 }
 
+/* 版本记录更新说明（2.1.138）：单行展示，最大宽度 700px，超出省略；完整内容走「详情」弹层 */
+.market-version-notes-text {
+    display: inline-block;
+    max-width: 700px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    vertical-align: middle;
+}
+
+.market-version-notes-toggle {
+    margin-left: 8px;
+    color: var(--webos-blue);
+    white-space: nowrap;
+}
+
+.market-version-notes-toggle:hover {
+    text-decoration: underline;
+}
+
 .app-grid {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
