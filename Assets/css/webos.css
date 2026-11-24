@@ -10,6 +10,8 @@
     --webos-soft: #f4f7fa;
     --webos-surface: rgba(255, 255, 255, 0.96);
     --webos-taskbar: rgba(8, 38, 67, 0.90);
+    /* 任务栏通知角标描边（2.1.142）：角标与任务栏底色之间的间隙圈，跟随任务栏色调 */
+    --webos-badge-ring: #153b5d;
     --webos-shadow: 0 18px 56px rgba(9, 37, 68, 0.24);
     --webos-radius: 12px;
     --webos-focus: #0b83e5;
@@ -1209,7 +1211,8 @@ textarea:focus-visible,
     min-width: 17px;
     height: 17px;
     padding: 0 4px;
-    border: 2px solid #153b5d;
+    /* 描边为角标与任务栏底色的间隙圈（2.1.142 变量化）：默认主题深蓝、Win11 浅色跟随浅任务栏 */
+    border: 2px solid var(--webos-badge-ring);
     border-radius: 9px;
     color: #fff;
     background: #ef5a62;
@@ -8186,6 +8189,8 @@ textarea.webos-widget-input {
     --webos-soft: #f3f3f3;
     --webos-surface: #f9f9f9;
     --webos-taskbar: rgba(243, 243, 243, 0.88);
+    /* Win11 浅色任务栏：角标间隙圈跟随浅色底（2.1.142，原深蓝描边在浅任务栏上呈黑圈） */
+    --webos-badge-ring: #f3f3f3;
     --webos-shadow: 0 16px 44px rgba(0, 0, 0, 0.22);
     --webos-radius: 8px;
     font-family: "Segoe UI Variable Display", "Segoe UI", "Microsoft YaHei UI", "Microsoft YaHei", -apple-system, "PingFang SC", Arial, sans-serif;

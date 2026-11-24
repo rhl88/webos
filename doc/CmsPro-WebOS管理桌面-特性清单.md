@@ -1,7 +1,7 @@
 # CmsPro WebOS 管理桌面 · 特性清单
 
-> 文档版本：2.1.141 | 更新日期：2026-11-24
-> 应用版本：2.1.141 | 应用 ID：`cmspro.webos`
+> 文档版本：2.1.142 | 更新日期：2026-11-24
+> 应用版本：2.1.142 | 应用 ID：`cmspro.webos`
 
 ## 一、应用定位
 
@@ -196,6 +196,7 @@ CmsproWebos/
 
 | 版本 | 日期 | 说明 |
 |---|---|---|
+| 2.1.142 | 2026-11-24 | **修复 Win11 浅色主题下任务栏通知角标呈黑圈**（用户反馈「界面主题调整为 Win11 浅色时，状态栏铃铛右上方的数字一圈是黑色的，是不对的」）：根因是 `.notification-badge` 硬编码 `border: 2px solid #153b5d`——该描边是角标与默认深色任务栏（`rgba(8,38,67,0.90)`）之间的间隙圈，Win11 主题任务栏换为浅色 Mica（`rgba(243,243,243,0.88)`）后未同步，深蓝描边呈黑圈；修复：`:root` 新增 `--webos-badge-ring: #153b5d`（默认主题行为不变），`.notification-badge` 描边改 `var(--webos-badge-ring)`，win11 变量覆盖块新增 `--webos-badge-ring: #f3f3f3`（跟随浅任务栏底色）；桌面图标更新角标 `.desktop-update-badge` 无描边不受影响；`WebosUiThemeTest` 前端接线用例追加 3 条断言，278 用例 / 2825 断言全绿 |
 | 2.1.141 | 2026-11-24 | **应用窗口标题栏显示应用版本号**（用户需求「打开应用窗口，在应用的名字右上角用小字显示当前应用的版本」）：`windowIdentity()` 新增 `version` 键（`findApplication(entry.app_id).version`，空值返回 `''`）；`windowMarkup()` 应用名后条件渲染 `<span class="window-app-version">v{version}</span>`（上标小字，位于既有菜单名副标题之前）；CSS 新增 `.window-app-version`（`margin-left:4px;font-size:11px;color:var(--webos-muted);vertical-align:super`）；数据链无需后端改动——`applicationListByAppIds()`（WebosController 913 行）本就返回 `version` 字段；特殊窗口（应用中心/OS 设置等）走固定 identity 无 version 键自然不渲染；窗口品牌区固定显示应用身份（切换选项卡不重写 window-brand），版本随窗口创建时固定，应用更新后重开窗口即刷新；既有窗口品牌用例追加 4 条接线断言，278 用例 / 2822 断言全绿 |
 | 2.1.140 | 2026-11-23 | **修复「应用更新」应用详情头部图标缺失**（用户反馈「应用更新→应用详情中的应用图标没有显示，只有默认 `fa fa-cube`」）：根因两层——① `localDetailHeaderMarkup()` 用 `applicationIconMarkup()`，该函数只认服务端解析的 `icon_url`，而更新检查接口条目只有 `icon`；② `cardIconMarkup()` 的目录合并条件为 `!app.icon_url && !app.icon`，更新条目通常带 `icon`（类名或图片路径）故跳过合并，拿不到本地目录的 `icon_url`。修复：`localDetailHeaderMarkup()` 改用 `cardIconMarkup()`（与列表卡片同源）；`cardIconMarkup()` 合并条件改为仅 `!app.icon_url`；`applicationIconMarkup()` 图片源改为 `icon_url` 优先、`icon` 为图片路径（`isImageIcon`）时回退，覆盖 `apps.icon` 存 `/uploads/...png` 的历史数据（旧逻辑被 `safeIcon` 清洗成无效类名，图标完全空白）；同步修正既有断言并新增 2 条接线断言，278 用例 / 2818 断言全绿 |
 | 2.1.139 | 2026-11-23 | **应用更新详情新增「本次更新」更新说明（Markdown 渲染）**（用户需求「应用中心→应用更新→应用详情应该可以显示更新信息；需要在应用介绍下面增加本次更新的详细信息；需要渲染 markdown」）：`localDetailMarkup()` 在 `marketDetailDescMarkup()`（应用介绍）之后追加 `source === 'updates'` 时的「本次更新」区块；新增 `localDetailUpdateNotesMarkup(app)` 取 `app.changelog`（更新检查接口 `check-updates` 返回字段），为空时回退 `available_versions[0].changelog`（升级目标版本），渲染复用 `upgradeNotesMarkdown()`（全局 marked + 失败回退纯文本），容器 `market-detail-desc doc-markdown-body` 继承 Markdown 排版样式；均无说明时不渲染区块；非「应用更新」来源的详情不受影响；应用中心用例追加 4 条接线断言，278 用例 / 2816 断言全绿 |

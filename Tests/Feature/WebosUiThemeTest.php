@@ -69,5 +69,10 @@ class WebosUiThemeTest extends WebosTestCase
         $this->assertStringContainsString('--webos-taskbar: rgba(243, 243, 243, 0.88);', $css);
         // 浅色任务栏上任务栏文字必须反转，否则白字不可读
         $this->assertStringContainsString('.webos-desktop[data-ui-theme="win11"] .taskbar-button,', $css);
+
+        // 2.1.142：通知角标间隙圈变量化——默认深蓝、Win11 浅色跟随浅任务栏（原硬编码深蓝在浅任务栏上呈黑圈）
+        $this->assertStringContainsString('border: 2px solid var(--webos-badge-ring);', $css);
+        $this->assertStringContainsString('--webos-badge-ring: #153b5d;', $css);
+        $this->assertStringContainsString('--webos-badge-ring: #f3f3f3;', $css);
     }
 }
