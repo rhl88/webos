@@ -84,6 +84,13 @@ class WorkspaceService
      */
     protected const THEME_OVERRIDE_RULES = [
         'accent' => '/^#[0-9a-f]{6}$/',
+        // 色调细节（2.1.151）：界面文字、次要文字、链接/信息色、文件夹图标色、分隔线，
+        // 与 accent 同为十六进制色值规则，直接映射对应 --webos-* 变量
+        'text' => '/^#[0-9a-f]{6}$/',
+        'muted' => '/^#[0-9a-f]{6}$/',
+        'blue' => '/^#[0-9a-f]{6}$/',
+        'folder' => '/^#[0-9a-f]{6}$/',
+        'line' => '/^#[0-9a-f]{6}$/',
         'taskbar_height' => [40, 64],
         'window_radius' => [0, 16],
         'taskbar_opacity' => [50, 100],

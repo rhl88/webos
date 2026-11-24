@@ -67,12 +67,17 @@
     var USAGE_STATS_LIMIT = 200;
 
     /**
-     * 界面主题细节调整（2.1.144）：8 项可调渲染细节的字段定义，与服务端
+     * 界面主题细节调整（2.1.144/2.1.151）：13 项可调渲染细节的字段定义，与服务端
      * WorkspaceService::THEME_OVERRIDE_RULES 同口径（色值正则/数值区间）。
-     * accent 色值统一小写；其余为数值区间，越界时 clamp。
+     * color 项（accent/text/muted/blue/folder/line）色值统一小写；range 为数值区间，越界时 clamp。
      */
     var THEME_FIELDS = [
         { key: 'accent', label: '主题强调色', type: 'color' },
+        { key: 'text', label: '界面文字色', type: 'color' },
+        { key: 'muted', label: '次要文字色', type: 'color' },
+        { key: 'blue', label: '链接/信息色', type: 'color' },
+        { key: 'folder', label: '文件夹图标色', type: 'color' },
+        { key: 'line', label: '分隔线颜色', type: 'color' },
         { key: 'taskbar_height', label: '任务栏高度', type: 'range', min: 40, max: 64, step: 1, unit: 'px' },
         { key: 'window_radius', label: '窗口圆角', type: 'range', min: 0, max: 16, step: 1, unit: 'px' },
         { key: 'taskbar_opacity', label: '任务栏不透明度', type: 'range', min: 50, max: 100, step: 1, unit: '%' },
@@ -82,11 +87,18 @@
         { key: 'wallpaper_dim', label: '壁纸遮罩暗度', type: 'range', min: 0, max: 60, step: 5, unit: '%' }
     ];
 
-    /** 内置主题渲染基准（2.1.144）：accent=强调色、taskbar=任务栏底色 RGB 与默认不透明度、
-     *  radius=默认窗口圆角、shadow=默认阴影（rgba 供强度系数重算）——与 webos.css :root/win11 块同源 */
+    /** 内置主题渲染基准（2.1.144/2.1.151）：accent=强调色、text/muted/blue/folder/line=色调细节
+     *  基准色（win11 的 muted/line 在 CSS 中为 rgba，此处以最接近的 hex 供色值控件显示）、
+     *  taskbar=任务栏底色 RGB 与默认不透明度、radius=默认窗口圆角、shadow=默认阴影
+     *  （rgba 供强度系数重算）——与 webos.css :root/win11 块同源 */
     var THEME_BASE_DEFAULTS = {
         default: {
             accent: '#16baaa',
+            text: '#152238',
+            muted: '#73829a',
+            blue: '#198cf0',
+            folder: '#f0a11a',
+            line: '#dce5ee',
             taskbar_rgb: '8,38,67',
             taskbar_opacity: 90,
             window_radius: 12,
@@ -94,6 +106,11 @@
         },
         win11: {
             accent: '#005fb8',
+            text: '#1a1a1a',
+            muted: '#a3a3a3',
+            blue: '#005fb8',
+            folder: '#f0a11a',
+            line: '#ededed',
             taskbar_rgb: '243,243,243',
             taskbar_opacity: 88,
             window_radius: 8,
@@ -223,7 +240,11 @@
             var source = draft[field.key] !== undefined ? draft[field.key]
                 : resolved.overrides[field.key];
             if (field.type === 'color') {
-                values[field.key] = normalizeThemeColor(source, resolved.baseDefaults.accent);
+                // 各色彩项以自身基础默认值为回退（2.1.151 起每键在 THEME_BASE_DEFAULTS 有定义）
+                values[field.key] = normalizeThemeColor(
+                    source,
+                    resolved.baseDefaults[field.key] || resolved.baseDefaults.accent
+                );
                 return;
             }
             values[field.key] = clampThemeNum(source, field.min, field.max,
@@ -263,6 +284,26 @@
             root.style.removeProperty('--webos-primary-dark');
             root.style.removeProperty('--webos-focus');
         }
+        // 色调细节（2.1.151）：界面文字/次要文字/链接信息色/文件夹图标色/分隔线，
+        // 直接映射对应 --webos-* 变量（未覆盖键移除内联值回退 CSS 主题默认）
+        var themeColorVars = {
+            text: '--webos-text',
+            muted: '--webos-muted',
+            blue: '--webos-blue',
+            folder: '--webos-folder',
+            line: '--webos-line'
+        };
+        Object.keys(themeColorVars).forEach(function (colorKey) {
+            var colorValue = themeOverrideValue(colorKey);
+            if (colorValue !== undefined) {
+                root.style.setProperty(
+                    themeColorVars[colorKey],
+                    normalizeThemeColor(colorValue, base[colorKey])
+                );
+            } else {
+                root.style.removeProperty(themeColorVars[colorKey]);
+            }
+        });
         var height = themeOverrideValue('taskbar_height');
         if (height !== undefined) {
             height = clampThemeNum(height, 40, 64, 50);

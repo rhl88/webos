@@ -70,6 +70,12 @@ class WebosUiThemeTest extends WebosTestCase
         $this->assertStringContainsString('function createThemeFromCurrent(', $script);
         $this->assertStringContainsString('function importThemeFile(', $script);
         $this->assertStringContainsString("payload.type !== 'cmspro-webos-theme'", $script);
+        // 色调细节（2.1.151）：5 个新色彩项映射对应 CSS 变量（text/muted/blue/folder/line）
+        $this->assertStringContainsString("text: '--webos-text'", $script);
+        $this->assertStringContainsString("muted: '--webos-muted'", $script);
+        $this->assertStringContainsString("blue: '--webos-blue'", $script);
+        $this->assertStringContainsString("folder: '--webos-folder'", $script);
+        $this->assertStringContainsString("line: '--webos-line'", $script);
         // 恢复默认（2.1.147）：细节调整标题行右侧按钮，清草稿+清启用主题覆盖值
         $this->assertStringContainsString("closest('[data-theme-reset]')", $script);
         $this->assertStringContainsString('function resetThemeTune(', $script);
@@ -117,6 +123,13 @@ class WebosUiThemeTest extends WebosTestCase
             'base' => 'win11',
             'overrides' => [
                 'accent' => '#ABC123',
+                // 色调细节（2.1.151）：界面文字/次要文字/链接信息/文件夹/分隔线色值
+                'text' => '#1a1a1a',
+                'muted' => '#666666',
+                'blue' => '#005fb8',
+                'folder' => '#0078d4',
+                'line' => '#e5e5e5',
+                'bad_text' => 'red', // 非法色值键必须丢弃
                 'taskbar_height' => 58,
                 'window_radius' => 20, // 越界 clamp 到 16
                 'shadow' => 30,
@@ -137,10 +150,17 @@ class WebosUiThemeTest extends WebosTestCase
         $this->assertSame('win11', $customs[0]['base'] ?? '');
         $overrides = $customs[0]['overrides'] ?? [];
         $this->assertSame('#abc123', $overrides['accent'] ?? '');
+        // 色调细节（2.1.151）：色值统一小写归一
+        $this->assertSame('#1a1a1a', $overrides['text'] ?? '');
+        $this->assertSame('#666666', $overrides['muted'] ?? '');
+        $this->assertSame('#005fb8', $overrides['blue'] ?? '');
+        $this->assertSame('#0078d4', $overrides['folder'] ?? '');
+        $this->assertSame('#e5e5e5', $overrides['line'] ?? '');
         $this->assertSame(58, $overrides['taskbar_height'] ?? 0);
         $this->assertSame(16, $overrides['window_radius'] ?? 0);
         $this->assertSame(30, $overrides['shadow'] ?? 0);
         $this->assertArrayNotHasKey('hack_key', $overrides);
+        $this->assertArrayNotHasKey('bad_text', $overrides);
 
         // 启用 ID 不在库中（删除主题后遗留）→ 回退空值；越界 ui_theme_customs 数量在验证层被拒（422）
         $this->putJson('/admin/cmspro/webos/api/workspace', [

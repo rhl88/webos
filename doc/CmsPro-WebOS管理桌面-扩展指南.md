@@ -1,7 +1,7 @@
 # CmsPro WebOS 管理桌面 · 扩展指南
 
-> 文档版本：2.1.150 | 更新日期：2026-11-24
-> 应用版本：2.1.150 | 应用 ID：`cmspro.webos`
+> 文档版本：2.1.151 | 更新日期：2026-11-24
+> 应用版本：2.1.151 | 应用 ID：`cmspro.webos`
 
 ## 一、概述
 
@@ -782,6 +782,7 @@ app(HookManager::class)->registerFilter(
 
 | 版本 | 日期 | 更新人 | 说明 |
 |---|---|---|---|
+| 2.1.151 | 2026-11-24 | CmsPro | **细节调整新增 5 个色调项（用户反馈「色调调整不止 主题强调色吧，把更多细节调整增加进来」）**：① 字段——`THEME_FIELDS` 由 8 项扩至 13 项，新增 `text`（界面文字色）、`muted`（次要文字色）、`blue`（链接/信息色）、`folder`（文件夹图标色）、`line`（分隔线颜色），均为 `type:'color'`，注释同步为「13 项可调渲染细节」；② 服务端——`WorkspaceService::THEME_OVERRIDE_RULES` 新增同 5 键，规则与 accent 一致（`/^#[0-9a-f]{6}$/`），保存净化/导出契约/导入净化自动覆盖；③ 应用——`applyThemeTune` 在 accent 分支后新增 `themeColorVars` 映射（`{text:'--webos-text', muted:'--webos-muted', blue:'--webos-blue', folder:'--webos-folder', line:'--webos-line'}`）循环：覆盖时 `setProperty`（`normalizeThemeColor` 归一、非法回退基色），未覆盖 `removeProperty` 回退 CSS 主题默认；④ 基色——`THEME_BASE_DEFAULTS` 两主题补 5 基色（default：`#152238`/`#73829a`/`#198cf0`/`#f0a11a`/`#dce5ee`；win11：`#1a1a1a`/`#a3a3a3`/`#005fb8`/`#f0a11a`/`#ededed`，win11 muted/line 在 CSS 中为 rgba、以最接近 hex 供控件显示）；⑤ 回退——`themeTuneValues` color 分支由统一 accent 回退改为 `baseDefaults[field.key] || baseDefaults.accent`；⑥ 测试——roundtrip 用例补 5 色键小写归一与非法色值键（`bad_text`）丢弃断言，接线断言补 5 条变量映射，282 用例 / 2885 断言全绿；`public/` 产物已同步（js 哈希一致） |
 | 2.1.150 | 2026-11-24 | CmsPro | **修复系统应用窗口标题栏不显示应用自身图标（用户反馈「AI开发助手有图标，为什么还是显示 /Images/logo-80x80.png」）**：① 排查——本地 DB 验证菜单关联正常（6 条 `app_id=cmspro.aidev` 菜单 status=1/visible=1）、`apps.icon` 为丢失的 uploads PNG、应用目录 icon.svg 存在且 `/api/app/cmspro.aidev/icon` 200；真正根因是 **`apps.is_system=1`**（AI 开发助手被标记为系统应用），`windowBrandIconMarkup` 的 `if (!application || application.is_system)` 分支对系统应用强制渲染 `<img src="/Images/logo-80x80.png">`，根本不走应用图标链——这解释了「别的应用正常、它不行」的差异；② 修复——`windowBrandIconMarkup` 条件收窄为 `if (!application)`：系统 logo 仅用于应用中心/OS 设置/浏览器等无 `app_id` 的 WebOS 内部窗口；有应用数据的窗口（含系统应用）一律 `applicationIconMarkup(application, 'window-brand-icon')`，仍走 icon_url → icon → 字体 → 立方体兜底链；卸载/升级按钮等其它 `is_system` 判断（webos.js 3895/3944/4331/5388 行）不受影响；③ 测试——既有接线断言（`application.is_system`/logo img 子串）因其它保留逻辑仍命中、无需迁移，282 用例 / 2874 断言全绿；`public/` 产物已同步（js 哈希一致） |
 | 2.1.149 | 2026-11-24 | CmsPro | **「基于当前效果新建主题」按钮文案调整为「新建主题」（用户需求「界面主题中 基于当前效果新建主题 调整为新建主题」）**：`themeSectionMarkup` 操作区 `data-theme-new` 按钮文案由「基于当前效果新建主题」精简为「新建主题」，`createThemeFromCurrent` 行为不变（仍基于当前主题与微调值新建并立即启用）；主题相关用例 6 个（61 断言）通过；`public/` 产物已同步（js 哈希一致） |
 | 2.1.148 | 2026-11-24 | CmsPro | **修复切换主题后界面无变化、刷新浏览器才生效（用户反馈「界面主题 点击 切换，整体没有变化 刷新浏览器才有变化」）**：① 根因——2.1.144 重构遗留的双入口缺陷：`root.dataset.uiTheme` 仅在 `applyWorkspacePreferences`（页面初始化/整单保存回流）中设置，主题切换操作（`selectBuiltinTheme`/`selectCustomTheme`/`deleteTheme`/`createThemeFromCurrent`）走的 `applyThemeTune` 只写 8 项细节的内联变量、不同步 data 属性；CSS 侧主题级差异（任务栏底色/窗口背景/文字色/圆角基准/阴影基准）由 `.webos-desktop[data-ui-theme="win11"]` 变量块驱动，属性不更新 → 点击切换后整体外观不变，刷新浏览器重新初始化才生效；② 修复——`applyThemeTune` 开头新增 `root.dataset.uiTheme = resolved.base`（resolveThemePreviews 结果），使该函数成为基础主题 data 属性 + 细节覆盖内联变量的**唯一应用入口**，所有主题操作路径（切换/新建/删除/恢复默认/微调预览）自动即时生效；`applyWorkspacePreferences` 移除独立设置行（仅保留 `ensureWallpaperDim() + applyThemeTune()`），注释同步为「统一由 applyThemeTune 应用」；③ 测试——`WebosUiThemeTest` 接线断言迁移为 `root.dataset.uiTheme = resolved.base;`，282 用例 / 2874 断言全绿；`public/` 产物已同步（js 哈希一致） |
