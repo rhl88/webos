@@ -223,7 +223,7 @@ class WebosUserTerminalTest extends WebosTestCase
         $this->assertNotNull($app, '用户端菜单涉及的应用应出现在应用清单中');
         $this->assertSame('用户端可见应用', $app['name']);
         $this->assertSame('fa fa-cube', $app['icon']);
-        $this->assertSame(url('/api/app/webos.app.visible/icon'), $app['icon_url']);
+        $this->assertSame(url('/admin/cmspro/webos/api/app-icon') . '?app_id=webos.app.visible', $app['icon_url']);
         $this->assertNull(collect($data)->firstWhere('app_id', 'webos.app.hidden'), '仅 admin 终端菜单引用的应用不应外泄');
     }
 

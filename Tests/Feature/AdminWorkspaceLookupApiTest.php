@@ -163,10 +163,10 @@ class AdminWorkspaceLookupApiTest extends WebosTestCase
         $this->assertContains($groupX->id, $allMenuIds, '祖先补全：授权叶子的父级分组出现');
         $this->assertNotContains($ungrantedMenu->id, $allMenuIds, '未分配给其角色的菜单不出现');
 
-        // 应用清单：仅其菜单出现过的应用，图标走应用公开图标路由
+        // 应用清单：仅其菜单出现过的应用，图标走应用公开图标端点（2.1.145 query 传参，规避带点路径拦截）
         $applications = collect($response->json('data.catalog.applications'));
         $this->assertSame(['cmspro.admincatalog'], $applications->pluck('app_id')->all());
-        $this->assertStringContainsString('/api/app/cmspro.admincatalog/icon', $applications->first()['icon_url']);
+        $this->assertSame(url('/admin/cmspro/webos/api/app-icon') . '?app_id=cmspro.admincatalog', $applications->first()['icon_url']);
 
         // 无角色管理员：目录为空（角色并集为空集）
         $rolelessAdmin = $this->createAdmin('webos_admin_roleless_', '无角色管理员');

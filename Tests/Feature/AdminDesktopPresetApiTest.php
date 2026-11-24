@@ -154,10 +154,10 @@ class AdminDesktopPresetApiTest extends WebosTestCase
         $this->assertNotContains($disabled->id, $allMenuIds);
         $this->assertNotContains($hidden->id, $allMenuIds);
 
-        // 应用清单：仅角色菜单出现过的应用，图标走应用公开图标路由
+        // 应用清单：仅角色菜单出现过的应用，图标走应用公开图标端点（2.1.145 query 传参，规避带点路径拦截）
         $applications = collect($response->json('data.catalog.applications'));
         $this->assertSame(['cmspro.rolecatalog'], $applications->pluck('app_id')->all());
-        $this->assertStringContainsString('/api/app/cmspro.rolecatalog/icon', $applications->first()['icon_url']);
+        $this->assertSame(url('/admin/cmspro/webos/api/app-icon') . '?app_id=cmspro.rolecatalog', $applications->first()['icon_url']);
     }
 
     /** 接口仅后台端提供：未登录访问返回 401，用户端不注册该路由（404） */

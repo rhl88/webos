@@ -911,12 +911,64 @@ class WebosController extends Controller
             ->get()
             ->map(function (AppModel $app) {
                 $data = $app->only(['app_id', 'name', 'icon', 'version', 'status', 'is_system']);
-                // 应用图标公开路由（无需认证），与 admin 端 getInstalledApps 同一口径
-                $data['icon_url'] = url('/api/app/' . $app->app_id . '/icon');
+                // 应用图标公开路由（无需认证）。2.1.145 起改走应用自有端点（query 传参 app_id）：
+                // 框架原路由 /api/app/{appId}/icon 的 appId 在路径段中（如 cmspro.aidev 带点），
+                // 部分 web 服务器（IIS 静态处理器等）会把带点路径当静态文件请求而拦截 404，
+                // 图标回落失败；query 传参无此问题，且新 URL 天然绕过浏览器对旧 404 的缓存
+                $data['icon_url'] = url('/admin/cmspro/webos/api/app-icon') . '?app_id=' . rawurlencode($app->app_id);
                 return $data;
             })
             ->values()
             ->all();
+    }
+
+    /**
+     * 应用图标公开端点（2.1.145）：按 app_id 返回应用目录图标（icon.svg 优先、icon.png 兜底），
+     * 与框架 /api/app/{appId}/icon 同口径，但 appId 经 query 传参——规避 web 服务器对
+     * 带点路径段（cmspro.aidev 等）的静态文件拦截；无需认证（图标为应用自带静态资源）。
+     * app_id 不拼接路径，仅用于与 manifest.json 的 id 精确比对，无目录穿越风险。
+     */
+    public function appIcon(Request $request)
+    {
+        $appId = (string) $request->query('app_id', '');
+        $appsPath = app_path('Apps');
+        if ($appId !== '' && is_dir($appsPath)) {
+            $dirs = scandir($appsPath);
+            foreach ($dirs as $dir) {
+                if ($dir === '.' || $dir === '..') {
+                    continue;
+                }
+
+                $manifestPath = $appsPath . DIRECTORY_SEPARATOR . $dir . DIRECTORY_SEPARATOR . 'manifest.json';
+                if (! file_exists($manifestPath)) {
+                    continue;
+                }
+
+                $manifest = json_decode(file_get_contents($manifestPath), true);
+                if (($manifest['id'] ?? '') === $appId) {
+                    $appDir = $appsPath . DIRECTORY_SEPARATOR . $dir;
+
+                    $svgPath = $appDir . DIRECTORY_SEPARATOR . 'icon.svg';
+                    if (file_exists($svgPath)) {
+                        return response()->file($svgPath, [
+                            'Content-Type' => 'image/svg+xml',
+                            'Cache-Control' => 'public, max-age=86400',
+                        ]);
+                    }
+
+                    $pngPath = $appDir . DIRECTORY_SEPARATOR . 'icon.png';
+                    if (file_exists($pngPath)) {
+                        return response()->file($pngPath, [
+                            'Content-Type' => 'image/png',
+                            'Cache-Control' => 'public, max-age=86400',
+                        ]);
+                    }
+                    break;
+                }
+            }
+        }
+
+        abort(404);
     }
 
     public function workspace(Request $request): JsonResponse

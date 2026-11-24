@@ -21,6 +21,11 @@ class ServiceProvider extends BaseServiceProvider
             ->group(function (): void {
                 Route::match(['get', 'post'], '/', [\App\Apps\CmsproWebos\Controllers\Admin\WebosController::class, 'index'])->name('index');
 
+                // 应用图标公开端点（2.1.145）：query 传参 app_id 返回应用目录图标（icon.svg/icon.png），
+                // 无需认证（应用自带静态资源）；替代框架 /api/app/{appId}/icon 路径传参——带点 appId
+                // 会被部分 web 服务器当静态文件请求拦截 404，导致应用图标加载失败回落默认立方体
+                Route::get('/api/app-icon', [\App\Apps\CmsproWebos\Controllers\Admin\WebosController::class, 'appIcon'])->name('app-icon');
+
                 Route::middleware('auth:admin')->group(__DIR__ . '/Routes/admin.php');
             });
 

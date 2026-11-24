@@ -3937,4 +3937,17 @@ class WebosWorkspaceApiTest extends WebosTestCase
         $this->assertStringContainsString("emptyState('fa-shopping-cart', '暂无已购应用')", $script);
         $this->assertStringContainsString("emptyState('fa-shopping-cart', '暂时无法读取已购应用')", $script);
     }
+
+    /** 应用图标公开端点（2.1.145）：query 传参返回应用目录图标（svg 优先），无需登录可达 */
+    public function test_app_icon_endpoint(): void
+    {
+        // 未登录直接请求（路由未挂 auth），验证公开可达与 svg 内容类型
+        $this->get('/admin/cmspro/webos/api/app-icon?app_id=cmspro.aidev')
+            ->assertOk()
+            ->assertHeader('Content-Type', 'image/svg+xml');
+
+        // 未知应用与缺参 404（不拼路径，仅与 manifest id 精确比对）
+        $this->get('/admin/cmspro/webos/api/app-icon?app_id=ghost.app')->assertNotFound();
+        $this->get('/admin/cmspro/webos/api/app-icon')->assertNotFound();
+    }
 }
