@@ -81,8 +81,8 @@ class WebosUiThemeTest extends WebosTestCase
         $this->assertStringContainsString("root.style.setProperty('--webos-wallpaper-dim'", $script);
         $this->assertStringContainsString('function desktopIconSize(', $script);
         $this->assertStringContainsString('Math.round(size.cellW * scale)', $script);
-        // 桌面容器 data 属性同步（自定义主题启用时以其基础主题为准）
-        $this->assertStringContainsString("root.dataset.uiTheme = resolveThemePreviews(preferences).base;", $script);
+        // 桌面容器 data 属性同步（2.1.148 起由 applyThemeTune 统一驱动，切换主题即时生效）
+        $this->assertStringContainsString("root.dataset.uiTheme = resolved.base;", $script);
 
         // CSS：Win11 浅色主题变量覆盖块
         $this->assertStringContainsString('.webos-desktop[data-ui-theme="win11"] {', $css);

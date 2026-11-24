@@ -1,7 +1,7 @@
 # CmsPro WebOS 管理桌面 · 使用指南
 
-> 文档版本：2.1.147 | 更新日期：2026-11-24
-> 应用版本：2.1.147 | 应用 ID：`cmspro.webos`
+> 文档版本：2.1.148 | 更新日期：2026-11-24
+> 应用版本：2.1.148 | 应用 ID：`cmspro.webos`
 
 ## 一、环境要求
 
@@ -184,6 +184,7 @@ php artisan test app/Apps/CmsproWebos/Tests
 
 | 版本 | 日期 | 说明 |
 |---|---|---|
+| 2.1.148 | 2026-11-24 | **修复切换主题后界面无变化、刷新浏览器才生效**（用户反馈「界面主题 点击 切换，整体没有变化 刷新浏览器才有变化」）：根因是 2.1.144 重构时基础主题的 `data-ui-theme` 属性只在 `applyWorkspacePreferences` 中设置，而点击切换走的是 `applyThemeTune`（只更新 8 项细节内联变量，未同步 data 属性）——主题级 CSS 变量块（任务栏底色、窗口背景、文字色等）由 `[data-ui-theme]` 驱动，属性不变则主题切换无效。修复：`applyThemeTune` 开头统一同步 `root.dataset.uiTheme`（成为基础主题 + 细节覆盖的唯一应用入口），`applyWorkspacePreferences` 中原独立设置行移除；282 用例 / 2874 断言全绿 |
 | 2.1.147 | 2026-11-24 | **「细节调整」标题行右侧新增「恢复默认」按钮**（用户需求「界面主题中的细节调整 文字同行的最右侧增加 恢复默认 按钮，用来恢复当前选中主题的默认」）：OS 设置「界面主题」细节调整卡片标题行最右侧新增「恢复默认」按钮（`fa-undo` 图标，`margin-left:auto` 推到行尾）；点击后清空微调草稿回到所选主题默认效果——启用自定义主题时同步清空其覆盖值并写库（toast 提示主题名），内置主题无覆盖存储仅清草稿重绘；控制层新增 `resetThemeTune()` 与 `data-theme-reset` 点击委托分支，样式新增 `.settings-card-title .settings-card-action`；282 用例 / 2874 断言全绿 |
 | 2.1.146 | 2026-11-24 | **修复切换主题时保存报错「请求参数不合法」**（用户反馈：切换主题时 `/admin/cmspro/webos/api/workspace` 返回 `preferences.ui_theme_custom_id`「must be a string」）：根因是 Laravel 默认中间件 `ConvertEmptyStringsToNull` 把前端切回内置主题时发送的空字符串 `ui_theme_custom_id: ''` 转成了 `null`，`sometimes|string` 规则对键存在但值为 null 的字段直接失败（`sometimes` 仅在键缺失时跳过）。修复：验证规则改为 `sometimes|nullable|string|max:24`（null 放行，服务层净化本就有「必须存在于主题库中否则回退空串」的兜底）；新增回归用例（空字符串保存 200 且回写空串），282 用例 / 2871 断言全绿 |
 | 2.1.145 | 2026-11-24 | **修复应用窗口图标不显示当前应用的图标**（用户反馈「打开 AI 开发助手应用，图标没有显示当前应用的图标」）：根因有两层——① 应用清单的 `icon_url` 原指向框架公开图标路由 `/api/app/{appId}/icon`，appId 在**路径段**中（如 `cmspro.aidev` 带点），部分 web 服务器（IIS 静态文件处理器等）会把带点路径当静态文件请求拦截返回 404；② AI 开发助手的 `apps.icon` 历史上传的 PNG 文件已丢失，主图与兜底图双双失败后回落默认立方体。修复：WebOS 应用内新增**公开图标端点** `/admin/cmspro/webos/api/app-icon?app_id=xxx`（query 传参规避带点路径拦截，无需认证，与框架路由同口径：icon.svg 优先、icon.png 兜底，app_id 仅与 manifest id 精确比对无目录穿越风险），应用清单 `icon_url` 切换到该端点；新 URL 同时天然绕过浏览器对旧 404 的缓存。顺带提示：若个别应用仍显示默认图标，请检查其应用目录是否有 `icon.svg`/`icon.png`，或 `apps.icon` 指向的上传文件是否还在 |

@@ -245,7 +245,12 @@
     /** 把微调覆盖写入桌面容器内联 CSS 变量：仅写入已覆盖的键（未覆盖键移除内联值，
      *  回退 CSS 主题默认——保证无微调时默认主题与 Win11 主题的渲染与 2.1.142 完全一致） */
     function applyThemeTune() {
-        var base = THEME_BASE_DEFAULTS[resolveThemePreviews(state.workspace.preferences).base];
+        var resolved = resolveThemePreviews(state.workspace.preferences);
+        var base = THEME_BASE_DEFAULTS[resolved.base];
+        // 基础主题 data 属性随切换同步（2.1.148）：dataset 驱动 CSS 主题变量块（任务栏底色、
+        // 窗口背景、文字色等主题级差异），此前仅在 applyWorkspacePreferences 中设置，
+        // 导致点击切换主题后整体界面不变、刷新浏览器才生效
+        root.dataset.uiTheme = resolved.base;
         // 强调色：primary + hover 深一档（亮度 -14%）+ 焦点色同步
         var accent = themeOverrideValue('accent');
         if (accent !== undefined) {
@@ -14246,10 +14251,9 @@
     function applyWorkspacePreferences() {
         var preferences = state.workspace.preferences;
         root.dataset.wallpaper = preferences.wallpaper || 'webos-default';
-        // 界面主题（2.1.136/2.1.144）：基础主题挂 data 属性驱动 CSS 变量块切换 + 8 项细节覆盖写入
-        // 内联 CSS 变量（未覆盖键回退主题默认）；壁纸暗度遮罩随 applyThemeTune 写入
+        // 界面主题（2.1.136/2.1.148）：基础主题 data 属性与细节覆盖统一由 applyThemeTune 应用
+        // （dataset 驱动 CSS 主题变量块切换，内联变量承载 8 项细节，未覆盖键回退主题默认）
         ensureWallpaperDim();
-        root.dataset.uiTheme = resolveThemePreviews(preferences).base;
         applyThemeTune();
         // 图标文字效果挂桌面容器 data 属性（CSS 作用域切换：none/shadow/shield），避免逐个图标改类
         if (elements.desktopIcons) {
