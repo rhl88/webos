@@ -144,6 +144,19 @@ class WebosUiThemeTest extends WebosTestCase
             ->assertJsonPath('data.preferences.ui_theme_custom_id', '');
     }
 
+    /** 切回内置主题（2.1.145）：空字符串 custom_id 经 ConvertEmptyStringsToNull 转 null 后仍可保存成功 */
+    public function test_ui_theme_custom_id_empty_string_passes_validation(): void
+    {
+        $this->actingAdmin();
+
+        // 切换到内置主题：前端 selectBuiltinTheme 发送 ui_theme_custom_id=''（中间件转 null）
+        $this->putJson('/admin/cmspro/webos/api/workspace', [
+            'preferences' => ['ui_theme' => 'win11', 'ui_theme_custom_id' => ''],
+        ])->assertOk()
+            ->assertJsonPath('data.preferences.ui_theme', 'win11')
+            ->assertJsonPath('data.preferences.ui_theme_custom_id', '');
+    }
+
     /** 自定义主题数量上限：超过 20 条在验证层被拒（422），不足上限的合法保存不受影响 */
     public function test_ui_theme_customs_limit(): void
     {

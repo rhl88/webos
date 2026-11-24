@@ -1028,8 +1028,9 @@ class WebosController extends Controller
             'preferences.ui_theme' => ['sometimes', 'in:default,win11'],
             // 自定义主题库（2.1.144「细节调整」）：条目结构与覆盖值由 WorkspaceService::sanitizeThemeCustoms 净化兜底
             'preferences.ui_theme_customs' => ['sometimes', 'array', 'max:' . WorkspaceService::MAX_UI_THEME_CUSTOMS],
-            // 当前启用的自定义主题 ID：服务层校验必须存在于净化后的主题库中，否则回退空值
-            'preferences.ui_theme_custom_id' => ['sometimes', 'string', 'max:24'],
+            // 当前启用的自定义主题 ID：服务层校验必须存在于净化后的主题库中，否则回退空值。
+            // 切回内置主题时前端发送空字符串，ConvertEmptyStringsToNull 中间件会转 null，需 nullable 放行
+            'preferences.ui_theme_custom_id' => ['sometimes', 'nullable', 'string', 'max:24'],
             // 图标文字效果（OS 设置单选，2.1.128）：无规则声明时 $validated 会丢弃该键，保存后刷新即回退
             'preferences.label_effect' => ['sometimes', 'in:none,shadow,shield'],
             // 入口使用统计条数上限复用服务层常量（2.1.137：原硬编码 80 与前端不裁剪叠加，
