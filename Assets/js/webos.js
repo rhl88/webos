@@ -5024,6 +5024,8 @@
         return {
             title: application ? application.name : (entry.folder_title || entry.group_title || entry.title),
             subtitle: entry.title,
+            // 应用版本（2.1.141）：窗口标题栏应用名右上角小字展示（v{version}），数据源 apps 表 version
+            version: application && application.version ? String(application.version) : '',
             icon: application && typeof application.icon === 'string' && application.icon.indexOf('/') < 0
                 ? application.icon : entry.icon
         };
@@ -5736,7 +5738,10 @@
             + '" data-window-key="' + key + '">'
             + '<header class="window-titlebar" data-window-drag>'
             + '<div class="window-brand">' + brandIcon + '<strong>'
-            + escapeHtml(identity.title) + '<small>' + escapeHtml(identity.subtitle) + '</small></strong></div>'
+            + escapeHtml(identity.title)
+            // 应用版本小字（2.1.141）：应用名右上角展示 v{version}，特殊窗口与无版本数据时不渲染
+            + (identity.version ? '<span class="window-app-version">v' + escapeHtml(identity.version) + '</span>' : '')
+            + '<small>' + escapeHtml(identity.subtitle) + '</small></strong></div>'
             // 标题栏前进/后退按钮：后退在刷新按钮左侧、前进在刷新按钮右侧，操作当前页面 iframe 内部历史；
             // 仅多选项卡模式的普通应用窗口渲染（2.1.135：未开启多选项卡时不显示后退/刷新/前进），
             // 初始隐藏，渲染页面后按同源性同步显隐

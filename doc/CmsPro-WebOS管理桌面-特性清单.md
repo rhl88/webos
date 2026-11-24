@@ -1,7 +1,7 @@
 # CmsPro WebOS 管理桌面 · 特性清单
 
-> 文档版本：2.1.140 | 更新日期：2026-11-23
-> 应用版本：2.1.140 | 应用 ID：`cmspro.webos`
+> 文档版本：2.1.141 | 更新日期：2026-11-24
+> 应用版本：2.1.141 | 应用 ID：`cmspro.webos`
 
 ## 一、应用定位
 
@@ -196,6 +196,7 @@ CmsproWebos/
 
 | 版本 | 日期 | 说明 |
 |---|---|---|
+| 2.1.141 | 2026-11-24 | **应用窗口标题栏显示应用版本号**（用户需求「打开应用窗口，在应用的名字右上角用小字显示当前应用的版本」）：`windowIdentity()` 新增 `version` 键（`findApplication(entry.app_id).version`，空值返回 `''`）；`windowMarkup()` 应用名后条件渲染 `<span class="window-app-version">v{version}</span>`（上标小字，位于既有菜单名副标题之前）；CSS 新增 `.window-app-version`（`margin-left:4px;font-size:11px;color:var(--webos-muted);vertical-align:super`）；数据链无需后端改动——`applicationListByAppIds()`（WebosController 913 行）本就返回 `version` 字段；特殊窗口（应用中心/OS 设置等）走固定 identity 无 version 键自然不渲染；窗口品牌区固定显示应用身份（切换选项卡不重写 window-brand），版本随窗口创建时固定，应用更新后重开窗口即刷新；既有窗口品牌用例追加 4 条接线断言，278 用例 / 2822 断言全绿 |
 | 2.1.140 | 2026-11-23 | **修复「应用更新」应用详情头部图标缺失**（用户反馈「应用更新→应用详情中的应用图标没有显示，只有默认 `fa fa-cube`」）：根因两层——① `localDetailHeaderMarkup()` 用 `applicationIconMarkup()`，该函数只认服务端解析的 `icon_url`，而更新检查接口条目只有 `icon`；② `cardIconMarkup()` 的目录合并条件为 `!app.icon_url && !app.icon`，更新条目通常带 `icon`（类名或图片路径）故跳过合并，拿不到本地目录的 `icon_url`。修复：`localDetailHeaderMarkup()` 改用 `cardIconMarkup()`（与列表卡片同源）；`cardIconMarkup()` 合并条件改为仅 `!app.icon_url`；`applicationIconMarkup()` 图片源改为 `icon_url` 优先、`icon` 为图片路径（`isImageIcon`）时回退，覆盖 `apps.icon` 存 `/uploads/...png` 的历史数据（旧逻辑被 `safeIcon` 清洗成无效类名，图标完全空白）；同步修正既有断言并新增 2 条接线断言，278 用例 / 2818 断言全绿 |
 | 2.1.139 | 2026-11-23 | **应用更新详情新增「本次更新」更新说明（Markdown 渲染）**（用户需求「应用中心→应用更新→应用详情应该可以显示更新信息；需要在应用介绍下面增加本次更新的详细信息；需要渲染 markdown」）：`localDetailMarkup()` 在 `marketDetailDescMarkup()`（应用介绍）之后追加 `source === 'updates'` 时的「本次更新」区块；新增 `localDetailUpdateNotesMarkup(app)` 取 `app.changelog`（更新检查接口 `check-updates` 返回字段），为空时回退 `available_versions[0].changelog`（升级目标版本），渲染复用 `upgradeNotesMarkdown()`（全局 marked + 失败回退纯文本），容器 `market-detail-desc doc-markdown-body` 继承 Markdown 排版样式；均无说明时不渲染区块；非「应用更新」来源的详情不受影响；应用中心用例追加 4 条接线断言，278 用例 / 2816 断言全绿 |
 | 2.1.138 | 2026-11-23 | **应用详情版本记录更新说明单行展示 + 详情弹层**（用户需求「版本记录的更新说明只需要显示 1 行（最大宽度 700px）超出隐藏，并出现详情，点击详情弹出层查看详细更新说明（需渲染 Markdown）」）：`marketDetailVersionsMarkup()` 更新说明单元格改为 `<span class="market-version-notes-text">` 单行摘要（`changelog.replace(/\s+/g, ' ').trim()` 折叠换行）+「详情」链接（`data-market-version-notes` 应用标识 + `data-market-version-index` 版本下标）；新增 `openMarketVersionNotes(appId, index)` 从 `state.marketApps` 取该版本 changelog，复用 `upgradeNotesMarkdown()`（全局 marked）渲染到 layui 弹层，尺寸 `560px × auto`、内容区 `max-height:60vh` 滚动；点击委托在应用中心 click 处理器（`data-market-version-notes`）；CSS 新增 `.market-version-notes-text`（`max-width:700px` + `text-overflow:ellipsis` + `white-space:nowrap`）与 `.market-version-notes-toggle`；顺带补齐 `normalizePreferences()` 默认对象缺失的 `ui_theme: 'default'`（2.1.136 遗漏）；测试在应用中心用例追加 8 条 JS 接线与 3 条 CSS 断言，278 用例 / 2812 断言全绿 |

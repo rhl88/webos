@@ -407,6 +407,17 @@ textarea:focus-visible,
     font-weight: 400;
 }
 
+/* 应用版本小字（2.1.141）：窗口标题栏应用名右上角上标展示 v{version}，无版本数据不渲染 */
+.window-app-version {
+    margin-left: 4px;
+    color: var(--webos-muted);
+    font-size: 11px;
+    font-weight: 400;
+    line-height: 1;
+    vertical-align: super;
+    white-space: nowrap;
+}
+
 .window-controls {
     display: flex;
     align-self: stretch;

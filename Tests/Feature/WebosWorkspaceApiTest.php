@@ -1476,6 +1476,12 @@ class WebosWorkspaceApiTest extends WebosTestCase
         $this->assertStringContainsString("applicationIconMarkup(application, 'window-brand-icon')", $script);
         $this->assertStringContainsString('<img src="/Images/logo-80x80.png"', $script);
         $this->assertStringContainsString('.window-brand-icon', $stylesheet);
+
+        // 2.1.141：窗口标题栏应用名右上角小字展示应用版本（数据源 apps 表 version）
+        $this->assertStringContainsString("version: application && application.version ? String(application.version) : '',", $script);
+        $this->assertStringContainsString("identity.version ? '<span class=\"window-app-version\">v' + escapeHtml(identity.version) + '</span>' : ''", $script);
+        $this->assertStringContainsString('.window-app-version {', $stylesheet);
+        $this->assertStringContainsString('vertical-align: super;', $stylesheet);
     }
 
     /** 安装弹窗精简：默认加入系统菜单（不展示该选项），桌面快捷方式为可选，layui 风格无毛玻璃 */
