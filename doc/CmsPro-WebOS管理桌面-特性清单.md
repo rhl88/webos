@@ -1,7 +1,7 @@
 # CmsPro WebOS 管理桌面 · 特性清单
 
-> 文档版本：2.1.151 | 更新日期：2026-11-24
-> 应用版本：2.1.151 | 应用 ID：`cmspro.webos`
+> 文档版本：2.1.152 | 更新日期：2026-11-24
+> 应用版本：2.1.152 | 应用 ID：`cmspro.webos`
 
 ## 一、应用定位
 
@@ -196,6 +196,7 @@ CmsproWebos/
 
 | 版本 | 日期 | 说明 |
 |---|---|---|
+| 2.1.152 | 2026-11-24 | **界面主题操作按钮文案精简**（用户需求「把"保存修改到当前主题"改为"保存主题"，"导出当前主题"改为"导出主题"」）：`themeSectionMarkup` 操作区 `data-theme-save-current` 改为「保存主题」、`data-theme-export-current` 改为「导出主题」，`settings-hint` 同步引用，功能不变；282 用例 / 2885 断言全绿 |
 | 2.1.151 | 2026-11-24 | **细节调整新增 5 个色调项**（用户反馈「色调调整不止 主题强调色吧，把更多细节调整增加进来」）：`THEME_FIELDS` 新增 `text`（界面文字色）、`muted`（次要文字色）、`blue`（链接/信息色）、`folder`（文件夹图标色）、`line`（分隔线颜色）5 个 color 项（13 项总量）；服务端 `THEME_OVERRIDE_RULES` 同步加 5 键（同 accent 的 `#hex6` 色值正则）；`applyThemeTune` 新增 `themeColorVars` 映射循环（直接 setProperty 对应 `--webos-*` 变量，未覆盖键 removeProperty 回退 CSS 主题默认，零侵入不变）；`THEME_BASE_DEFAULTS` 每主题补 5 基色（win11 的 muted/line 以 hex 近似供色值控件显示：`#a3a3a3`/`#ededed`）；`themeTuneValues` color 回退改为 per-key（各色彩项以自身基色回退，替代原统一 accent 回退）；导出/导入净化走服务端白名单自动支持新键；roundtrip 用例补 5 色键小写归一 + 非法色值键丢弃断言、接线断言补 5 条变量映射，282 用例 / 2885 断言全绿 |
 | 2.1.150 | 2026-11-24 | **修复系统应用窗口标题栏不显示应用自身图标**（用户反馈「AI开发助手有图标，为什么还是显示 /Images/logo-80x80.png」）：排查确认菜单 `app_id` 关联正常（6 条菜单）、`/api/app/cmspro.aidev/icon` 200 可达、apps.icon 图片虽丢失但 2.1.145 已有应用目录 svg 端点兜底——真正根因是 **`apps.is_system=1`**：`windowBrandIconMarkup` 的条件 `if (!application || application.is_system)` 对系统应用强制渲染 `/Images/logo-80x80.png`，绕过整个应用图标链。修复：条件收窄为 `if (!application)`——系统 logo 仅用于应用中心/OS 设置等无 `app_id` 的 WebOS 内部窗口；有应用数据（含 `is_system=1` 的系统应用如 AI 开发助手）一律走 `applicationIconMarkup`（icon_url → icon → 字体 → 立方体兜底）；窗口标题卸载/升级按钮等其它 `is_system` 判断（3895/3944/4331/5388 行）不受影响，282 用例 / 2874 断言全绿 |
 | 2.1.149 | 2026-11-24 | **「基于当前效果新建主题」按钮文案调整为「新建主题」**（用户需求「界面主题中 基于当前效果新建主题 调整为新建主题」）：`themeSectionMarkup` 操作区 `data-theme-new` 按钮文案精简，功能不变（仍基于当前主题与微调值新建并启用）；主题相关用例 6 个（61 断言）通过 |

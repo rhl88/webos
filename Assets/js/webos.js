@@ -6189,13 +6189,13 @@
             + '<div class="theme-actions">'
             + '<button class="settings-btn" type="button" data-theme-new><i class="fa fa-plus"></i>新建主题</button>'
             + (activeId
-                ? '<button class="settings-btn" type="button" data-theme-save-current><i class="fa fa-save"></i>保存修改到当前主题</button>'
+                ? '<button class="settings-btn" type="button" data-theme-save-current><i class="fa fa-save"></i>保存主题</button>'
                 : '')
-            + '<button class="settings-btn" type="button" data-theme-export-current><i class="fa fa-download"></i>导出当前主题</button>'
+            + '<button class="settings-btn" type="button" data-theme-export-current><i class="fa fa-download"></i>导出主题</button>'
             + '<label class="settings-btn"><i class="fa fa-upload"></i>导入主题'
             + '<input type="file" accept=".json,application/json" data-theme-import hidden></label>'
             + '</div>'
-            + '<small class="settings-hint">细节调整即时预览，点「新建主题/保存修改」后持久化；导出文件可分享给其他账号导入。'
+            + '<small class="settings-hint">细节调整即时预览，点「新建主题/保存主题」后持久化；导出文件可分享给其他账号导入。'
             + '主题仅影响桌面界面本身，应用窗口内打开的页面不跟随换肤。</small>';
         var tuneRows = THEME_FIELDS.map(function (field) {
             return themeTuneRowMarkup(field, values[field.key]);
