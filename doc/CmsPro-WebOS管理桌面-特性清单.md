@@ -1,7 +1,7 @@
 # CmsPro WebOS 管理桌面 · 特性清单
 
-> 文档版本：2.1.143 | 更新日期：2026-11-24
-> 应用版本：2.1.143 | 应用 ID：`cmspro.webos`
+> 文档版本：2.1.144 | 更新日期：2026-11-24
+> 应用版本：2.1.144 | 应用 ID：`cmspro.webos`
 
 ## 一、应用定位
 
@@ -196,6 +196,7 @@ CmsproWebos/
 
 | 版本 | 日期 | 说明 |
 |---|---|---|
+| 2.1.144 | 2026-11-24 | **OS设置「界面主题」新增细节调整与自定义主题**（用户需求「在 OS设置->界面主题 中增加 细节调整，可以调整 UI渲染的细节…在这个基础上可以新建一个新的主题；主题可以导出导入」）：数据模型新增偏好键 `ui_theme_customs`（自定义主题库，上限 20）与 `ui_theme_custom_id`（启用 ID，服务端校验必须存在于库中否则回退空）；前端 `THEME_FIELDS` 定义 8 项可调细节（accent 色值、taskbar_height 40~64、window_radius 0~16、taskbar_opacity 50~100、icon_scale 80~130、font_size 12~16、shadow 0~100、wallpaper_dim 0~60，与服务端 THEME_OVERRIDE_RULES 同口径）；`themeSectionMarkup` 重构为「主题选择卡片（内置 2 + 自定义库，卡片悬停出导出/删除）+ 操作区（新建/保存修改/导出当前/导入）+ 细节调整 8 控件」；`applyThemeTune` 仅写入已覆盖键的内联 CSS 变量（accent→primary/primary-dark（亮度-14% 自动算）/focus、taskbar_height→--taskbar-height/--taskbar-size、radius、taskbar→rgba 重算、icon_scale→--webos-icon-scale（CSS 三档图标尺寸 calc 乘系数 + JS desktopIconSize() 格子换算同步）、font_size→--webos-font-size、shadow→基础主题阴影 rgba alpha 重算、wallpaper_dim→`.webos-wallpaper-dim` 遮罩层 alpha），未覆盖键移除内联值回退 CSS 默认（零侵入）；微调走内存草稿 `themeDraft` 即时预览，新建/保存才全量落库；导出契约 `{type:'cmspro-webos-theme',version:1,name,base,overrides}`，导入校验契约 + 白名单净化 + 重名加序号；`WebosUiThemeTest` 新增 customs roundtrip 与数量上限用例、前端接线断言重写（含 desktop-icon calc 断言迁移），280 用例 / 2863 断言全绿 |
 | 2.1.143 | 2026-11-24 | **任务栏应用右键菜单新增「关闭其它」**（用户需求「状态栏右键点击应用出现菜单，在关闭全部上面增加 关闭其它，就是除了当前其它的全部关闭」）：`taskbarWindowMenuItems()` 在「关闭全部」之前条件插入 `{ label: '关闭其它', icon: 'fa-columns', action: 'close-others', key }`（显示条件 `state.windows.size > 1`，单窗口时不出现无意义项；图标与既有窗口选项卡右键「关闭其它」一致）；`runTaskbarContextAction()` 新增 `close-others` 分支：读 `dataset.taskbarKey`（右键窗口），`Array.from(state.windows.keys())` 快照遍历（`closeWindow` 内部删除 Map 条目）逐个关闭 `!== keepKey` 的窗口，右键窗口保留且激活/最小化状态不变；固定图标右键（运行中）经 `taskbarPinnedMenuItems` 复用同一菜单自动获得该入口；任务栏右键菜单用例追加 4 条接线断言，278 用例 / 2829 断言全绿 |
 | 2.1.142 | 2026-11-24 | **修复 Win11 浅色主题下任务栏通知角标呈黑圈**（用户反馈「界面主题调整为 Win11 浅色时，状态栏铃铛右上方的数字一圈是黑色的，是不对的」）：根因是 `.notification-badge` 硬编码 `border: 2px solid #153b5d`——该描边是角标与默认深色任务栏（`rgba(8,38,67,0.90)`）之间的间隙圈，Win11 主题任务栏换为浅色 Mica（`rgba(243,243,243,0.88)`）后未同步，深蓝描边呈黑圈；修复：`:root` 新增 `--webos-badge-ring: #153b5d`（默认主题行为不变），`.notification-badge` 描边改 `var(--webos-badge-ring)`，win11 变量覆盖块新增 `--webos-badge-ring: #f3f3f3`（跟随浅任务栏底色）；桌面图标更新角标 `.desktop-update-badge` 无描边不受影响；`WebosUiThemeTest` 前端接线用例追加 3 条断言，278 用例 / 2825 断言全绿 |
 | 2.1.141 | 2026-11-24 | **应用窗口标题栏显示应用版本号**（用户需求「打开应用窗口，在应用的名字右上角用小字显示当前应用的版本」）：`windowIdentity()` 新增 `version` 键（`findApplication(entry.app_id).version`，空值返回 `''`）；`windowMarkup()` 应用名后条件渲染 `<span class="window-app-version">v{version}</span>`（上标小字，位于既有菜单名副标题之前）；CSS 新增 `.window-app-version`（`margin-left:4px;font-size:11px;color:var(--webos-muted);vertical-align:super`）；数据链无需后端改动——`applicationListByAppIds()`（WebosController 913 行）本就返回 `version` 字段；特殊窗口（应用中心/OS 设置等）走固定 identity 无 version 键自然不渲染；窗口品牌区固定显示应用身份（切换选项卡不重写 window-brand），版本随窗口创建时固定，应用更新后重开窗口即刷新；既有窗口品牌用例追加 4 条接线断言，278 用例 / 2822 断言全绿 |

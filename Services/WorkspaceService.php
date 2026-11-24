@@ -19,6 +19,10 @@ class WorkspaceService
         'label_effect' => 'none',
         // 界面主题（2.1.136 OS 设置「界面主题」Tab）：default=CmsPro 经典、win11=Win11 浅色（Fluent Design）
         'ui_theme' => 'default',
+        // 自定义主题库（2.1.144「细节调整」）：[{id,name,base,overrides}]，overrides 为 8 项细节覆盖值
+        'ui_theme_customs' => [],
+        // 当前启用的自定义主题 ID（非空且存在时优先于 ui_theme 生效）
+        'ui_theme_custom_id' => '',
         'window_tabs' => false,
         'tab_reload' => false,
         'menu_open_launcher' => false,
@@ -69,6 +73,28 @@ class WorkspaceService
 
     /** 全局开关键（OS 设置「覆盖传统后台」双开关）：任一超级管理员配置即对所有账号生效，不按账号隔离 */
     public const GLOBAL_PREFERENCES = ['override_admin_home', 'override_user_home'];
+
+    /** 自定义主题数量上限（2.1.144「细节调整」）：超限从列表尾部丢弃 */
+    public const MAX_UI_THEME_CUSTOMS = 20;
+
+    /**
+     * 自定义主题细节覆盖键的净化规则（2.1.144，与前端 THEME_FIELDS 同口径）：
+     * 字符串值为十六进制色值正则，数值规则为 [最小值, 最大值] 区间（越界 clamp）；
+     * 未声明或非法的键直接丢弃（不回退默认——缺键即「跟随基础主题默认」语义）。
+     */
+    protected const THEME_OVERRIDE_RULES = [
+        'accent' => '/^#[0-9a-f]{6}$/',
+        'taskbar_height' => [40, 64],
+        'window_radius' => [0, 16],
+        'taskbar_opacity' => [50, 100],
+        'icon_scale' => [80, 130],
+        'font_size' => [12, 16],
+        'shadow' => [0, 100],
+        'wallpaper_dim' => [0, 60],
+    ];
+
+    /** 自定义主题 ID 规则（前端 Date.now()+随机段生成的小写字母数字串） */
+    protected const THEME_ID_PATTERN = '/^[a-z0-9]{4,24}$/';
 
     /** 小工具桌面项实例参数上限（键数量）：多实例场景由 picker 选中值写入 */
     public const MAX_WIDGET_PARAMS = 3;
@@ -810,6 +836,12 @@ class WorkspaceService
         $preferences['ui_theme'] = in_array($preferences['ui_theme'] ?? '', ['default', 'win11'], true)
             ? $preferences['ui_theme']
             : self::DEFAULT_PREFERENCES['ui_theme'];
+        // 自定义主题库（2.1.144「细节调整」）：逐条净化并限制数量，启用 ID 必须存在于库中
+        $preferences['ui_theme_customs'] = $this->sanitizeThemeCustoms($preferences['ui_theme_customs'] ?? []);
+        $allowedThemeIds = array_column($preferences['ui_theme_customs'], 'id');
+        $preferences['ui_theme_custom_id'] = in_array((string) ($preferences['ui_theme_custom_id'] ?? ''), $allowedThemeIds, true)
+            ? $preferences['ui_theme_custom_id']
+            : self::DEFAULT_PREFERENCES['ui_theme_custom_id'];
         // 应用窗口多选项卡（OS 设置开关，默认关闭）
         $preferences['window_tabs'] = (bool) ($preferences['window_tabs'] ?? false);
         // 选项卡刷新（OS 设置开关，默认关闭）：多选项卡模式下点击左侧菜单重新加载对应页面内容
@@ -903,6 +935,78 @@ class WorkspaceService
         return preg_match('#^apps/cmspro\.webos/wallpapers/[A-Za-z0-9_-]+\.(jpg|jpeg|png|gif|webp)$#', $url)
             ? $url
             : '';
+    }
+
+    /**
+     * 净化自定义主题库（2.1.144「细节调整」）：丢弃非数组条目与非法 ID，ID 冲突保留先出现者，
+     * 超过 MAX_UI_THEME_CUSTOMS 从尾部丢弃；返回以 ID 为键的列表（array_values 后连续索引）。
+     *
+     * @param mixed $customs 工作区偏好中的 ui_theme_customs 原始值
+     * @return array<int,array{id:string,name:string,base:string,overrides:array<string,mixed>}>
+     */
+    protected function sanitizeThemeCustoms($customs): array
+    {
+        if (! is_array($customs)) {
+            return [];
+        }
+
+        $sanitized = [];
+        foreach ($customs as $custom) {
+            if (count($sanitized) >= self::MAX_UI_THEME_CUSTOMS) {
+                break;
+            }
+            if (! is_array($custom)) {
+                continue;
+            }
+            $id = (string) ($custom['id'] ?? '');
+            if (! preg_match(self::THEME_ID_PATTERN, $id) || isset($sanitized[$id])) {
+                continue;
+            }
+            $name = mb_substr(trim((string) ($custom['name'] ?? '')), 0, 30);
+
+            $sanitized[$id] = [
+                'id' => $id,
+                'name' => $name !== '' ? $name : '未命名主题',
+                'base' => in_array($custom['base'] ?? '', ['default', 'win11'], true)
+                    ? $custom['base']
+                    : 'default',
+                'overrides' => $this->sanitizeThemeOverrides($custom['overrides'] ?? []),
+            ];
+        }
+
+        return array_values($sanitized);
+    }
+
+    /**
+     * 净化自定义主题的细节覆盖值：仅保留 THEME_OVERRIDE_RULES 声明的键，
+     * 色值按正则校验（统一小写），数值越界时 clamp 到区间；非法值丢弃（缺键=跟随基础主题默认）。
+     *
+     * @param mixed $overrides 主题条目中的 overrides 原始值
+     * @return array<string,int|string>
+     */
+    protected function sanitizeThemeOverrides($overrides): array
+    {
+        if (! is_array($overrides)) {
+            return [];
+        }
+
+        $result = [];
+        foreach (self::THEME_OVERRIDE_RULES as $key => $rule) {
+            $value = $overrides[$key] ?? null;
+            if (is_string($rule)) {
+                // 十六进制色值（accent）：大小写宽容（先归一化小写再校验），通过才保留
+                if (is_string($value) && preg_match($rule, strtolower($value))) {
+                    $result[$key] = strtolower($value);
+                }
+                continue;
+            }
+            if (! is_numeric($value)) {
+                continue;
+            }
+            $result[$key] = (int) max($rule[0], min($rule[1], round((float) $value)));
+        }
+
+        return $result;
     }
 
     /**

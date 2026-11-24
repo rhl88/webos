@@ -66,10 +66,278 @@
     // 超出时前端按最近打开时间裁剪，避免全量请求体被服务端校验拒绝、连带桌面布局保存一并失败
     var USAGE_STATS_LIMIT = 200;
 
-    /** 当前桌面图标尺寸档位（非法值回退中图标默认档） */
+    /**
+     * 界面主题细节调整（2.1.144）：8 项可调渲染细节的字段定义，与服务端
+     * WorkspaceService::THEME_OVERRIDE_RULES 同口径（色值正则/数值区间）。
+     * accent 色值统一小写；其余为数值区间，越界时 clamp。
+     */
+    var THEME_FIELDS = [
+        { key: 'accent', label: '主题强调色', type: 'color' },
+        { key: 'taskbar_height', label: '任务栏高度', type: 'range', min: 40, max: 64, step: 1, unit: 'px' },
+        { key: 'window_radius', label: '窗口圆角', type: 'range', min: 0, max: 16, step: 1, unit: 'px' },
+        { key: 'taskbar_opacity', label: '任务栏不透明度', type: 'range', min: 50, max: 100, step: 1, unit: '%' },
+        { key: 'icon_scale', label: '桌面图标大小', type: 'range', min: 80, max: 130, step: 5, unit: '%' },
+        { key: 'font_size', label: '界面字号', type: 'range', min: 12, max: 16, step: 1, unit: 'px' },
+        { key: 'shadow', label: '窗口阴影强度', type: 'range', min: 0, max: 100, step: 10, unit: '%' },
+        { key: 'wallpaper_dim', label: '壁纸遮罩暗度', type: 'range', min: 0, max: 60, step: 5, unit: '%' }
+    ];
+
+    /** 内置主题渲染基准（2.1.144）：accent=强调色、taskbar=任务栏底色 RGB 与默认不透明度、
+     *  radius=默认窗口圆角、shadow=默认阴影（rgba 供强度系数重算）——与 webos.css :root/win11 块同源 */
+    var THEME_BASE_DEFAULTS = {
+        default: {
+            accent: '#16baaa',
+            taskbar_rgb: '8,38,67',
+            taskbar_opacity: 90,
+            window_radius: 12,
+            shadow: '0 18px 56px rgba(9, 37, 68, 0.24)'
+        },
+        win11: {
+            accent: '#005fb8',
+            taskbar_rgb: '243,243,243',
+            taskbar_opacity: 88,
+            window_radius: 8,
+            shadow: '0 16px 44px rgba(0, 0, 0, 0.22)'
+        }
+    };
+
+    /** 主题微调草稿（2.1.144）：null=未在调整（跟随当前启用主题）；微调控件改动即时预览，
+     *  点「保存修改/另存为新主题」才写入偏好持久化；切换主题卡片时重置为 null */
+    var themeDraft = null;
+
+    /** 数值 clamp：非法/缺省返回 fallback，合法值限制在 [min, max] */
+    function clampThemeNum(value, min, max, fallback) {
+        var num = Number(value);
+        if (!isFinite(num)) {
+            return fallback;
+        }
+        return Math.round(Math.max(min, Math.min(max, num)));
+    }
+
+    /** 十六进制色值归一化（#abc123 小写）；非法输入回退 fallback */
+    function normalizeThemeColor(value, fallback) {
+        var color = String(value || '').trim().toLowerCase();
+        return /^#[0-9a-f]{6}$/.test(color) ? color : fallback;
+    }
+
+    /** 强调色加深一档（hue 不变、亮度降 14%）：用于 --webos-primary-dark（hover 深一档） */
+    function shadeThemeColor(hex, amount) {
+        var r = parseInt(hex.slice(1, 3), 16) / 255;
+        var g = parseInt(hex.slice(3, 5), 16) / 255;
+        var b = parseInt(hex.slice(5, 7), 16) / 255;
+        var max = Math.max(r, g, b);
+        var min = Math.min(r, g, b);
+        var l = (max + min) / 2;
+        var h = 0;
+        var s = 0;
+        if (max !== min) {
+            var d = max - min;
+            s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+            if (max === r) {
+                h = ((g - b) / d + (g < b ? 6 : 0)) / 6;
+            } else if (max === g) {
+                h = ((b - r) / d + 2) / 6;
+            } else {
+                h = ((r - g) / d + 4) / 6;
+            }
+        }
+        l = Math.max(0, Math.min(1, l + amount));
+        // hsl 转回 rgb（标准算法）
+        var hue2rgb = function (p, q, t) {
+            if (t < 0) { t += 1; }
+            if (t > 1) { t -= 1; }
+            if (t < 1 / 6) { return p + (q - p) * 6 * t; }
+            if (t < 1 / 2) { return q; }
+            if (t < 2 / 3) { return p + (q - p) * (2 / 3 - t) * 6; }
+            return p;
+        };
+        var q = l < 0.5 ? l * (1 + s) : l + s - l * s;
+        var p = 2 * l - q;
+        var toHex = function (c) {
+            var v = ('0' + Math.round(c * 255).toString(16)).slice(-2);
+            return v;
+        };
+        return '#' + toHex(hue2rgb(p, q, h + 1 / 3)) + toHex(hue2rgb(p, q, h)) + toHex(hue2rgb(p, q, h - 1 / 3));
+    }
+
+    /** 按强度系数重算阴影 rgba 透明度（0%~100% 映射 alpha 缩放） */
+    function rescaleThemeShadow(shadow, factor) {
+        return shadow.replace(/rgba\((\d+),\s*(\d+),\s*(\d+),\s*([\d.]+)\)/g, function (match, r, g, b, a) {
+            return 'rgba(' + r + ',' + g + ',' + b + ',' + (parseFloat(a) * factor).toFixed(3) + ')';
+        });
+    }
+
+    /** 当前生效主题解析（2.1.144）：自定义主题启用时以其 base + overrides 为准，否则跟随 ui_theme */
+    function resolveThemePreviews(preferences) {
+        var customs = Array.isArray(preferences.ui_theme_customs) ? preferences.ui_theme_customs : [];
+        var active = null;
+        if (preferences.ui_theme_custom_id) {
+            active = customs.filter(function (theme) {
+                return theme && theme.id === preferences.ui_theme_custom_id;
+            })[0] || null;
+        }
+        var base = active
+            ? (active.base === 'win11' ? 'win11' : 'default')
+            : (preferences.ui_theme === 'win11' ? 'win11' : 'default');
+        return {
+            base: base,
+            baseDefaults: THEME_BASE_DEFAULTS[base],
+            overrides: active && active.overrides && typeof active.overrides === 'object' ? active.overrides : {},
+            custom: active
+        };
+    }
+
+    /** 覆盖缺省时的兜底值（跟随基础主题默认或全局固定档） */
+    function themeFieldFallback(key, baseDefaults) {
+        if (key === 'accent') {
+            return baseDefaults.accent;
+        }
+        if (key === 'taskbar_opacity') {
+            return baseDefaults.taskbar_opacity;
+        }
+        if (key === 'window_radius') {
+            return baseDefaults.window_radius;
+        }
+        if (key === 'taskbar_height') {
+            return 50;
+        }
+        if (key === 'font_size') {
+            return 14;
+        }
+        if (key === 'shadow') {
+            return 100;
+        }
+        if (key === 'wallpaper_dim') {
+            return 0;
+        }
+        // icon_scale
+        return 100;
+    }
+
+    /** 当前微调草稿生效值（8 键全量）：草稿 > 启用主题 overrides > 基础主题默认 */
+    function themeTuneValues(preferences) {
+        var resolved = resolveThemePreviews(preferences);
+        var draft = themeDraft || {};
+        var values = {};
+        THEME_FIELDS.forEach(function (field) {
+            var source = draft[field.key] !== undefined ? draft[field.key]
+                : resolved.overrides[field.key];
+            if (field.type === 'color') {
+                values[field.key] = normalizeThemeColor(source, resolved.baseDefaults.accent);
+                return;
+            }
+            values[field.key] = clampThemeNum(source, field.min, field.max,
+                themeFieldFallback(field.key, resolved.baseDefaults));
+        });
+        values.base = resolved.base;
+        return values;
+    }
+
+    /** 单项覆盖当前值：微调草稿优先，其次启用主题 overrides；均无返回 undefined（=跟随主题默认） */
+    function themeOverrideValue(key) {
+        if (themeDraft && themeDraft[key] !== undefined) {
+            return themeDraft[key];
+        }
+        var resolved = resolveThemePreviews(state.workspace.preferences);
+        return resolved.overrides[key] !== undefined ? resolved.overrides[key] : undefined;
+    }
+
+    /** 把微调覆盖写入桌面容器内联 CSS 变量：仅写入已覆盖的键（未覆盖键移除内联值，
+     *  回退 CSS 主题默认——保证无微调时默认主题与 Win11 主题的渲染与 2.1.142 完全一致） */
+    function applyThemeTune() {
+        var base = THEME_BASE_DEFAULTS[resolveThemePreviews(state.workspace.preferences).base];
+        // 强调色：primary + hover 深一档（亮度 -14%）+ 焦点色同步
+        var accent = themeOverrideValue('accent');
+        if (accent !== undefined) {
+            accent = normalizeThemeColor(accent, base.accent);
+            root.style.setProperty('--webos-primary', accent);
+            root.style.setProperty('--webos-primary-dark', shadeThemeColor(accent, -0.14));
+            root.style.setProperty('--webos-focus', accent);
+        } else {
+            root.style.removeProperty('--webos-primary');
+            root.style.removeProperty('--webos-primary-dark');
+            root.style.removeProperty('--webos-focus');
+        }
+        var height = themeOverrideValue('taskbar_height');
+        if (height !== undefined) {
+            height = clampThemeNum(height, 40, 64, 50);
+            root.style.setProperty('--taskbar-height', height + 'px');
+            root.style.setProperty('--taskbar-size', height + 'px');
+        } else {
+            root.style.removeProperty('--taskbar-height');
+            root.style.removeProperty('--taskbar-size');
+        }
+        var radius = themeOverrideValue('window_radius');
+        if (radius !== undefined) {
+            root.style.setProperty('--webos-radius', clampThemeNum(radius, 0, 16, base.window_radius) + 'px');
+        } else {
+            root.style.removeProperty('--webos-radius');
+        }
+        var opacity = themeOverrideValue('taskbar_opacity');
+        if (opacity !== undefined) {
+            root.style.setProperty('--webos-taskbar',
+                'rgba(' + base.taskbar_rgb + ',' + (clampThemeNum(opacity, 50, 100, base.taskbar_opacity) / 100) + ')');
+        } else {
+            root.style.removeProperty('--webos-taskbar');
+        }
+        var iconScale = themeOverrideValue('icon_scale');
+        if (iconScale !== undefined) {
+            root.style.setProperty('--webos-icon-scale', String(clampThemeNum(iconScale, 80, 130, 100) / 100));
+        } else {
+            root.style.removeProperty('--webos-icon-scale');
+        }
+        var fontSize = themeOverrideValue('font_size');
+        if (fontSize !== undefined) {
+            root.style.setProperty('--webos-font-size', clampThemeNum(fontSize, 12, 16, 14) + 'px');
+        } else {
+            root.style.removeProperty('--webos-font-size');
+        }
+        var shadow = themeOverrideValue('shadow');
+        if (shadow !== undefined) {
+            root.style.setProperty('--webos-shadow', rescaleThemeShadow(base.shadow, clampThemeNum(shadow, 0, 100, 100) / 100));
+        } else {
+            root.style.removeProperty('--webos-shadow');
+        }
+        // 壁纸暗度：遮罩层 alpha，默认 0（无遮罩）——始终写入（0 无视觉影响，遮罩层样式常驻）
+        var dim = themeOverrideValue('wallpaper_dim');
+        root.style.setProperty('--webos-wallpaper-dim', ((dim !== undefined ? clampThemeNum(dim, 0, 60, 0) : 0) / 100).toFixed(2));
+    }
+
+    /** 壁纸暗度遮罩层（2.1.144）：插在壁纸之后、桌面图标之前（DOM 顺序垫层），一次性插入 */
+    function ensureWallpaperDim() {
+        if (!root || root.querySelector('.webos-wallpaper-dim')) {
+            return;
+        }
+        var wallpaper = root.querySelector('.webos-wallpaper');
+        if (wallpaper && wallpaper.nextElementSibling) {
+            wallpaper.insertAdjacentHTML('afterend',
+                '<div class="webos-wallpaper-dim" aria-hidden="true"></div>');
+        }
+    }
+
+    /** 生成自定义主题 ID：小写字母数字（服务端 THEME_ID_PATTERN 校验通过） */
+    function newThemeId() {
+        return 't' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+    }
+
+
+    /** 当前桌面图标尺寸档位（非法值回退中图标默认档）：格子与按钮尺寸按界面主题 icon_scale
+     *  等比缩放（2.1.144），布局定位、拖拽落点换算与 CSS calc 宽度共用同一系数 */
     function desktopIconSize() {
-        var size = state.workspace.preferences.icon_size;
-        return DESKTOP_ICON_SIZES[size] || DESKTOP_ICON_SIZES.medium;
+        var size = DESKTOP_ICON_SIZES[state.workspace.preferences.icon_size] || DESKTOP_ICON_SIZES.medium;
+        var scale = 1;
+        if (root) {
+            var scaled = parseFloat(root.style.getPropertyValue('--webos-icon-scale'));
+            if (isFinite(scaled) && scaled > 0) {
+                scale = scaled;
+            }
+        }
+        return {
+            cellW: Math.round(size.cellW * scale),
+            cellH: Math.round(size.cellH * scale),
+            iconW: Math.round(size.iconW * scale),
+            iconH: Math.round(size.iconH * scale)
+        };
     }
     var state = {
         workspace: {
@@ -78,6 +346,8 @@
             preferences: {
                 wallpaper: 'webos-default',
                 ui_theme: 'default',
+                ui_theme_customs: [],
+                ui_theme_custom_id: '',
                 taskbar_alignment: 'left',
                 taskbar_position: 'bottom',
                 clock_format: '24h',
@@ -5821,15 +6091,271 @@
         }).join('') + '</nav>';
     }
 
-    /** 界面主题（2.1.136）：桌面 UI 配色风格单选；主题作用于任务栏、窗口、开始菜单等桌面界面，
-     *  应用窗口 iframe 内的页面不跟随（与壁纸、图标效果等偏好独立叠加） */
+    /** 主题选择卡片（内置主题，2.1.136）：复用 settings-choice 结构，data-theme-select 驱动选择 */
+    function themeCardMarkup(baseValue, icon, label, active) {
+        return '<button class="settings-choice' + (active ? ' is-active' : '') + '" type="button"'
+            + ' data-theme-select="' + baseValue + '" aria-pressed="' + (active ? 'true' : 'false') + '">'
+            + '<i class="fa ' + icon + '"></i><span>' + label + '</span></button>';
+    }
+
+    /** 主题选择卡片（自定义主题，2.1.144）：整卡点击选用，右上角悬停出现导出/删除按钮 */
+    function themeCustomCardMarkup(theme, active) {
+        return '<span class="theme-custom-card' + (active ? ' is-active' : '') + '" data-theme-select-custom="'
+            + escapeHtml(theme.id) + '" title="' + escapeHtml(theme.name) + '">'
+            + '<i class="fa fa-paint-brush"></i><span class="theme-custom-name">' + escapeHtml(theme.name) + '</span>'
+            + '<span class="theme-custom-actions">'
+            + '<button type="button" class="theme-custom-btn" data-theme-export="' + escapeHtml(theme.id)
+            + '" title="导出主题"><i class="fa fa-download"></i></button>'
+            + '<button type="button" class="theme-custom-btn is-danger" data-theme-delete="' + escapeHtml(theme.id)
+            + '" title="删除主题"><i class="fa fa-trash"></i></button>'
+            + '</span></span>';
+    }
+
+    /** 细节调整控件行（2.1.144）：color 色值 / range 数值，改动即时预览不落库 */
+    function themeTuneRowMarkup(field, value) {
+        if (field.type === 'color') {
+            return '<label class="theme-tune-row"><span>' + field.label + '</span>'
+                + '<input type="color" value="' + value + '" data-theme-tune="' + field.key + '"'
+                + ' aria-label="' + field.label + '"><b>' + value + '</b></label>';
+        }
+        return '<label class="theme-tune-row"><span>' + field.label + '</span>'
+            + '<input type="range" min="' + field.min + '" max="' + field.max + '" step="' + field.step
+            + '" value="' + value + '" data-theme-tune="' + field.key + '" aria-label="' + field.label + '">'
+            + '<b>' + value + field.unit + '</b></label>';
+    }
+
+    /** 界面主题（2.1.136/2.1.144）：主题选择（内置 + 自定义库）+ 细节调整（8 项渲染细节微调）+
+     *  新建/保存/导出/导入。微调即时预览；「新建主题/保存修改」才写入偏好持久化。 */
     function themeSectionMarkup(preferences) {
+        var customs = Array.isArray(preferences.ui_theme_customs) ? preferences.ui_theme_customs : [];
+        var activeId = preferences.ui_theme_custom_id || '';
+        var values = themeTuneValues(preferences);
+        var cards = '<div class="settings-choice-grid is-two">'
+            + themeCardMarkup('default', 'fa-circle-o', '默认主题', !activeId && preferences.ui_theme !== 'win11')
+            + themeCardMarkup('win11', 'fa-windows', 'Win11 浅色', !activeId && preferences.ui_theme === 'win11')
+            + customs.map(function (theme) {
+                return themeCustomCardMarkup(theme, activeId === theme.id);
+            }).join('')
+            + '</div>'
+            + '<div class="theme-actions">'
+            + '<button class="settings-btn" type="button" data-theme-new><i class="fa fa-plus"></i>基于当前效果新建主题</button>'
+            + (activeId
+                ? '<button class="settings-btn" type="button" data-theme-save-current><i class="fa fa-save"></i>保存修改到当前主题</button>'
+                : '')
+            + '<button class="settings-btn" type="button" data-theme-export-current><i class="fa fa-download"></i>导出当前主题</button>'
+            + '<label class="settings-btn"><i class="fa fa-upload"></i>导入主题'
+            + '<input type="file" accept=".json,application/json" data-theme-import hidden></label>'
+            + '</div>'
+            + '<small class="settings-hint">细节调整即时预览，点「新建主题/保存修改」后持久化；导出文件可分享给其他账号导入。'
+            + '主题仅影响桌面界面本身，应用窗口内打开的页面不跟随换肤。</small>';
+        var tuneRows = THEME_FIELDS.map(function (field) {
+            return themeTuneRowMarkup(field, values[field.key]);
+        }).join('');
+
         return '<section class="settings-card"><div class="settings-card-title"><i class="fa fa-paint-brush"></i><div>'
             + '<strong>界面主题</strong><small>切换桌面 UI 配色与质感（任务栏、窗口、开始菜单等）</small></div></div>'
-            + '<div class="settings-choice-grid is-two">'
-            + settingsChoice('set-ui-theme', 'default', 'fa-circle-o', '默认主题', (preferences.ui_theme || 'default') !== 'win11')
-            + settingsChoice('set-ui-theme', 'win11', 'fa-windows', 'Win11 浅色', preferences.ui_theme === 'win11')
-            + '</div><small class="settings-hint">主题仅影响桌面界面本身，应用窗口内打开的页面不跟随换肤。</small></section>';
+            + cards + '</section>'
+            + '<section class="settings-card"><div class="settings-card-title"><i class="fa fa-sliders"></i><div>'
+            + '<strong>细节调整</strong><small>在当前主题基础上微调 UI 渲染细节（色调、任务栏高度、圆角等）</small></div></div>'
+            + tuneRows + '</section>';
+    }
+
+    /** 主题操作后的保存收尾：重绘设置面板 + 静默保存 + toast（与 savePreference 同链路） */
+    function saveThemePreference(message) {
+        renderWebosSettings();
+        saveWorkspace(false).then(function () { toast(message); });
+    }
+
+    /** 微调控件改动（2.1.144）：写草稿 + 即时预览 + 行内数值刷新，不落库 */
+    function tuneThemeDraft(key, value, row) {
+        var field = THEME_FIELDS.filter(function (item) { return item.key === key; })[0];
+        if (!field) {
+            return;
+        }
+        var resolved = resolveThemePreviews(state.workspace.preferences);
+        if (!themeDraft) {
+            themeDraft = {};
+        }
+        if (field.type === 'color') {
+            themeDraft[key] = normalizeThemeColor(value, resolved.baseDefaults.accent);
+        } else {
+            themeDraft[key] = clampThemeNum(value, field.min, field.max, themeFieldFallback(key, resolved.baseDefaults));
+        }
+        applyThemeTune();
+        var label = row ? row.querySelector('b') : null;
+        if (label) {
+            label.textContent = field.type === 'color' ? themeDraft[key] : themeDraft[key] + field.unit;
+        }
+    }
+
+    /** 基于当前效果新建主题（2.1.144）：当前微调值全量落为新主题并立即启用 */
+    function createThemeFromCurrent() {
+        var name = window.prompt('主题名称', '我的主题');
+        if (name === null) {
+            return;
+        }
+        name = name.trim().slice(0, 30) || '未命名主题';
+        var preferences = state.workspace.preferences;
+        var customs = Array.isArray(preferences.ui_theme_customs) ? preferences.ui_theme_customs.slice() : [];
+        if (customs.length >= 20) {
+            toast('自定义主题数量已达上限（20 个）', 'error');
+            return;
+        }
+        var overrides = {};
+        var values = themeTuneValues(preferences);
+        THEME_FIELDS.forEach(function (field) {
+            overrides[field.key] = values[field.key];
+        });
+        var theme = { id: newThemeId(), name: name, base: values.base, overrides: overrides };
+        customs.push(theme);
+        preferences.ui_theme_customs = customs;
+        preferences.ui_theme_custom_id = theme.id;
+        themeDraft = null;
+        applyThemeTune();
+        saveThemePreference('主题「' + name + '」已创建并启用');
+    }
+
+    /** 保存修改到当前启用的自定义主题（2.1.144）：微调草稿写回该主题的 overrides */
+    function saveChangesToActiveTheme() {
+        var preferences = state.workspace.preferences;
+        var resolved = resolveThemePreviews(preferences);
+        if (!resolved.custom) {
+            return;
+        }
+        var overrides = {};
+        var values = themeTuneValues(preferences);
+        THEME_FIELDS.forEach(function (field) {
+            overrides[field.key] = values[field.key];
+        });
+        resolved.custom.overrides = overrides;
+        themeDraft = null;
+        applyThemeTune();
+        saveThemePreference('主题「' + resolved.custom.name + '」已保存');
+    }
+
+    /** 选用内置主题：写入 ui_theme 并清空自定义启用 ID */
+    function selectBuiltinTheme(baseValue) {
+        if (['default', 'win11'].indexOf(baseValue) < 0) {
+            return;
+        }
+        var preferences = state.workspace.preferences;
+        preferences.ui_theme = baseValue;
+        preferences.ui_theme_custom_id = '';
+        themeDraft = null;
+        applyThemeTune();
+        saveThemePreference('界面主题已更新');
+    }
+
+    /** 选用自定义主题：仅库中存在的 ID 生效 */
+    function selectCustomTheme(themeId) {
+        var preferences = state.workspace.preferences;
+        var exists = (Array.isArray(preferences.ui_theme_customs) ? preferences.ui_theme_customs : [])
+            .some(function (theme) { return theme && theme.id === themeId; });
+        if (!exists) {
+            return;
+        }
+        preferences.ui_theme_custom_id = themeId;
+        themeDraft = null;
+        applyThemeTune();
+        saveThemePreference('界面主题已更新');
+    }
+
+    /** 删除自定义主题：启用中的主题删除后回退基础主题 */
+    function deleteTheme(themeId) {
+        var preferences = state.workspace.preferences;
+        preferences.ui_theme_customs = (Array.isArray(preferences.ui_theme_customs) ? preferences.ui_theme_customs : [])
+            .filter(function (theme) { return theme && theme.id !== themeId; });
+        if (preferences.ui_theme_custom_id === themeId) {
+            preferences.ui_theme_custom_id = '';
+        }
+        themeDraft = null;
+        applyThemeTune();
+        saveThemePreference('自定义主题已删除');
+    }
+
+    /** 导出主题文件（2.1.144）：下载 <名称>.webos-theme.json（Blob 临时链），文件名转义非法字符 */
+    function exportTheme(theme) {
+        var payload = {
+            type: 'cmspro-webos-theme',
+            version: 1,
+            name: theme.name,
+            base: theme.base,
+            overrides: theme.overrides || {}
+        };
+        var blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+        var link = document.createElement('a');
+        link.href = URL.createObjectURL(blob);
+        link.download = String(theme.name).replace(/[\\/:*?"<>|]/g, '_') + '.webos-theme.json';
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(link.href);
+    }
+
+    /** 导入主题（2.1.144）：解析 JSON → 校验契约 → 覆盖值白名单净化 → 追加主题库（不自动启用） */
+    function importThemeFile(file) {
+        var reader = new FileReader();
+        reader.onload = function () {
+            var payload;
+            try {
+                payload = JSON.parse(String(reader.result));
+            } catch (error) {
+                toast('主题文件格式不正确', 'error');
+                return;
+            }
+            if (!payload || payload.type !== 'cmspro-webos-theme' || payload.version !== 1) {
+                toast('不是有效的 WebOS 主题文件', 'error');
+                return;
+            }
+            var preferences = state.workspace.preferences;
+            var customs = Array.isArray(preferences.ui_theme_customs) ? preferences.ui_theme_customs.slice() : [];
+            if (customs.length >= 20) {
+                toast('自定义主题数量已达上限（20 个）', 'error');
+                return;
+            }
+            var base = payload.base === 'win11' ? 'win11' : 'default';
+            var name = String(payload.name || '').trim().slice(0, 30) || '导入的主题';
+            // 重名追加序号，避免库内同名主题难以区分
+            while (customs.some(function (theme) { return theme && theme.name === name; })) {
+                name += ' (2)';
+            }
+            var source = payload.overrides && typeof payload.overrides === 'object' ? payload.overrides : {};
+            var overrides = {};
+            THEME_FIELDS.forEach(function (field) {
+                var value = source[field.key];
+                if (field.type === 'color') {
+                    var color = normalizeThemeColor(value, '');
+                    if (color) {
+                        overrides[field.key] = color;
+                    }
+                } else if (value !== undefined && value !== null && isFinite(Number(value))) {
+                    overrides[field.key] = clampThemeNum(value, field.min, field.max,
+                        themeFieldFallback(field.key, THEME_BASE_DEFAULTS[base]));
+                }
+            });
+            customs.push({ id: newThemeId(), name: name, base: base, overrides: overrides });
+            preferences.ui_theme_customs = customs;
+            saveThemePreference('主题「' + name + '」已导入');
+        };
+        reader.onerror = function () {
+            toast('主题文件读取失败', 'error');
+        };
+        reader.readAsText(file);
+    }
+
+    /** 导出当前主题效果（2.1.144）：当前微调值全量导出为可分享的主题文件 */
+    function exportCurrentTheme() {
+        var resolved = resolveThemePreviews(state.workspace.preferences);
+        var values = themeTuneValues(state.workspace.preferences);
+        var overrides = {};
+        THEME_FIELDS.forEach(function (field) {
+            overrides[field.key] = values[field.key];
+        });
+        exportTheme({
+            name: (resolved.custom ? resolved.custom.name : (resolved.base === 'win11' ? 'Win11 浅色' : '默认主题')) + ' 副本',
+            base: resolved.base,
+            overrides: overrides
+        });
     }
 
     /** 背景设置：壁纸风格选择、自定义壁纸上传与当前壁纸预览 */
@@ -13700,8 +14226,11 @@
     function applyWorkspacePreferences() {
         var preferences = state.workspace.preferences;
         root.dataset.wallpaper = preferences.wallpaper || 'webos-default';
-        // 界面主题（2.1.136）：挂桌面容器 data 属性，CSS 侧 [data-ui-theme="win11"] 覆盖 --webos-* 变量换肤
-        root.dataset.uiTheme = preferences.ui_theme === 'win11' ? 'win11' : 'default';
+        // 界面主题（2.1.136/2.1.144）：基础主题挂 data 属性驱动 CSS 变量块切换 + 8 项细节覆盖写入
+        // 内联 CSS 变量（未覆盖键回退主题默认）；壁纸暗度遮罩随 applyThemeTune 写入
+        ensureWallpaperDim();
+        root.dataset.uiTheme = resolveThemePreviews(preferences).base;
+        applyThemeTune();
         // 图标文字效果挂桌面容器 data 属性（CSS 作用域切换：none/shadow/shield），避免逐个图标改类
         if (elements.desktopIcons) {
             elements.desktopIcons.dataset.labelEffect = preferences.label_effect || 'none';
@@ -14846,6 +15375,24 @@
             switchAdminPresetRole(select.value);
         });
 
+        // 界面主题细节调整（2.1.144）：色值/数值控件改动写微调草稿并即时预览（不落库，保存走新建/保存按钮）
+        root.addEventListener('input', function (event) {
+            var tune = event.target.closest('[data-theme-tune]');
+            if (!tune) {
+                return;
+            }
+            tuneThemeDraft(tune.dataset.themeTune, tune.value, tune.closest('.theme-tune-row'));
+        });
+
+        // 界面主题导入（2.1.144）：选择主题 JSON 文件后解析导入（完成后清空 value 便于重复导入同一文件）
+        root.addEventListener('change', function (event) {
+            var imported = event.target.closest('[data-theme-import]');
+            if (imported && imported.files && imported.files[0]) {
+                importThemeFile(imported.files[0]);
+                imported.value = '';
+            }
+        });
+
         // 「用户桌面」搜索用户：输入防抖 300ms 后搜索；清空关键字时收起下拉并作废在途响应
         root.addEventListener('input', function (event) {
             var input = event.target.closest('[data-preset-user-input]');
@@ -15514,9 +16061,36 @@
             var wallpaper = event.target.closest('[data-set-webos-wallpaper]');
             if (wallpaper) { setWebosPreference('wallpaper', wallpaper.dataset.setWebosWallpaper, '桌面外观已更新'); }
 
-            // 界面主题（2.1.136）：default=CmsPro 经典、win11=Win11 浅色，dataset 驱动 CSS 变量切换
-            var uiTheme = event.target.closest('[data-set-ui-theme]');
-            if (uiTheme) { setWebosPreference('ui_theme', uiTheme.dataset.setUiTheme, '界面主题已更新'); }
+            // 界面主题（2.1.144）：内置主题单选（默认/Win11 浅色）
+            var uiTheme = event.target.closest('[data-theme-select]');
+            if (uiTheme) { selectBuiltinTheme(uiTheme.dataset.themeSelect); }
+
+            // 自定义主题卡片：导出/删除按钮优先于整卡选择（按钮嵌在卡片内，先命中后短路）
+            var themeExportBtn = event.target.closest('[data-theme-export]');
+            if (themeExportBtn) {
+                var exportedTheme = (Array.isArray(state.workspace.preferences.ui_theme_customs)
+                    ? state.workspace.preferences.ui_theme_customs : [])
+                    .filter(function (theme) { return theme && theme.id === themeExportBtn.dataset.themeExport; })[0];
+                if (exportedTheme) { exportTheme(exportedTheme); }
+            } else {
+                var themeDeleteBtn = event.target.closest('[data-theme-delete]');
+                if (themeDeleteBtn) {
+                    deleteTheme(themeDeleteBtn.dataset.themeDelete);
+                } else {
+                    var customCard = event.target.closest('[data-theme-select-custom]');
+                    if (customCard) { selectCustomTheme(customCard.dataset.themeSelectCustom); }
+                }
+            }
+
+            // 主题操作区：新建 / 保存修改 / 导出当前 / 导入
+            var themeNew = event.target.closest('[data-theme-new]');
+            if (themeNew) { createThemeFromCurrent(); }
+
+            var themeSaveCurrent = event.target.closest('[data-theme-save-current]');
+            if (themeSaveCurrent) { saveChangesToActiveTheme(); }
+
+            var themeExportCurrent = event.target.closest('[data-theme-export-current]');
+            if (themeExportCurrent) { exportCurrentTheme(); }
 
             // 图标文字效果三选一（无效果/文字阴影/深色底衬），随工作区偏好持久化
             var labelEffect = event.target.closest('[data-set-label-effect]');
@@ -15891,6 +16465,8 @@
             icon_size: 'medium',
             label_effect: 'none',
             ui_theme: 'default',
+            ui_theme_customs: [],
+            ui_theme_custom_id: '',
             window_tabs: false,
             tab_reload: false,
             menu_open_launcher: false,

@@ -116,8 +116,9 @@ textarea:focus-visible,
     display: flex;
     flex-direction: column;
     align-items: center;
-    width: 88px;
-    min-height: 96px;
+    /* 尺寸乘界面主题 icon_scale（2.1.144）：格子换算在 JS desktopIconSize() 同步乘系数 */
+    width: calc(88px * var(--webos-icon-scale, 1));
+    min-height: calc(96px * var(--webos-icon-scale, 1));
     padding: 8px 4px;
     border: 1px solid transparent;
     border-radius: 8px;
@@ -207,8 +208,8 @@ textarea:focus-visible,
 }
 
 .desktop-icon-badge {
-    width: 54px;
-    height: 54px;
+    width: calc(54px * var(--webos-icon-scale, 1));
+    height: calc(54px * var(--webos-icon-scale, 1));
     margin-bottom: 7px;
     border-radius: 12px;
     font-size: 25px;
@@ -6349,29 +6350,30 @@ textarea:focus-visible,
     text-align: center;
 }
 
-/* 桌面图标三档尺寸（右键「查看」切换；data-icon-size 由 renderDesktop 同步，格子换算在 JS DESKTOP_ICON_SIZES） */
+/* 桌面图标三档尺寸（右键「查看」切换；data-icon-size 由 renderDesktop 同步，格子换算在 JS DESKTOP_ICON_SIZES；
+   尺寸均乘界面主题 icon_scale 系数（2.1.144），与 JS desktopIconSize() 的格子换算保持一致） */
 .webos-desktop[data-icon-size="large"] .desktop-icon {
-    width: 112px;
-    min-height: 122px;
+    width: calc(112px * var(--webos-icon-scale, 1));
+    min-height: calc(122px * var(--webos-icon-scale, 1));
 }
 
 .webos-desktop[data-icon-size="large"] .desktop-icon-badge {
-    width: 68px;
-    height: 68px;
+    width: calc(68px * var(--webos-icon-scale, 1));
+    height: calc(68px * var(--webos-icon-scale, 1));
     margin-bottom: 8px;
     border-radius: 14px;
     font-size: 32px;
 }
 
 .webos-desktop[data-icon-size="small"] .desktop-icon {
-    width: 72px;
-    min-height: 78px;
+    width: calc(72px * var(--webos-icon-scale, 1));
+    min-height: calc(78px * var(--webos-icon-scale, 1));
     padding: 6px 3px;
 }
 
 .webos-desktop[data-icon-size="small"] .desktop-icon-badge {
-    width: 40px;
-    height: 40px;
+    width: calc(40px * var(--webos-icon-scale, 1));
+    height: calc(40px * var(--webos-icon-scale, 1));
     margin-bottom: 4px;
     border-radius: 9px;
     font-size: 18px;
@@ -8256,4 +8258,157 @@ textarea.webos-widget-input {
     color: var(--webos-muted);
     font-size: 12px;
     line-height: 1.6;
+}
+
+/* ===== 界面主题细节调整（2.1.144）：微调控件、自定义主题卡片、壁纸暗度遮罩 ===== */
+
+/* 壁纸暗度遮罩：插在壁纸之后、桌面图标之前（DOM 顺序垫层），alpha 由 JS --webos-wallpaper-dim 驱动 */
+.webos-wallpaper-dim {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    background: rgba(0, 0, 0, var(--webos-wallpaper-dim, 0));
+}
+
+/* 桌面基准字号（2.1.144）：界面主题「界面字号」微调的生效点，未覆盖时保持原默认 14px */
+.webos-desktop {
+    font-size: var(--webos-font-size, 14px);
+}
+
+/* 主题操作按钮行（新建/保存修改/导出/导入） */
+.theme-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 12px;
+}
+
+.settings-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 7px 14px;
+    border: 1px solid var(--webos-line);
+    border-radius: 8px;
+    color: var(--webos-text);
+    background: var(--webos-surface);
+    font-size: 13px;
+    cursor: pointer;
+    transition: background var(--motion-fast) var(--motion-ease);
+}
+
+.settings-btn:hover {
+    background: var(--webos-soft);
+}
+
+.settings-btn input[type="file"] {
+    display: none;
+}
+
+/* 自定义主题卡片：与内置 settings-choice 同视觉基调，右上角悬停出现导出/删除 */
+.theme-custom-card {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    max-width: 100%;
+    padding: 10px 34px 10px 12px;
+    border: 1px solid var(--webos-line);
+    border-radius: 10px;
+    color: var(--webos-text);
+    background: var(--webos-surface);
+    font-size: 13px;
+    cursor: pointer;
+    transition: border-color var(--motion-fast) var(--motion-ease), background var(--motion-fast) var(--motion-ease);
+}
+
+.theme-custom-card:hover {
+    border-color: var(--webos-primary);
+}
+
+.theme-custom-card.is-active {
+    border-color: var(--webos-primary);
+    box-shadow: inset 0 0 0 1px var(--webos-primary);
+}
+
+.theme-custom-name {
+    max-width: 140px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.theme-custom-actions {
+    position: absolute;
+    top: 4px;
+    right: 4px;
+    display: none;
+    gap: 2px;
+}
+
+.theme-custom-card:hover .theme-custom-actions,
+.theme-custom-card.is-active .theme-custom-actions {
+    display: inline-flex;
+}
+
+.theme-custom-btn {
+    padding: 3px 6px;
+    border: none;
+    border-radius: 6px;
+    color: var(--webos-muted);
+    background: transparent;
+    font-size: 12px;
+    cursor: pointer;
+}
+
+.theme-custom-btn:hover {
+    color: var(--webos-text);
+    background: rgba(0, 0, 0, 0.06);
+}
+
+.theme-custom-btn.is-danger:hover {
+    color: #ef5a62;
+}
+
+/* 细节调整控件行：label + 控件 + 当前值 */
+.theme-tune-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 7px 0;
+    border-bottom: 1px dashed var(--webos-line);
+}
+
+.theme-tune-row:last-child {
+    border-bottom: none;
+}
+
+.theme-tune-row > span {
+    flex: 0 0 108px;
+    color: var(--webos-text);
+    font-size: 13px;
+}
+
+.theme-tune-row input[type="range"] {
+    flex: 1;
+    min-width: 0;
+    accent-color: var(--webos-primary);
+}
+
+.theme-tune-row input[type="color"] {
+    width: 44px;
+    height: 26px;
+    padding: 0;
+    border: 1px solid var(--webos-line);
+    border-radius: 6px;
+    background: var(--webos-surface);
+    cursor: pointer;
+}
+
+.theme-tune-row b {
+    flex: 0 0 64px;
+    color: var(--webos-muted);
+    font-size: 12px;
+    font-weight: 500;
+    text-align: right;
 }

@@ -1092,7 +1092,8 @@ class WebosWorkspaceApiTest extends WebosTestCase
         $this->assertStringContainsString('.desktop-icon-label {', $stylesheet);
         // 图标与文字垂直堆叠：图标图形与标签均为行内级，短标签（两字标题）会与图标挤进同一行
         $this->assertStringContainsString('短标签（如两字标题）会与图标挤进同一行，flex column 强制各占一行', $stylesheet);
-        $this->assertStringContainsString("align-items: center;\n    width: 88px;", $stylesheet);
+        // 图标按钮宽度：基准 88px 乘界面主题 icon_scale 系数（2.1.144 细节调整），格子换算 JS 同步
+        $this->assertStringContainsString('width: calc(88px * var(--webos-icon-scale, 1));', $stylesheet);
         $this->assertStringContainsString('.desktop-icons[data-label-effect="shield"] .desktop-icon-label {', $stylesheet);
         $this->assertStringContainsString('.desktop-icons[data-label-effect="shadow"] .desktop-icon-label {', $stylesheet);
         $this->assertStringContainsString('text-shadow: 0 1px 2px rgba(0, 0, 0, 0.85), 0 0 5px rgba(0, 0, 0, 0.6);', $stylesheet);
