@@ -1,7 +1,7 @@
 # CmsPro WebOS 管理桌面 · 特性清单
 
-> 文档版本：2.1.142 | 更新日期：2026-11-24
-> 应用版本：2.1.142 | 应用 ID：`cmspro.webos`
+> 文档版本：2.1.143 | 更新日期：2026-11-24
+> 应用版本：2.1.143 | 应用 ID：`cmspro.webos`
 
 ## 一、应用定位
 
@@ -196,6 +196,7 @@ CmsproWebos/
 
 | 版本 | 日期 | 说明 |
 |---|---|---|
+| 2.1.143 | 2026-11-24 | **任务栏应用右键菜单新增「关闭其它」**（用户需求「状态栏右键点击应用出现菜单，在关闭全部上面增加 关闭其它，就是除了当前其它的全部关闭」）：`taskbarWindowMenuItems()` 在「关闭全部」之前条件插入 `{ label: '关闭其它', icon: 'fa-columns', action: 'close-others', key }`（显示条件 `state.windows.size > 1`，单窗口时不出现无意义项；图标与既有窗口选项卡右键「关闭其它」一致）；`runTaskbarContextAction()` 新增 `close-others` 分支：读 `dataset.taskbarKey`（右键窗口），`Array.from(state.windows.keys())` 快照遍历（`closeWindow` 内部删除 Map 条目）逐个关闭 `!== keepKey` 的窗口，右键窗口保留且激活/最小化状态不变；固定图标右键（运行中）经 `taskbarPinnedMenuItems` 复用同一菜单自动获得该入口；任务栏右键菜单用例追加 4 条接线断言，278 用例 / 2829 断言全绿 |
 | 2.1.142 | 2026-11-24 | **修复 Win11 浅色主题下任务栏通知角标呈黑圈**（用户反馈「界面主题调整为 Win11 浅色时，状态栏铃铛右上方的数字一圈是黑色的，是不对的」）：根因是 `.notification-badge` 硬编码 `border: 2px solid #153b5d`——该描边是角标与默认深色任务栏（`rgba(8,38,67,0.90)`）之间的间隙圈，Win11 主题任务栏换为浅色 Mica（`rgba(243,243,243,0.88)`）后未同步，深蓝描边呈黑圈；修复：`:root` 新增 `--webos-badge-ring: #153b5d`（默认主题行为不变），`.notification-badge` 描边改 `var(--webos-badge-ring)`，win11 变量覆盖块新增 `--webos-badge-ring: #f3f3f3`（跟随浅任务栏底色）；桌面图标更新角标 `.desktop-update-badge` 无描边不受影响；`WebosUiThemeTest` 前端接线用例追加 3 条断言，278 用例 / 2825 断言全绿 |
 | 2.1.141 | 2026-11-24 | **应用窗口标题栏显示应用版本号**（用户需求「打开应用窗口，在应用的名字右上角用小字显示当前应用的版本」）：`windowIdentity()` 新增 `version` 键（`findApplication(entry.app_id).version`，空值返回 `''`）；`windowMarkup()` 应用名后条件渲染 `<span class="window-app-version">v{version}</span>`（上标小字，位于既有菜单名副标题之前）；CSS 新增 `.window-app-version`（`margin-left:4px;font-size:11px;color:var(--webos-muted);vertical-align:super`）；数据链无需后端改动——`applicationListByAppIds()`（WebosController 913 行）本就返回 `version` 字段；特殊窗口（应用中心/OS 设置等）走固定 identity 无 version 键自然不渲染；窗口品牌区固定显示应用身份（切换选项卡不重写 window-brand），版本随窗口创建时固定，应用更新后重开窗口即刷新；既有窗口品牌用例追加 4 条接线断言，278 用例 / 2822 断言全绿 |
 | 2.1.140 | 2026-11-23 | **修复「应用更新」应用详情头部图标缺失**（用户反馈「应用更新→应用详情中的应用图标没有显示，只有默认 `fa fa-cube`」）：根因两层——① `localDetailHeaderMarkup()` 用 `applicationIconMarkup()`，该函数只认服务端解析的 `icon_url`，而更新检查接口条目只有 `icon`；② `cardIconMarkup()` 的目录合并条件为 `!app.icon_url && !app.icon`，更新条目通常带 `icon`（类名或图片路径）故跳过合并，拿不到本地目录的 `icon_url`。修复：`localDetailHeaderMarkup()` 改用 `cardIconMarkup()`（与列表卡片同源）；`cardIconMarkup()` 合并条件改为仅 `!app.icon_url`；`applicationIconMarkup()` 图片源改为 `icon_url` 优先、`icon` 为图片路径（`isImageIcon`）时回退，覆盖 `apps.icon` 存 `/uploads/...png` 的历史数据（旧逻辑被 `safeIcon` 清洗成无效类名，图标完全空白）；同步修正既有断言并新增 2 条接线断言，278 用例 / 2818 断言全绿 |

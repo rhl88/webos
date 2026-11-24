@@ -4023,6 +4023,10 @@
             items.push({ label: '最小化', icon: 'fa-minus', action: 'minimize', key: key });
         }
         items.push({ label: '关闭', icon: 'fa-times', action: 'close', key: key, danger: true });
+        // 关闭其它（2.1.143）：除右键窗口外全部关闭（对齐窗口选项卡右键「关闭其它」），仅存在其它窗口时显示
+        if (state.windows.size > 1) {
+            items.push({ label: '关闭其它', icon: 'fa-columns', action: 'close-others', key: key });
+        }
         // 关闭全部（2.1.119）：右键「关闭」下方一键关闭所有运行窗口（Windows 式批量关闭），有窗口才显示
         if (state.windows.size) {
             items.push({ label: '关闭全部', icon: 'fa-window-close-o', action: 'close-all', danger: true });
@@ -4127,6 +4131,15 @@
             else if (action === 'minimize') { minimizeWindow(key); }
             else if (action === 'restore') { restoreWindow(key); }
             else { closeWindow(key); }
+            return;
+        }
+        if (action === 'close-others') {
+            // 关闭其它（2.1.143）：除右键窗口外逐个关闭，快照遍历（closeWindow 内部会删除 Map 条目）；
+            // 右键窗口保留并保持当前激活/最小化状态不变
+            var keepKey = dataset.taskbarKey;
+            Array.from(state.windows.keys()).forEach(function (windowKey) {
+                if (windowKey !== keepKey) { closeWindow(windowKey); }
+            });
             return;
         }
         if (action === 'close-all') {

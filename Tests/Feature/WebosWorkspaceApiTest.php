@@ -475,7 +475,12 @@ class WebosWorkspaceApiTest extends WebosTestCase
         // 关闭全部（2.1.119）：窗口右键「关闭」下新增「关闭全部」，快照遍历逐个 closeWindow
         $this->assertStringContainsString("label: '关闭全部', icon: 'fa-window-close-o', action: 'close-all'", $script);
         $this->assertStringContainsString("if (action === 'close-all')", $script);
-        $this->assertStringContainsString('Array.from(state.windows.keys()).forEach(function (windowKey) { closeWindow(windowKey); })', $script);
+        $this->assertStringContainsString("Array.from(state.windows.keys()).forEach(function (windowKey) { closeWindow(windowKey); })", $script);
+        // 关闭其它（2.1.143）：任务栏窗口右键「关闭全部」上方新增「关闭其它」，仅多窗口时显示，保留右键窗口
+        $this->assertStringContainsString("label: '关闭其它', icon: 'fa-columns', action: 'close-others'", $script);
+        $this->assertStringContainsString('if (state.windows.size > 1) {', $script);
+        $this->assertStringContainsString("if (action === 'close-others')", $script);
+        $this->assertStringContainsString('if (windowKey !== keepKey) { closeWindow(windowKey); }', $script);
         // 锁定任务栏：禁用固定图标拖动（左键打开不受影响）
         $this->assertStringContainsString("root.dataset.taskbarLocked !== 'on'", $script);
         // 自动隐藏：桌面容器 data 属性驱动 CSS，按停靠方向收起
