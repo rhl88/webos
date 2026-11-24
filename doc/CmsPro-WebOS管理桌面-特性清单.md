@@ -1,7 +1,7 @@
 # CmsPro WebOS 管理桌面 · 特性清单
 
-> 文档版本：2.1.146 | 更新日期：2026-11-24
-> 应用版本：2.1.146 | 应用 ID：`cmspro.webos`
+> 文档版本：2.1.147 | 更新日期：2026-11-24
+> 应用版本：2.1.147 | 应用 ID：`cmspro.webos`
 
 ## 一、应用定位
 
@@ -196,6 +196,7 @@ CmsproWebos/
 
 | 版本 | 日期 | 说明 |
 |---|---|---|
+| 2.1.147 | 2026-11-24 | **「细节调整」标题行右侧新增「恢复默认」按钮**（用户需求「界面主题中的细节调整 文字同行的最右侧增加 恢复默认 按钮，用来恢复当前选中主题的默认」）：`themeSectionMarkup` 细节调整卡片标题行（`settings-card-title`，本为 flex 布局）追加 `<button data-theme-reset>`（`fa-undo` + 文案「恢复默认」，样式 `.settings-card-title .settings-card-action` 以 `margin-left:auto;flex:none` 推到标题行最右）；新增 `resetThemeTune()`：`themeDraft = null` 清空微调草稿 → `resolveThemePreviews` 判定当前主题——启用自定义主题时 `resolved.custom.overrides = {}` 清空覆盖值并走 `saveThemePreference` 链路写库（toast「已恢复『主题名』的默认效果」），内置主题无覆盖存储仅 `applyThemeTune` 重绘 + toast（无持久化变更）；点击委托 `data-theme-reset` 分支紧随 `data-theme-save-current` 之后；`WebosUiThemeTest` 接线断言补 4 条（委托选择器/函数定义/CSS 类），282 用例 / 2874 断言全绿 |
 | 2.1.146 | 2026-11-24 | **修复切换主题时保存报错「请求参数不合法」**（用户反馈：切换主题时 `/admin/cmspro/webos/api/workspace` 返回 40201 `preferences.ui_theme_custom_id`「must be a string」）：排查载荷文件确认前端发送的是合法空字符串 `""`（切回内置主题时 `selectBuiltinTheme` 清空启用 ID），根因是 Laravel 默认中间件 **`ConvertEmptyStringsToNull`** 把空字符串转成了 `null`——`sometimes` 规则仅在**键缺失**时跳过，键存在但值为 `null` 时 `string` 规则直接失败（2.1.144 新增规则时未考虑空串语义）。修复：规则改 `['sometimes', 'nullable', 'string', 'max:24']`（null 放行，`WorkspaceService::sanitizePreferences` 本就有「custom_id 必须存在于净化后主题库否则回退空串」的第二道兜底）；新增 `test_ui_theme_custom_id_empty_string_passes_validation` 回归用例（`''` 保存 200 且响应回写空串），282 用例 / 2871 断言全绿 |
 | 2.1.145 | 2026-11-24 | **修复应用窗口图标不显示当前应用的图标**（用户反馈「打开 AI 开发助手应用，图标没有显示当前应用的图标」）：① 排查链路——前端 img 主图源为应用清单 `icon_url`，原值 `url('/api/app/' . app_id . '/icon')`；CLI 模拟该路由 200 返回 icon.svg，但生产 web 服务器对**路径段带点**的 URL（`cmspro.aidev`）可能触发静态文件处理器拦截 404；且该应用 `apps.icon` 指向的历史上传 PNG 已丢失（`public/uploads/...` 文件不存在），主图与 fallback 双失败回落 `fa fa-cube`；② 修复——`WebosController::appIcon()` 新增应用自有公开图标端点（query 传参 `app_id`，`icon.svg` 优先、`icon.png` 兜底，`Cache-Control: public, max-age=86400`，app_id 仅与 `manifest.json` 的 `id` 精确比对、不拼路径无目录穿越风险），`ServiceProvider` 在 index 同组的未登录段注册 `/api/app-icon`，`applicationListByAppIds` 的 `icon_url` 切换为 `url('/admin/cmspro/webos/api/app-icon') . '?app_id=' . rawurlencode(app_id)`；新 URL 无路径参数段 + 未被缓存过，双保险规避拦截与 404 缓存；③ 测试——新增 `test_app_icon_endpoint`（svg 200 + 未知应用/缺参 404，未登录可达），3 处既有 icon_url 断言迁移为新端点格式，281 用例 / 2868 断言全绿；本次纯后端改动，`public/` 产物无需同步 |
 | 2.1.144 | 2026-11-24 | **OS设置「界面主题」新增细节调整与自定义主题**（用户需求「在 OS设置->界面主题 中增加 细节调整，可以调整 UI渲染的细节…在这个基础上可以新建一个新的主题；主题可以导出导入」）：数据模型新增偏好键 `ui_theme_customs`（自定义主题库，上限 20）与 `ui_theme_custom_id`（启用 ID，服务端校验必须存在于库中否则回退空）；前端 `THEME_FIELDS` 定义 8 项可调细节（accent 色值、taskbar_height 40~64、window_radius 0~16、taskbar_opacity 50~100、icon_scale 80~130、font_size 12~16、shadow 0~100、wallpaper_dim 0~60，与服务端 THEME_OVERRIDE_RULES 同口径）；`themeSectionMarkup` 重构为「主题选择卡片（内置 2 + 自定义库，卡片悬停出导出/删除）+ 操作区（新建/保存修改/导出当前/导入）+ 细节调整 8 控件」；`applyThemeTune` 仅写入已覆盖键的内联 CSS 变量（accent→primary/primary-dark（亮度-14% 自动算）/focus、taskbar_height→--taskbar-height/--taskbar-size、radius、taskbar→rgba 重算、icon_scale→--webos-icon-scale（CSS 三档图标尺寸 calc 乘系数 + JS desktopIconSize() 格子换算同步）、font_size→--webos-font-size、shadow→基础主题阴影 rgba alpha 重算、wallpaper_dim→`.webos-wallpaper-dim` 遮罩层 alpha），未覆盖键移除内联值回退 CSS 默认（零侵入）；微调走内存草稿 `themeDraft` 即时预览，新建/保存才全量落库；导出契约 `{type:'cmspro-webos-theme',version:1,name,base,overrides}`，导入校验契约 + 白名单净化 + 重名加序号；`WebosUiThemeTest` 新增 customs roundtrip 与数量上限用例、前端接线断言重写（含 desktop-icon calc 断言迁移），280 用例 / 2863 断言全绿 |

@@ -6156,7 +6156,10 @@
             + '<strong>界面主题</strong><small>切换桌面 UI 配色与质感（任务栏、窗口、开始菜单等）</small></div></div>'
             + cards + '</section>'
             + '<section class="settings-card"><div class="settings-card-title"><i class="fa fa-sliders"></i><div>'
-            + '<strong>细节调整</strong><small>在当前主题基础上微调 UI 渲染细节（色调、任务栏高度、圆角等）</small></div></div>'
+            + '<strong>细节调整</strong><small>在当前主题基础上微调 UI 渲染细节（色调、任务栏高度、圆角等）</small></div>'
+            // 恢复默认（2.1.147）：清空微调草稿；启用自定义主题时同时清空其覆盖值，回到所选主题的默认效果
+            + '<button class="settings-btn settings-card-action" type="button" data-theme-reset>'
+            + '<i class="fa fa-undo"></i>恢复默认</button></div>'
             + tuneRows + '</section>';
     }
 
@@ -6231,6 +6234,23 @@
         themeDraft = null;
         applyThemeTune();
         saveThemePreference('主题「' + resolved.custom.name + '」已保存');
+    }
+
+    /** 恢复默认（2.1.147）：清空微调草稿回到所选主题默认；启用自定义主题时同步清空其覆盖值并写库，
+     *  内置主题无覆盖存储，仅清草稿重绘（无持久化变更） */
+    function resetThemeTune() {
+        var preferences = state.workspace.preferences;
+        themeDraft = null;
+        var resolved = resolveThemePreviews(preferences);
+        if (resolved.custom) {
+            resolved.custom.overrides = {};
+            applyThemeTune();
+            saveThemePreference('已恢复「' + resolved.custom.name + '」的默认效果');
+            return;
+        }
+        applyThemeTune();
+        renderWebosSettings();
+        toast('已恢复当前主题的默认效果');
     }
 
     /** 选用内置主题：写入 ui_theme 并清空自定义启用 ID */
@@ -16088,6 +16108,10 @@
 
             var themeSaveCurrent = event.target.closest('[data-theme-save-current]');
             if (themeSaveCurrent) { saveChangesToActiveTheme(); }
+
+            // 恢复默认（2.1.147）：清空微调草稿/启用主题覆盖值，回到所选主题默认效果
+            var themeReset = event.target.closest('[data-theme-reset]');
+            if (themeReset) { resetThemeTune(); }
 
             var themeExportCurrent = event.target.closest('[data-theme-export-current]');
             if (themeExportCurrent) { exportCurrentTheme(); }

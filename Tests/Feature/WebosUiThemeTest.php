@@ -70,6 +70,9 @@ class WebosUiThemeTest extends WebosTestCase
         $this->assertStringContainsString('function createThemeFromCurrent(', $script);
         $this->assertStringContainsString('function importThemeFile(', $script);
         $this->assertStringContainsString("payload.type !== 'cmspro-webos-theme'", $script);
+        // 恢复默认（2.1.147）：细节调整标题行右侧按钮，清草稿+清启用主题覆盖值
+        $this->assertStringContainsString("closest('[data-theme-reset]')", $script);
+        $this->assertStringContainsString('function resetThemeTune(', $script);
         // 细节调整（2.1.144）：8 项字段定义、微调草稿预览与 CSS 变量写入
         $this->assertStringContainsString("{ key: 'accent', label: '主题强调色', type: 'color' }", $script);
         $this->assertStringContainsString("{ key: 'taskbar_height', label: '任务栏高度', type: 'range', min: 40, max: 64, step: 1, unit: 'px' }", $script);
@@ -98,6 +101,8 @@ class WebosUiThemeTest extends WebosTestCase
         $this->assertStringContainsString('.theme-tune-row {', $css);
         $this->assertStringContainsString('.theme-custom-card {', $css);
         $this->assertStringContainsString('.settings-btn {', $css);
+        // 2.1.147：恢复默认按钮推到标题行最右
+        $this->assertStringContainsString('.settings-card-title .settings-card-action {', $css);
         $this->assertStringContainsString('font-size: var(--webos-font-size, 14px);', $css);
     }
 

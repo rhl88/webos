@@ -8297,6 +8297,14 @@ textarea.webos-widget-input {
     transition: background var(--motion-fast) var(--motion-ease);
 }
 
+/* 卡片标题行右侧动作按钮（2.1.147「细节调整·恢复默认」）：flex 布局下推到最右 */
+.settings-card-title .settings-card-action {
+    margin-left: auto;
+    flex: none;
+    padding: 5px 12px;
+    font-size: 12px;
+}
+
 .settings-btn:hover {
     background: var(--webos-soft);
 }
