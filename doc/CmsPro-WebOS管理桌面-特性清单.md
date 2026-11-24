@@ -1,7 +1,7 @@
 # CmsPro WebOS 管理桌面 · 特性清单
 
-> 文档版本：2.1.148 | 更新日期：2026-11-24
-> 应用版本：2.1.148 | 应用 ID：`cmspro.webos`
+> 文档版本：2.1.149 | 更新日期：2026-11-24
+> 应用版本：2.1.149 | 应用 ID：`cmspro.webos`
 
 ## 一、应用定位
 
@@ -196,6 +196,7 @@ CmsproWebos/
 
 | 版本 | 日期 | 说明 |
 |---|---|---|
+| 2.1.149 | 2026-11-24 | **「基于当前效果新建主题」按钮文案调整为「新建主题」**（用户需求「界面主题中 基于当前效果新建主题 调整为新建主题」）：`themeSectionMarkup` 操作区 `data-theme-new` 按钮文案精简，功能不变（仍基于当前主题与微调值新建并启用）；主题相关用例 6 个（61 断言）通过 |
 | 2.1.148 | 2026-11-24 | **修复切换主题后界面无变化、刷新浏览器才生效**（用户反馈「界面主题 点击 切换，整体没有变化 刷新浏览器才有变化」）：根因——2.1.144 重构把 `root.dataset.uiTheme = resolveThemePreviews(preferences).base` 留在了 `applyWorkspacePreferences` 中，而主题切换（`selectBuiltinTheme`/`selectCustomTheme`/删除/新建等）调用的是 `applyThemeTune`，该函数仅更新 8 项细节的内联 CSS 变量、**未同步 `data-ui-theme` 属性**；主题级差异（任务栏底色/窗口背景/文字色/圆角基准）全部由 CSS 的 `.webos-desktop[data-ui-theme="win11"]` 变量块驱动，属性不变则点击切换只有强调色等内联覆盖生效、整体外观不变，刷新浏览器重新初始化才走 `applyWorkspacePreferences` 生效。修复：`applyThemeTune` 开头统一 `root.dataset.uiTheme = resolved.base`（基础主题与细节覆盖合并为唯一应用入口），`applyWorkspacePreferences` 删除独立设置行仅保留 `ensureWallpaperDim + applyThemeTune`；接线断言同步迁移（`root.dataset.uiTheme = resolved.base;`），282 用例 / 2874 断言全绿 |
 | 2.1.147 | 2026-11-24 | **「细节调整」标题行右侧新增「恢复默认」按钮**（用户需求「界面主题中的细节调整 文字同行的最右侧增加 恢复默认 按钮，用来恢复当前选中主题的默认」）：`themeSectionMarkup` 细节调整卡片标题行（`settings-card-title`，本为 flex 布局）追加 `<button data-theme-reset>`（`fa-undo` + 文案「恢复默认」，样式 `.settings-card-title .settings-card-action` 以 `margin-left:auto;flex:none` 推到标题行最右）；新增 `resetThemeTune()`：`themeDraft = null` 清空微调草稿 → `resolveThemePreviews` 判定当前主题——启用自定义主题时 `resolved.custom.overrides = {}` 清空覆盖值并走 `saveThemePreference` 链路写库（toast「已恢复『主题名』的默认效果」），内置主题无覆盖存储仅 `applyThemeTune` 重绘 + toast（无持久化变更）；点击委托 `data-theme-reset` 分支紧随 `data-theme-save-current` 之后；`WebosUiThemeTest` 接线断言补 4 条（委托选择器/函数定义/CSS 类），282 用例 / 2874 断言全绿 |
 | 2.1.146 | 2026-11-24 | **修复切换主题时保存报错「请求参数不合法」**（用户反馈：切换主题时 `/admin/cmspro/webos/api/workspace` 返回 40201 `preferences.ui_theme_custom_id`「must be a string」）：排查载荷文件确认前端发送的是合法空字符串 `""`（切回内置主题时 `selectBuiltinTheme` 清空启用 ID），根因是 Laravel 默认中间件 **`ConvertEmptyStringsToNull`** 把空字符串转成了 `null`——`sometimes` 规则仅在**键缺失**时跳过，键存在但值为 `null` 时 `string` 规则直接失败（2.1.144 新增规则时未考虑空串语义）。修复：规则改 `['sometimes', 'nullable', 'string', 'max:24']`（null 放行，`WorkspaceService::sanitizePreferences` 本就有「custom_id 必须存在于净化后主题库否则回退空串」的第二道兜底）；新增 `test_ui_theme_custom_id_empty_string_passes_validation` 回归用例（`''` 保存 200 且响应回写空串），282 用例 / 2871 断言全绿 |

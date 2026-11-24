@@ -6143,7 +6143,7 @@
             }).join('')
             + '</div>'
             + '<div class="theme-actions">'
-            + '<button class="settings-btn" type="button" data-theme-new><i class="fa fa-plus"></i>基于当前效果新建主题</button>'
+            + '<button class="settings-btn" type="button" data-theme-new><i class="fa fa-plus"></i>新建主题</button>'
             + (activeId
                 ? '<button class="settings-btn" type="button" data-theme-save-current><i class="fa fa-save"></i>保存修改到当前主题</button>'
                 : '')

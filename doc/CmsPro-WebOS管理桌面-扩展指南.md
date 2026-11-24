@@ -1,7 +1,7 @@
 # CmsPro WebOS 管理桌面 · 扩展指南
 
-> 文档版本：2.1.148 | 更新日期：2026-11-24
-> 应用版本：2.1.148 | 应用 ID：`cmspro.webos`
+> 文档版本：2.1.149 | 更新日期：2026-11-24
+> 应用版本：2.1.149 | 应用 ID：`cmspro.webos`
 
 ## 一、概述
 
@@ -782,6 +782,7 @@ app(HookManager::class)->registerFilter(
 
 | 版本 | 日期 | 更新人 | 说明 |
 |---|---|---|---|
+| 2.1.149 | 2026-11-24 | CmsPro | **「基于当前效果新建主题」按钮文案调整为「新建主题」（用户需求「界面主题中 基于当前效果新建主题 调整为新建主题」）**：`themeSectionMarkup` 操作区 `data-theme-new` 按钮文案由「基于当前效果新建主题」精简为「新建主题」，`createThemeFromCurrent` 行为不变（仍基于当前主题与微调值新建并立即启用）；主题相关用例 6 个（61 断言）通过；`public/` 产物已同步（js 哈希一致） |
 | 2.1.148 | 2026-11-24 | CmsPro | **修复切换主题后界面无变化、刷新浏览器才生效（用户反馈「界面主题 点击 切换，整体没有变化 刷新浏览器才有变化」）**：① 根因——2.1.144 重构遗留的双入口缺陷：`root.dataset.uiTheme` 仅在 `applyWorkspacePreferences`（页面初始化/整单保存回流）中设置，主题切换操作（`selectBuiltinTheme`/`selectCustomTheme`/`deleteTheme`/`createThemeFromCurrent`）走的 `applyThemeTune` 只写 8 项细节的内联变量、不同步 data 属性；CSS 侧主题级差异（任务栏底色/窗口背景/文字色/圆角基准/阴影基准）由 `.webos-desktop[data-ui-theme="win11"]` 变量块驱动，属性不更新 → 点击切换后整体外观不变，刷新浏览器重新初始化才生效；② 修复——`applyThemeTune` 开头新增 `root.dataset.uiTheme = resolved.base`（resolveThemePreviews 结果），使该函数成为基础主题 data 属性 + 细节覆盖内联变量的**唯一应用入口**，所有主题操作路径（切换/新建/删除/恢复默认/微调预览）自动即时生效；`applyWorkspacePreferences` 移除独立设置行（仅保留 `ensureWallpaperDim() + applyThemeTune()`），注释同步为「统一由 applyThemeTune 应用」；③ 测试——`WebosUiThemeTest` 接线断言迁移为 `root.dataset.uiTheme = resolved.base;`，282 用例 / 2874 断言全绿；`public/` 产物已同步（js 哈希一致） |
 | 2.1.147 | 2026-11-24 | CmsPro | **「细节调整」标题行右侧新增「恢复默认」按钮（用户需求「界面主题中的细节调整 文字同行的最右侧增加 恢复默认 按钮，用来恢复当前选中主题的默认」）**：① UI——`themeSectionMarkup` 细节调整卡片标题行（`.settings-card-title` 本为 `display:flex`）内、描述 div 之后追加 `<button class="settings-btn settings-card-action" data-theme-reset>`（`fa-undo` 图标）；CSS 新增 `.settings-card-title .settings-card-action { margin-left:auto; flex:none; padding:5px 12px; font-size:12px }` 将按钮推到标题行最右（其余 `.settings-btn` 通用样式复用）；② 逻辑——新增 `resetThemeTune()`：先 `themeDraft = null` 清空微调草稿，再 `resolveThemePreviews` 判定当前生效主题——启用自定义主题时 `resolved.custom.overrides = {}` 清空覆盖值并经 `applyThemeTune + saveThemePreference` 写库（toast 带主题名）；内置主题（default/win11）无覆盖存储，仅 `applyThemeTune + renderWebosSettings + toast`（无持久化变更）；点击委托在 root click 处理器 `data-theme-save-current` 分支后新增 `data-theme-reset → resetThemeTune()`；③ 测试——`WebosUiThemeTest::test_ui_theme_frontend_wiring` 补 4 条断言（`closest('[data-theme-reset]')`/`function resetThemeTune(`/CSS `.settings-card-title .settings-card-action {`），282 用例 / 2874 断言全绿；`public/` 产物已同步（js/css 哈希一致） |
 | 2.1.146 | 2026-11-24 | CmsPro | **修复切换主题时保存报错「请求参数不合法」（用户反馈：切换主题时 `/admin/cmspro/webos/api/workspace` 返回 40201 `preferences.ui_theme_custom_id`「must be a string」）**：① 排查——读取用户提交的实际载荷（`{_desktop_....txt`），`ui_theme_custom_id` 为合法空字符串 `""`（切回内置主题时 `selectBuiltinTheme` 写 `''` 并随整单保存）；根因是 Laravel 默认中间件 **`ConvertEmptyStringsToNull`**（全局 HTTP 中间件栈）把请求体中的空字符串统一转成 `null`，而 `sometimes` 规则只在**键缺失**时跳过验证——键存在但值为 `null` 时 `string` 规则失败；2.1.144 新增该规则时未考虑「清空=空串」语义；② 修复——`Admin/WebosController::saveWorkspace` 规则改 `['sometimes', 'nullable', 'string', 'max:24']`（`nullable` 放行 null），服务层 `sanitizePreferences` 原有「custom_id 必须存在于净化后主题库否则回退 `''`」的第二道兜底不变，行为一致；③ 测试——新增 `WebosUiThemeTest::test_ui_theme_custom_id_empty_string_passes_validation`（`PUT ui_theme=win11 + ui_theme_custom_id=''` → 200，响应两键分别为 win11/空串），282 用例 / 2871 断言全绿；纯后端改动，`public/` 产物无需同步 |
