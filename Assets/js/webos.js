@@ -5321,10 +5321,13 @@
 
     function windowBrandIconMarkup(entry) {
         var application = findApplication(entry.app_id);
-        if (!application || application.is_system) {
+        if (!application) {
             return '<span class="window-brand-icon is-system"><img src="/Images/logo-80x80.png" alt=""></span>';
         }
 
+        // 系统应用（is_system=1，如 AI 开发助手）也显示应用自身图标（2.1.150）：
+        // 系统 logo 仅用于应用中心/OS 设置等无 app_id 的 WebOS 内部窗口，
+        // 不再因 is_system 强制覆盖，图标仍走 icon_url → icon → 字体 → 立方体兜底链
         return applicationIconMarkup(application, 'window-brand-icon');
     }
 

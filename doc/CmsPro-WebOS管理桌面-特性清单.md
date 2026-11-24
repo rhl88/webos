@@ -1,7 +1,7 @@
 # CmsPro WebOS 管理桌面 · 特性清单
 
-> 文档版本：2.1.149 | 更新日期：2026-11-24
-> 应用版本：2.1.149 | 应用 ID：`cmspro.webos`
+> 文档版本：2.1.150 | 更新日期：2026-11-24
+> 应用版本：2.1.150 | 应用 ID：`cmspro.webos`
 
 ## 一、应用定位
 
@@ -196,6 +196,7 @@ CmsproWebos/
 
 | 版本 | 日期 | 说明 |
 |---|---|---|
+| 2.1.150 | 2026-11-24 | **修复系统应用窗口标题栏不显示应用自身图标**（用户反馈「AI开发助手有图标，为什么还是显示 /Images/logo-80x80.png」）：排查确认菜单 `app_id` 关联正常（6 条菜单）、`/api/app/cmspro.aidev/icon` 200 可达、apps.icon 图片虽丢失但 2.1.145 已有应用目录 svg 端点兜底——真正根因是 **`apps.is_system=1`**：`windowBrandIconMarkup` 的条件 `if (!application || application.is_system)` 对系统应用强制渲染 `/Images/logo-80x80.png`，绕过整个应用图标链。修复：条件收窄为 `if (!application)`——系统 logo 仅用于应用中心/OS 设置等无 `app_id` 的 WebOS 内部窗口；有应用数据（含 `is_system=1` 的系统应用如 AI 开发助手）一律走 `applicationIconMarkup`（icon_url → icon → 字体 → 立方体兜底）；窗口标题卸载/升级按钮等其它 `is_system` 判断（3895/3944/4331/5388 行）不受影响，282 用例 / 2874 断言全绿 |
 | 2.1.149 | 2026-11-24 | **「基于当前效果新建主题」按钮文案调整为「新建主题」**（用户需求「界面主题中 基于当前效果新建主题 调整为新建主题」）：`themeSectionMarkup` 操作区 `data-theme-new` 按钮文案精简，功能不变（仍基于当前主题与微调值新建并启用）；主题相关用例 6 个（61 断言）通过 |
 | 2.1.148 | 2026-11-24 | **修复切换主题后界面无变化、刷新浏览器才生效**（用户反馈「界面主题 点击 切换，整体没有变化 刷新浏览器才有变化」）：根因——2.1.144 重构把 `root.dataset.uiTheme = resolveThemePreviews(preferences).base` 留在了 `applyWorkspacePreferences` 中，而主题切换（`selectBuiltinTheme`/`selectCustomTheme`/删除/新建等）调用的是 `applyThemeTune`，该函数仅更新 8 项细节的内联 CSS 变量、**未同步 `data-ui-theme` 属性**；主题级差异（任务栏底色/窗口背景/文字色/圆角基准）全部由 CSS 的 `.webos-desktop[data-ui-theme="win11"]` 变量块驱动，属性不变则点击切换只有强调色等内联覆盖生效、整体外观不变，刷新浏览器重新初始化才走 `applyWorkspacePreferences` 生效。修复：`applyThemeTune` 开头统一 `root.dataset.uiTheme = resolved.base`（基础主题与细节覆盖合并为唯一应用入口），`applyWorkspacePreferences` 删除独立设置行仅保留 `ensureWallpaperDim + applyThemeTune`；接线断言同步迁移（`root.dataset.uiTheme = resolved.base;`），282 用例 / 2874 断言全绿 |
 | 2.1.147 | 2026-11-24 | **「细节调整」标题行右侧新增「恢复默认」按钮**（用户需求「界面主题中的细节调整 文字同行的最右侧增加 恢复默认 按钮，用来恢复当前选中主题的默认」）：`themeSectionMarkup` 细节调整卡片标题行（`settings-card-title`，本为 flex 布局）追加 `<button data-theme-reset>`（`fa-undo` + 文案「恢复默认」，样式 `.settings-card-title .settings-card-action` 以 `margin-left:auto;flex:none` 推到标题行最右）；新增 `resetThemeTune()`：`themeDraft = null` 清空微调草稿 → `resolveThemePreviews` 判定当前主题——启用自定义主题时 `resolved.custom.overrides = {}` 清空覆盖值并走 `saveThemePreference` 链路写库（toast「已恢复『主题名』的默认效果」），内置主题无覆盖存储仅 `applyThemeTune` 重绘 + toast（无持久化变更）；点击委托 `data-theme-reset` 分支紧随 `data-theme-save-current` 之后；`WebosUiThemeTest` 接线断言补 4 条（委托选择器/函数定义/CSS 类），282 用例 / 2874 断言全绿 |
